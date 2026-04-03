@@ -1,0 +1,26 @@
+[package]
+name = "claw"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+libcosmic = { git = "https://github.com/pop-os/libcosmic", branch = "master", features = ["tokio"] }
+matrix-sdk = "0.7"
+matrix-sdk-ui = "0.7"
+matrix-sdk-sqlite = "0.7"
+tokio = { version = "1", features = ["full"] }
+oo7 = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+url = "2"
+dirs = "6.0.0"
+tempfile = "3"
+rusqlite = { version = "0.30", features = ["bundled"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[patch.crates-io]
+# Many COSMIC apps need to patch iced or other dependencies to match what libcosmic uses.
+# However, for a basic shell, let's start without patches and see if it compiles.
