@@ -1,8 +1,9 @@
 mod matrix;
 
 use cosmic::iced::{Alignment, Subscription};
-use cosmic::widget::{button, column, row, scrollable, text, container};
+use cosmic::widget::{button, column, row, scrollable, text, container, text_input};
 use cosmic::{Application, Element, Task, Core, Action};
+use matrix_sdk_ui::sync_service::State as SyncServiceState;
 use std::path::PathBuf;
 use std::sync::Arc;
 use imbl::Vector;
@@ -14,6 +15,9 @@ struct Claw {
     room_list: Vec<matrix::RoomData>,
     selected_room: Option<String>,
     timeline_items: Vector<Arc<matrix::TimelineItem>>,
+    composer_text: String,
+    composer_is_preview: bool,
+    user_id: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -21,6 +25,12 @@ enum Message {
     Matrix(matrix::MatrixEvent),
     RoomSelected(String),
     EngineReady(matrix::MatrixEngine),
+    ComposerChanged(String),
+    TogglePreview,
+    SendMessage,
+    MessageSent(Result<(), String>),
+    LoadMore,
+    UserReady(Option<String>),
 }
 
 #[derive(Clone, Debug)]
@@ -39,6 +49,119 @@ impl PartialEq for MatrixEngineWrapper {
 }
 
 impl Eq for MatrixEngineWrapper {}
+
+impl Claw {
+    fn view_timeline(&self) -> Element<'_, Message> {
+        let mut timeline = column().spacing(10).width(cosmic::iced::Length::Fill);
+
+        if self.selected_room.is_some() {
+            timeline = timeline.push(
+                container(
+                    button::text("Load More")
+                        .on_press(Message::LoadMore)
+                )
+                .width(cosmic::iced::Length::Fill)
+                .align_x(Alignment::Center)
+                .padding(10)
+            );
+        }
+
+        for item in &self.timeline_items {
+            if let Some(event) = item.as_event() {
+                if let Some(message) = event.content().as_message() {
+                    let sender = event.sender().to_string();
+                    let body = message.body().to_string();
+
+                    let is_me = self.user_id.as_ref() == Some(&sender);
+
+                    let bubble = container(
+                        column()
+                            .spacing(2)
+                            .push(text::body(sender).size(10))
+                            .push(text::body(body))
+                    )
+                    .padding(10)
+                    .max_width(600);
+
+                    let bubble_wrapper = container(bubble)
+                        .width(cosmic::iced::Length::Fill)
+                        .align_x(if is_me { Alignment::End } else { Alignment::Start });
+
+                    timeline = timeline.push(bubble_wrapper);
+                }
+            } else if let Some(virt) = item.as_virtual() {
+                if let matrix::VirtualTimelineItem::DayDivider(_date) = virt {
+                    timeline = timeline.push(
+                        container(text::body("--- Day Divider ---").size(12))
+                            .width(cosmic::iced::Length::Fill)
+                            .align_x(Alignment::Center)
+                            .padding(10)
+                    );
+                }
+            }
+        }
+
+        scrollable(timeline).height(cosmic::iced::Length::Fill).into()
+    }
+
+    fn view_preview(&self) -> Element<'_, Message> {
+        let mut preview_col = column().spacing(10);
+        let parser = pulldown_cmark::Parser::new(&self.composer_text);
+        
+        let mut current_row = row().spacing(0).align_y(Alignment::Center);
+        let mut row_has_content = false;
+        
+        for event in parser {
+            match event {
+                pulldown_cmark::Event::Start(tag) => match tag {
+                    pulldown_cmark::Tag::Heading { .. } => {
+                        if row_has_content {
+                            preview_col = preview_col.push(current_row);
+                            current_row = row().spacing(0).align_y(Alignment::Center);
+                            row_has_content = false;
+                        }
+                    }
+                    _ => {}
+                },
+                pulldown_cmark::Event::End(tag) => match tag {
+                    pulldown_cmark::TagEnd::Paragraph | pulldown_cmark::TagEnd::Heading(_) => {
+                        if row_has_content {
+                            preview_col = preview_col.push(current_row);
+                            current_row = row().spacing(0).align_y(Alignment::Center);
+                            row_has_content = false;
+                        }
+                    }
+                    _ => {}
+                },
+                pulldown_cmark::Event::Text(t) => {
+                    let txt = text::body(t.to_string());
+                    current_row = current_row.push(txt);
+                    row_has_content = true;
+                }
+                pulldown_cmark::Event::Code(c) => {
+                    current_row = current_row.push(
+                        container(text::body(c.to_string()))
+                            .padding(2)
+                    );
+                    row_has_content = true;
+                }
+                pulldown_cmark::Event::SoftBreak | pulldown_cmark::Event::HardBreak => {
+                    current_row = current_row.push(text::body(" "));
+                    row_has_content = true;
+                }
+                _ => {}
+            }
+        }
+        
+        if row_has_content {
+            preview_col = preview_col.push(current_row);
+        }
+        
+        container(scrollable(preview_col).height(100))
+            .padding(10)
+            .into()
+    }
+}
 
 impl Application for Claw {
     type Executor = cosmic::executor::Default;
@@ -60,12 +183,15 @@ impl Application for Claw {
             .join("com.system76.Claw");
 
         (Claw { 
-            core, 
+            core: core.clone(), 
             matrix: None,
             sync_status: matrix::SyncStatus::Disconnected,
             room_list: Vec::new(),
             selected_room: None,
             timeline_items: Vector::new(),
+            composer_text: String::new(),
+            composer_is_preview: false,
+            user_id: None,
         }, Task::perform(async move {
             matrix::MatrixEngine::new(data_dir).await.expect("Failed to initialize Matrix engine")
         }, |engine| Action::from(Message::EngineReady(engine))))
@@ -74,32 +200,68 @@ impl Application for Claw {
     fn update(&mut self, message: Message) -> Task<Action<Self::Message>> {
         match message {
             Message::EngineReady(engine) => {
-                self.matrix = Some(engine);
+                self.matrix = Some(engine.clone());
+                return Task::perform(async move {
+                    let _ = engine.restore_session().await;
+                    let user_id = engine.client().await.user_id().map(|u| u.to_string());
+                    engine.start_sync().await;
+                    user_id
+                }, |user_id| Action::from(Message::UserReady(user_id)));
+            }
+            Message::UserReady(user_id) => {
+                self.user_id = user_id;
             }
             Message::Matrix(event) => {
                 match event {
                     matrix::MatrixEvent::SyncStatusChanged(status) => {
                         self.sync_status = status;
                     }
-                    matrix::MatrixEvent::RoomInserted(index, data) => {
-                        if index <= self.room_list.len() {
-                            self.room_list.insert(index, data);
-                        } else {
-                            self.room_list.push(data);
+                    matrix::MatrixEvent::RoomDiff(diff) => {
+                        match diff {
+                            eyeball_im::VectorDiff::Insert { index, value } => {
+                                if index <= self.room_list.len() {
+                                    self.room_list.insert(index, value);
+                                } else {
+                                    self.room_list.push(value);
+                                }
+                            }
+                            eyeball_im::VectorDiff::Remove { index } => {
+                                if index < self.room_list.len() {
+                                    self.room_list.remove(index);
+                                }
+                            }
+                            eyeball_im::VectorDiff::Set { index, value } => {
+                                if index < self.room_list.len() {
+                                    self.room_list[index] = value;
+                                }
+                            }
+                            eyeball_im::VectorDiff::Reset { values } => {
+                                self.room_list = values.into_iter().collect();
+                            }
+                            eyeball_im::VectorDiff::PushBack { value } => {
+                                self.room_list.push(value);
+                            }
+                            eyeball_im::VectorDiff::PushFront { value } => {
+                                self.room_list.insert(0, value);
+                            }
+                            eyeball_im::VectorDiff::PopBack => {
+                                self.room_list.pop();
+                            }
+                            eyeball_im::VectorDiff::PopFront => {
+                                if !self.room_list.is_empty() {
+                                    self.room_list.remove(0);
+                                }
+                            }
+                            eyeball_im::VectorDiff::Clear => {
+                                self.room_list.clear();
+                            }
+                            eyeball_im::VectorDiff::Append { values } => {
+                                self.room_list.extend(values);
+                            }
+                            eyeball_im::VectorDiff::Truncate { length } => {
+                                self.room_list.truncate(length);
+                            }
                         }
-                    }
-                    matrix::MatrixEvent::RoomRemoved(index) => {
-                        if index < self.room_list.len() {
-                            self.room_list.remove(index);
-                        }
-                    }
-                    matrix::MatrixEvent::RoomUpdated(index, data) => {
-                        if index < self.room_list.len() {
-                            self.room_list[index] = data;
-                        }
-                    }
-                    matrix::MatrixEvent::RoomListReset => {
-                        self.room_list.clear();
                     }
                     matrix::MatrixEvent::TimelineDiff(diff) => {
                         match diff {
@@ -138,7 +300,12 @@ impl Application for Claw {
                             eyeball_im::VectorDiff::Clear => {
                                 self.timeline_items.clear();
                             }
-                            _ => {}
+                            eyeball_im::VectorDiff::Append { values } => {
+                                self.timeline_items.extend(values);
+                            }
+                            eyeball_im::VectorDiff::Truncate { length } => {
+                                self.timeline_items.truncate(length);
+                            }
                         }
                     }
                     matrix::MatrixEvent::TimelineReset => {
@@ -146,9 +313,54 @@ impl Application for Claw {
                     }
                 }
             }
+            Message::LoadMore => {
+                if let (Some(matrix), Some(room_id)) = (&self.matrix, &self.selected_room) {
+                    let matrix = matrix.clone();
+                    let room_id = room_id.clone();
+                    return Task::perform(async move {
+                        matrix.paginate_backwards(&room_id, 20).await
+                            .map_err(|e| e.to_string())
+                    }, |_| Action::None);
+                }
+            }
             Message::RoomSelected(room_id) => {
                 self.selected_room = Some(room_id);
                 self.timeline_items.clear();
+            }
+            Message::ComposerChanged(text) => {
+                self.composer_text = text;
+            }
+            Message::TogglePreview => {
+                self.composer_is_preview = !self.composer_is_preview;
+            }
+            Message::SendMessage => {
+                if let (Some(matrix), Some(room_id)) = (&self.matrix, &self.selected_room) {
+                    let body = self.composer_text.clone();
+                    if body.is_empty() {
+                        return Task::none();
+                    }
+                    
+                    let html_body = matrix::markdown_to_html(&body);
+                    
+                    let matrix = matrix.clone();
+                    let room_id = room_id.clone();
+                    
+                    return Task::perform(async move {
+                        matrix.send_message(&room_id, body, Some(html_body)).await
+                            .map_err(|e| e.to_string())
+                    }, |res| Action::from(Message::MessageSent(res)));
+                }
+            }
+            Message::MessageSent(res) => {
+                match res {
+                    Ok(_) => {
+                        self.composer_text.clear();
+                        self.composer_is_preview = false;
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to send message: {}", e);
+                    }
+                }
             }
         }
         Task::none()
@@ -162,24 +374,42 @@ impl Application for Claw {
             matrix::SyncStatus::Error => "Sync Error",
         };
 
-        let sidebar = column()
-            .spacing(10)
-            .padding(10)
-            .width(250)
-            .push(text::title3("Rooms"));
-
-        let room_list = self.room_list.iter().fold(column().spacing(5), |col, room| {
+        let mut room_list = column().spacing(5);
+        for room in &self.room_list {
             let name = room.name.as_deref().unwrap_or("Unknown Room");
             let room_id = room.id.clone();
+            let _is_selected = self.selected_room.as_ref() == Some(&room_id);
             
-            col.push(
-                button::text(name)
-                    .on_press(Message::RoomSelected(room_id))
-                    .width(cosmic::iced::Length::Fill)
-            )
-        });
+            let mut room_content = column().spacing(2);
+            
+            let mut header = row().spacing(10).align_y(Alignment::Center);
+            header = header.push(text::body("#"));
+            header = header.push(text::body(name));
+            
+            if room.unread_count > 0 {
+                header = header.push(text::body(format!("({})", room.unread_count)).size(12));
+            }
+            
+            room_content = room_content.push(header);
+            
+            if let Some(last_msg) = &room.last_message {
+                let mut snippet = last_msg.clone();
+                if snippet.len() > 30 {
+                    snippet.truncate(27);
+                    snippet.push_str("...");
+                }
+                room_content = room_content.push(text::body(snippet).size(12));
+            }
+            
+            let btn = button::custom(container(room_content).padding(5).width(cosmic::iced::Length::Fill))
+                .on_press(Message::RoomSelected(room_id));
+            
+            room_list = room_list.push(btn);
+        }
 
-        let sidebar = sidebar.push(scrollable(room_list));
+        let sidebar = container(scrollable(room_list))
+            .width(250)
+            .padding(10);
 
         let selected_room_name = self.selected_room.as_ref().and_then(|id| {
             self.room_list.iter().find(|r| &r.id == id).and_then(|r| r.name.as_deref())
@@ -194,29 +424,28 @@ impl Application for Claw {
             .push(text::body(selected_room_name));
 
         if self.selected_room.is_some() {
-            let timeline = self.timeline_items.iter().fold(column().spacing(10), |col, item| {
-                if let Some(event) = item.as_event() {
-                    if let Some(message) = event.content().as_message() {
-                        let sender = event.sender().to_string();
-                        let body = message.body().to_string();
-                        
-                        col.push(
-                            container(
-                                column()
-                                    .spacing(2)
-                                    .push(text::body(sender).size(12))
-                                    .push(text::body(body))
-                            )
-                            .padding(10)
-                        )
-                    } else {
-                        col
-                    }
-                } else {
-                    col
-                }
-            });
-            content = content.push(scrollable(timeline).height(cosmic::iced::Length::Fill));
+            content = content.push(self.view_timeline());
+
+            let composer = if self.composer_is_preview {
+                self.view_preview()
+            } else {
+                container(
+                    text_input("Type a message...", &self.composer_text)
+                        .on_input(Message::ComposerChanged)
+                        .on_submit(|_| Message::SendMessage)
+                )
+                .padding(10)
+                .into()
+            };
+
+            let controls = row()
+                .spacing(10)
+                .push(button::text(if self.composer_is_preview { "Edit" } else { "Preview" })
+                    .on_press(Message::TogglePreview))
+                .push(button::text("Send")
+                    .on_press(Message::SendMessage));
+
+            content = content.push(column().spacing(10).push(composer).push(controls));
         } else {
             content = content.align_x(Alignment::Center);
         }
@@ -237,28 +466,39 @@ impl Application for Claw {
             MatrixEngineWrapper(matrix.clone()),
             |wrapper| {
                 let engine = wrapper.0.clone();
-                let client = engine.client().clone();
                 let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
                 
-                let _ = tx.send(Message::Matrix(matrix::MatrixEvent::SyncStatusChanged(matrix::SyncStatus::Syncing)));
-                
-                let tx_sync = tx.clone();
-                let client_sync = client.clone();
+                let tx_status = tx.clone();
+                let engine_status = engine.clone();
                 tokio::spawn(async move {
-                    match client_sync.sync(matrix_sdk::config::SyncSettings::default()).await {
-                        Ok(_) => {
-                            let _ = tx_sync.send(Message::Matrix(matrix::MatrixEvent::SyncStatusChanged(matrix::SyncStatus::Connected)));
+                    let sync_service = loop {
+                        if let Some(s) = engine_status.sync_service().await {
+                            break s;
                         }
-                        Err(_) => {
-                            let _ = tx_sync.send(Message::Matrix(matrix::MatrixEvent::SyncStatusChanged(matrix::SyncStatus::Error)));
-                        }
+                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    };
+                    
+                    let mut status_stream = sync_service.state();
+                    while let Some(status) = status_stream.next().await {
+                        let sync_status = match status {
+                            SyncServiceState::Idle => matrix::SyncStatus::Connected,
+                            SyncServiceState::Running => matrix::SyncStatus::Syncing,
+                            SyncServiceState::Terminated => matrix::SyncStatus::Disconnected,
+                            SyncServiceState::Error => matrix::SyncStatus::Error,
+                        };
+                        let _ = tx_status.send(Message::Matrix(matrix::MatrixEvent::SyncStatusChanged(sync_status)));
                     }
                 });
 
                 let tx_rooms = tx.clone();
                 let engine_rooms = engine.clone();
                 tokio::spawn(async move {
-                    let room_list_service = engine_rooms.room_list_service();
+                    let room_list_service = loop {
+                        if let Some(rls) = engine_rooms.room_list_service().await {
+                            break rls;
+                        }
+                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    };
                     let (_entries, stream) = match room_list_service.all_rooms().await {
                         Ok(rooms) => rooms.entries(),
                         Err(_) => return,
@@ -268,29 +508,60 @@ impl Application for Claw {
                     let mut stream = stream;
                     while let Some(diffs) = stream.next().await {
                         for diff in diffs {
-                            match diff {
+                            let room_diff = match diff {
                                 eyeball_im::VectorDiff::Insert { index, value } => {
-                                    if let Some(room_data) = get_room_data(&engine_rooms, &value).await {
-                                        let _ = tx_rooms.send(Message::Matrix(matrix::MatrixEvent::RoomInserted(index, room_data)));
-                                    }
+                                    get_room_data(&engine_rooms, &value).await
+                                        .map(|data| eyeball_im::VectorDiff::Insert { index, value: data })
                                 }
                                 eyeball_im::VectorDiff::Remove { index } => {
-                                    let _ = tx_rooms.send(Message::Matrix(matrix::MatrixEvent::RoomRemoved(index)));
+                                    Some(eyeball_im::VectorDiff::Remove { index })
                                 }
                                 eyeball_im::VectorDiff::Set { index, value } => {
-                                    if let Some(room_data) = get_room_data(&engine_rooms, &value).await {
-                                        let _ = tx_rooms.send(Message::Matrix(matrix::MatrixEvent::RoomUpdated(index, room_data)));
-                                    }
+                                    get_room_data(&engine_rooms, &value).await
+                                        .map(|data| eyeball_im::VectorDiff::Set { index, value: data })
                                 }
                                 eyeball_im::VectorDiff::Reset { values } => {
-                                    let _ = tx_rooms.send(Message::Matrix(matrix::MatrixEvent::RoomListReset));
-                                    for (index, value) in values.into_iter().enumerate() {
-                                        if let Some(room_data) = get_room_data(&engine_rooms, &value).await {
-                                            let _ = tx_rooms.send(Message::Matrix(matrix::MatrixEvent::RoomInserted(index, room_data)));
+                                    let mut new_values = Vec::new();
+                                    for value in values {
+                                        if let Some(data) = get_room_data(&engine_rooms, &value).await {
+                                            new_values.push(data);
                                         }
                                     }
+                                    Some(eyeball_im::VectorDiff::Reset { values: new_values.into() })
                                 }
-                                _ => {}
+                                eyeball_im::VectorDiff::Append { values } => {
+                                    let mut new_values = Vec::new();
+                                    for value in values {
+                                        if let Some(data) = get_room_data(&engine_rooms, &value).await {
+                                            new_values.push(data);
+                                        }
+                                    }
+                                    Some(eyeball_im::VectorDiff::Append { values: new_values.into() })
+                                }
+                                eyeball_im::VectorDiff::Truncate { length } => {
+                                    Some(eyeball_im::VectorDiff::Truncate { length })
+                                }
+                                eyeball_im::VectorDiff::PushBack { value } => {
+                                    get_room_data(&engine_rooms, &value).await
+                                        .map(|data| eyeball_im::VectorDiff::PushBack { value: data })
+                                }
+                                eyeball_im::VectorDiff::PushFront { value } => {
+                                    get_room_data(&engine_rooms, &value).await
+                                        .map(|data| eyeball_im::VectorDiff::PushFront { value: data })
+                                }
+                                eyeball_im::VectorDiff::PopBack => {
+                                    Some(eyeball_im::VectorDiff::PopBack)
+                                }
+                                eyeball_im::VectorDiff::PopFront => {
+                                    Some(eyeball_im::VectorDiff::PopFront)
+                                }
+                                eyeball_im::VectorDiff::Clear => {
+                                    Some(eyeball_im::VectorDiff::Clear)
+                                }
+                            };
+
+                            if let Some(rd) = room_diff {
+                                let _ = tx_rooms.send(Message::Matrix(matrix::MatrixEvent::RoomDiff(rd)));
                             }
                         }
                     }
@@ -350,16 +621,10 @@ async fn get_room_data(engine: &matrix::MatrixEngine, entry: &matrix_sdk_ui::roo
         _ => return None,
     };
 
-    let client = engine.client();
+    let client = engine.client().await;
     let room = client.get_room(room_id)?;
     
-    let name = room.display_name().await.ok().map(|n| n.to_string());
-    
-    Some(matrix::RoomData {
-        id: room_id.to_string(),
-        name,
-        last_message: None, // Simplified for now
-    })
+    engine.fetch_room_data(&room).await.ok()
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
