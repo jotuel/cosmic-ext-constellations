@@ -991,6 +991,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "dirs",
+ "eyeball-im",
+ "imbl",
  "libcosmic",
  "matrix-sdk",
  "matrix-sdk-sqlite",

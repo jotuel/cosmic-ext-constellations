@@ -6,9 +6,11 @@ use matrix_sdk::{
     matrix_auth::MatrixSession,
 };
 use matrix_sdk_sqlite::SqliteStateStore;
+use matrix_sdk_ui::RoomListService;
 use oo7::Keyring;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,9 +21,20 @@ pub enum SyncStatus {
     Error,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoomData {
+    pub id: String,
+    pub name: Option<String>,
+    pub last_message: Option<String>,
+}
+
 #[derive(Debug, Clone)]
 pub enum MatrixEvent {
     SyncStatusChanged(SyncStatus),
+    RoomInserted(usize, RoomData),
+    RoomRemoved(usize),
+    RoomUpdated(usize, RoomData),
+    RoomListReset,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -33,9 +46,10 @@ struct SessionData {
     device_id: String,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct MatrixEngine {
     client: Client,
+    room_list_service: Arc<RoomListService>,
     data_dir: PathBuf,
 }
 
@@ -52,7 +66,9 @@ impl MatrixEngine {
             .build()
             .await?;
 
-        Ok(Self { client, data_dir })
+        let room_list_service = Arc::new(RoomListService::new(client.clone()).await?);
+
+        Ok(Self { client, room_list_service, data_dir })
     }
 
     pub async fn sync(&self) -> Result<()> {
@@ -78,6 +94,8 @@ impl MatrixEngine {
             .store_config(store_config)
             .build()
             .await?;
+
+        self.room_list_service = Arc::new(RoomListService::new(self.client.clone()).await?);
 
         self.client
             .matrix_auth()
@@ -149,6 +167,8 @@ impl MatrixEngine {
                 .build()
                 .await?;
 
+            self.room_list_service = Arc::new(RoomListService::new(self.client.clone()).await?);
+
             self.client.matrix_auth().restore_session(matrix_session).await?;
             
             return Ok(true);
@@ -159,6 +179,10 @@ impl MatrixEngine {
 
     pub fn client(&self) -> &Client {
         &self.client
+    }
+
+    pub fn room_list_service(&self) -> Arc<RoomListService> {
+        self.room_list_service.clone()
     }
 }
 
