@@ -1,20 +1,26 @@
 mod matrix;
 
 use cosmic::iced::{Alignment, Subscription};
-use cosmic::widget::{column, row, scrollable, text};
+use cosmic::widget::{button, column, row, scrollable, text, container};
 use cosmic::{Application, Element, Task, Core, Action};
 use std::path::PathBuf;
+use std::sync::Arc;
+use imbl::Vector;
 
 struct Claw {
     core: Core,
-    matrix: matrix::MatrixEngine,
+    matrix: Option<matrix::MatrixEngine>,
     sync_status: matrix::SyncStatus,
     room_list: Vec<matrix::RoomData>,
+    selected_room: Option<String>,
+    timeline_items: Vector<Arc<matrix::TimelineItem>>,
 }
 
 #[derive(Debug, Clone)]
 enum Message {
     Matrix(matrix::MatrixEvent),
+    RoomSelected(String),
+    EngineReady(matrix::MatrixEngine),
 }
 
 #[derive(Clone, Debug)]
@@ -53,23 +59,23 @@ impl Application for Claw {
             .unwrap_or_else(|| PathBuf::from("."))
             .join("com.system76.Claw");
 
-        // Use block_on to initialize the Matrix engine during the synchronous libcosmic init phase.
-        // In a production app, this should be handled via an async Task to avoid blocking the UI thread.
-        let matrix = tokio::runtime::Runtime::new()
-            .unwrap()
-            .block_on(matrix::MatrixEngine::new(data_dir))
-            .expect("Failed to initialize Matrix engine");
-
         (Claw { 
             core, 
-            matrix,
+            matrix: None,
             sync_status: matrix::SyncStatus::Disconnected,
             room_list: Vec::new(),
-        }, Task::none())
+            selected_room: None,
+            timeline_items: Vector::new(),
+        }, Task::perform(async move {
+            matrix::MatrixEngine::new(data_dir).await.expect("Failed to initialize Matrix engine")
+        }, |engine| Action::from(Message::EngineReady(engine))))
     }
 
     fn update(&mut self, message: Message) -> Task<Action<Self::Message>> {
         match message {
+            Message::EngineReady(engine) => {
+                self.matrix = Some(engine);
+            }
             Message::Matrix(event) => {
                 match event {
                     matrix::MatrixEvent::SyncStatusChanged(status) => {
@@ -95,7 +101,54 @@ impl Application for Claw {
                     matrix::MatrixEvent::RoomListReset => {
                         self.room_list.clear();
                     }
+                    matrix::MatrixEvent::TimelineDiff(diff) => {
+                        match diff {
+                            eyeball_im::VectorDiff::Insert { index, value } => {
+                                if index <= self.timeline_items.len() {
+                                    self.timeline_items.insert(index, value);
+                                } else {
+                                    self.timeline_items.push_back(value);
+                                }
+                            }
+                            eyeball_im::VectorDiff::Remove { index } => {
+                                if index < self.timeline_items.len() {
+                                    self.timeline_items.remove(index);
+                                }
+                            }
+                            eyeball_im::VectorDiff::Set { index, value } => {
+                                if index < self.timeline_items.len() {
+                                    self.timeline_items.set(index, value);
+                                }
+                            }
+                            eyeball_im::VectorDiff::Reset { values } => {
+                                self.timeline_items = values;
+                            }
+                            eyeball_im::VectorDiff::PushBack { value } => {
+                                self.timeline_items.push_back(value);
+                            }
+                            eyeball_im::VectorDiff::PushFront { value } => {
+                                self.timeline_items.push_front(value);
+                            }
+                            eyeball_im::VectorDiff::PopBack => {
+                                self.timeline_items.pop_back();
+                            }
+                            eyeball_im::VectorDiff::PopFront => {
+                                self.timeline_items.pop_front();
+                            }
+                            eyeball_im::VectorDiff::Clear => {
+                                self.timeline_items.clear();
+                            }
+                            _ => {}
+                        }
+                    }
+                    matrix::MatrixEvent::TimelineReset => {
+                        self.timeline_items.clear();
+                    }
                 }
+            }
+            Message::RoomSelected(room_id) => {
+                self.selected_room = Some(room_id);
+                self.timeline_items.clear();
             }
         }
         Task::none()
@@ -116,19 +169,57 @@ impl Application for Claw {
             .push(text::title3("Rooms"));
 
         let room_list = self.room_list.iter().fold(column().spacing(5), |col, room| {
-            col.push(text::body(room.name.as_deref().unwrap_or("Unknown Room")))
+            let name = room.name.as_deref().unwrap_or("Unknown Room");
+            let room_id = room.id.clone();
+            
+            col.push(
+                button::text(name)
+                    .on_press(Message::RoomSelected(room_id))
+                    .width(cosmic::iced::Length::Fill)
+            )
         });
 
         let sidebar = sidebar.push(scrollable(room_list));
 
-        let content = column()
+        let selected_room_name = self.selected_room.as_ref().and_then(|id| {
+            self.room_list.iter().find(|r| &r.id == id).and_then(|r| r.name.as_deref())
+        }).unwrap_or("Select a room to start chatting");
+
+        let mut content = column()
             .spacing(20)
             .padding(20)
             .width(cosmic::iced::Length::Fill)
-            .align_x(Alignment::Center)
             .push(text::title1("Claw - Matrix Client"))
             .push(text::body(format!("Status: {}", status_text)))
-            .push(text::body("Select a room to start chatting"));
+            .push(text::body(selected_room_name));
+
+        if self.selected_room.is_some() {
+            let timeline = self.timeline_items.iter().fold(column().spacing(10), |col, item| {
+                if let Some(event) = item.as_event() {
+                    if let Some(message) = event.content().as_message() {
+                        let sender = event.sender().to_string();
+                        let body = message.body().to_string();
+                        
+                        col.push(
+                            container(
+                                column()
+                                    .spacing(2)
+                                    .push(text::body(sender).size(12))
+                                    .push(text::body(body))
+                            )
+                            .padding(10)
+                        )
+                    } else {
+                        col
+                    }
+                } else {
+                    col
+                }
+            });
+            content = content.push(scrollable(timeline).height(cosmic::iced::Length::Fill));
+        } else {
+            content = content.align_x(Alignment::Center);
+        }
 
         row()
             .push(sidebar)
@@ -137,8 +228,13 @@ impl Application for Claw {
     }
 
     fn subscription(&self) -> Subscription<Self::Message> {
-        Subscription::run_with(
-            MatrixEngineWrapper(self.matrix.clone()),
+        let matrix = match &self.matrix {
+            Some(m) => m,
+            None => return Subscription::none(),
+        };
+
+        let sync_sub = Subscription::run_with(
+            MatrixEngineWrapper(matrix.clone()),
             |wrapper| {
                 let engine = wrapper.0.clone();
                 let client = engine.client().clone();
@@ -204,7 +300,46 @@ impl Application for Claw {
                     rx.recv().await.map(|msg| (msg, rx))
                 })
             },
-        )
+        );
+
+        if let Some(room_id) = self.selected_room.clone() {
+            let timeline_sub = Subscription::run_with(
+                (MatrixEngineWrapper(matrix.clone()), room_id.clone()),
+                |(wrapper, room_id)| {
+                    let engine = wrapper.0.clone();
+                    let room_id = room_id.clone();
+                    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+                    
+                    tokio::spawn(async move {
+                        let timeline = match engine.timeline(&room_id).await {
+                            Ok(t) => t,
+                            Err(_) => return,
+                        };
+
+                        let (items, mut stream) = timeline.subscribe().await;
+                        let _ = tx.send(Message::Matrix(matrix::MatrixEvent::TimelineReset));
+                        
+                        for (index, item) in items.into_iter().enumerate() {
+                            let _ = tx.send(Message::Matrix(matrix::MatrixEvent::TimelineDiff(
+                                eyeball_im::VectorDiff::Insert { index, value: item }
+                            )));
+                        }
+
+                        use cosmic::iced::futures::StreamExt;
+                        while let Some(diff) = stream.next().await {
+                            let _ = tx.send(Message::Matrix(matrix::MatrixEvent::TimelineDiff(diff)));
+                        }
+                    });
+
+                    cosmic::iced::futures::stream::unfold(rx, |mut rx| async move {
+                        rx.recv().await.map(|msg| (msg, rx))
+                    })
+                }
+            );
+            Subscription::batch([sync_sub, timeline_sub])
+        } else {
+            sync_sub
+        }
     }
 }
 
