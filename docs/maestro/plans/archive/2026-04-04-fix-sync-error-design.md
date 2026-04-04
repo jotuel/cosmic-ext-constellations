@@ -1,56 +1,66 @@
 ---
-design_depth: quick
-task_complexity: medium
+title: "Fix Sync Error"
+created: "2026-04-04T00:00:00Z"
+status: "approved"
+authors: ["TechLead", "User"]
+type: "design"
+design_depth: "deep"
+task_complexity: "medium"
 ---
 
-# Design: Fix Sync Error in Claw Matrix Client
+# Fix Sync Error Design Document
 
-## 1. Problem Statement
-The Claw Matrix client currently reports a "Permanent Error Status" when its synchronization service fails. The root cause is a lack of error handling and recovery logic in the sync loop within `src/matrix/mod.rs`. When the `SyncService` enters an `Error` state, the background task spawned by `start_sync` stops, and the UI remains stuck in the "Sync Error" state. This prevents automatic recovery from intermittent network disruptions or transient server-side errors, requiring a full application restart to resume synchronization.
+## Problem Statement
 
-## 2. Requirements
-- Functional:
-    - Automatically retry the synchronization process when a "Permanent Error Status" is detected.
-    - Implement an exponential backoff strategy for retries to avoid overloading the Matrix homeserver.
-    - Log the specific sync failure for easier troubleshooting and diagnostic visibility.
-- Non-Functional:
-    - Retries must be performed in a background task without blocking the iced UI event loop.
-    - Maintain a consistent `SyncStatus` in the `MatrixEngine` state that correctly reflects the current retry attempt status.
-    - Preserve existing sync status reporting and room data management in `src/matrix/mod.rs`.
+The `cosmic-ext-claw` application currently experiences a "Sync Error" that is not adequately diagnosed for the user. When the underlying `matrix-sdk-ui` `SyncService` encounters an error—most notably when the Matrix homeserver lacks support for Sliding Sync (MSC4186)—the application surfaces a generic or static error message. This prevents users from distinguishing between transient network issues and permanent server capability limitations — *[Prioritizing diagnostic reporting over fallback mechanisms ensures users understand exactly why their client cannot connect, aligning with the goal of clarity]*. The objective is to implement preemptive capability probing and structured error reporting so the UI can clearly inform the user of the specific cause of the sync failure.
 
-## 3. Approach
-### Selected Approach: Background Task Retry Loop
-- Wrap the `sync_service.start().await` call within a `loop` in the background task spawned by `start_sync`.
-- Use `tokio::time::sleep` with exponential backoff to handle retries.
-- Log each retry attempt and the result of the `start()` future if possible.
+## Requirements
 
-### Alternatives Considered:
-- UI-driven Recovery Task: Monitor the `SyncStatus::Error` in the `Claw::update` method and dispatch a new `Message` to call `start_sync` again.
-    - Rejected: This would spread sync logic across layers and make the UI logic more complex.
-- Manual Reconnect Button: Require a user action to manually retry when it fails.
-    - Rejected: This would lead to a poorer user experience for intermittent issues.
+### Functional Requirements
 
-## 4. Architecture
-- The `MatrixEngine::start_sync` method will spawn a new `tokio::task`.
-- This task will maintain an internal `backoff` state.
-- Inside a `loop`, it will call `sync_service.start().await`.
-- If the future completes (indicating a stop or failure), it will check the `SyncService` state.
-- If an error state is detected, the task will wait for an increasing duration (e.g., 2, 4, 8, 16 seconds) before retrying the `start()` call.
-- The `SyncService::state()` stream in `src/main.rs` will continue to monitor the sync status as it transitions from `Syncing` to `Error` and back to `Syncing` during the retry process.
+1. **REQ-1**: The application MUST verify if the Matrix homeserver supports Sliding Sync (MSC4186) during the login or initialization phase, before launching the `SyncService` — *[A proactive probe prevents false starts and immediate failure in the sync loop]* *(considered: relying solely on `SyncService` error mapping — rejected because it delays feedback to the user)*.
+2. **REQ-2**: The application MUST define structured error types (`SyncError`) using `thiserror` to categorize sync failures — *[Using standard ecosystem tools ensures idiomatic and maintainable error definitions]*.
 
-## 5. Agent Team
-- `coder`: Implement the background retry loop in `src/matrix/mod.rs`.
-- `tester`: Add a unit test to verify the retry mechanism.
+### Non-Functional Requirements
 
-## 6. Risk Assessment
-- Overlapping Sync Tasks: If `start_sync` is called multiple times without properly cleaning up old tasks, it could lead to multiple concurrent sync loops.
-- Solution: Ensure that only one background task is active for the sync service at any given time.
-- Improper Backoff: An incorrectly implemented backoff could result in too many requests to the homeserver or an excessively long delay between retries.
-- Solution: Implement a well-tested exponential backoff strategy with a reasonable maximum wait time (e.g., 60 seconds).
-- Unhandled Termination: If the sync service is deliberately stopped, the retry loop could prevent a clean shutdown.
-- Solution: Monitor the `SyncServiceState::Terminated` to correctly break the loop when synchronization is intended to end.
+1. **REQ-3**: The startup performance impact of the capability probe MUST be minimal, ideally confined to a single asynchronous API request.
 
-## 7. Success Criteria
-- Sync automatically recovers from transient network failures.
-- The UI transitions from "Sync Error" back to "Syncing" or "Connected" without a restart.
-- Exponential backoff correctly delays retries after successive failures.
+### Constraints
+
+- **REQ-4**: The error definitions and propagation mechanisms MUST integrate smoothly with the existing `matrix-sdk-ui` crate usage and the UI's `Message::Matrix(event)` enum.
+
+## Approach
+
+### Selected Approach
+
+**Early Probing & Extended `SyncStatus`**
+
+The application will issue a `get_supported_versions` API call before starting the `SyncService`. If the MSC4186 (Sliding Sync) feature is absent, the `MatrixEngine` will yield a new `SyncStatus::MissingSlidingSyncSupport` variant instead of attempting to connect — *[This fail-fast design ensures the user is immediately informed of the true cause of the error]* *(considered: mapping `SyncServiceState::Error` purely at runtime — rejected because it delays user feedback and makes parsing error payloads more complex)*. `Traces To: REQ-1, REQ-3`
+
+We will implement a `SyncError` enum backed by `thiserror` to model these failure states, and expand the existing `SyncStatus` enum to encompass these detailed errors. `Traces To: REQ-2, REQ-4`
+
+### Alternatives Considered
+
+#### Runtime Error Mapping
+
+- **Description**: Rely on the underlying SDK's error output to infer a missing capability.
+- **Pros**: Zero additional startup overhead.
+- **Cons**: Slower diagnostic feedback to the user and requires more complex UI-side parsing logic.
+- **Rejected Because**: It delays user feedback and complicates error parsing compared to proactive enum-based state updates.
+
+### Decision Matrix
+
+| Criterion | Weight | Early Probing | Runtime Mapping |
+|-----------|--------|---------------|-----------------|
+| **User Clarity** | 40% | 5: Immediate, preemptive diagnostics | 3: User informed only after failure |
+| **Ease of Implementation** | 30% | 4: Clean integration with existing enum pattern | 3: Requires more complex parsing logic |
+| **Performance (Startup)** | 20% | 3: Adds a single startup capability check | 5: Zero additional startup overhead |
+| **Maintainability** | 10% | 5: Idiomatic enum-based state management | 4: Slightly more complex mapping |
+| **Weighted Total** | | **4.3** | **3.6** |
+
+## Risk Assessment
+
+| Risk | Severity | Likelihood | Mitigation |
+|------|----------|------------|------------|
+| The extra startup request for server capabilities could delay application responsiveness. | LOW | HIGH | Execute the `get_supported_versions` call concurrently where possible or implement a minimal timeout, returning a `NetworkError` variant to avoid indefinite hangs — *[Timeouts prevent degraded UX from unreachable servers]* `Traces To: REQ-3`. |
+| Existing `match` statements across the codebase that rely on `SyncStatus` may become non-exhaustive once new variants are added. | LOW | HIGH | The Rust compiler will flag these exhaustiveness failures, guiding the developer to update UI handling gracefully. We will rely on compiler checks to ensure complete coverage. `Traces To: REQ-4` |

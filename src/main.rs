@@ -36,14 +36,14 @@ struct Claw {
 enum Message {
     Matrix(matrix::MatrixEvent),
     RoomSelected(String),
-    EngineReady(Result<matrix::MatrixEngine, String>),
+    EngineReady(Result<matrix::MatrixEngine, matrix::SyncError>),
     ComposerChanged(String),
     TogglePreview,
     SendMessage,
     MessageSent(Result<(), String>),
     LoadMore,
     LoadMoreFinished(Result<(), String>),
-    UserReady(Option<String>),
+    UserReady(Option<String>, Result<(), matrix::SyncError>),
     FetchMedia(MediaSource),
     MediaFetched(String, Result<Vec<u8>, String>),
     CreateRoom(String),
@@ -55,7 +55,7 @@ enum Message {
     LoginUsernameChanged(String),
     LoginPasswordChanged(String),
     SubmitLogin,
-    LoginFinished(Result<String, String>),
+    LoginFinished(Result<String, matrix::SyncError>),
 }
 
 #[derive(Clone, Debug)]
@@ -347,7 +347,7 @@ impl Application for Claw {
             is_logging_in: false,
             is_initializing: true,
         }, Task::perform(async move {
-            matrix::MatrixEngine::new(data_dir).await.map_err(|e| e.to_string())
+            matrix::MatrixEngine::new(data_dir).await.map_err(matrix::SyncError::from)
         }, |res| Action::from(Message::EngineReady(res))))
     }
 
@@ -360,9 +360,9 @@ impl Application for Claw {
                         return Task::perform(async move {
                             let _ = engine.restore_session().await;
                             let user_id = engine.client().await.user_id().map(|u| u.to_string());
-                            engine.start_sync().await;
-                            user_id
-                        }, |user_id| Action::from(Message::UserReady(user_id)));
+                            let sync_res = engine.start_sync().await;
+                            (user_id, sync_res)
+                        }, |(user_id, sync_res)| Action::from(Message::UserReady(user_id, sync_res)));
                     }
                     Err(e) => {
                         self.error = Some(format!("Failed to initialize Matrix engine: {}", e));
@@ -370,9 +370,18 @@ impl Application for Claw {
                     }
                 }
             }
-            Message::UserReady(user_id) => {
+            Message::UserReady(user_id, sync_res) => {
                 self.user_id = user_id;
                 self.is_initializing = false;
+                match sync_res {
+                    Ok(_) => {}
+                    Err(matrix::SyncError::MissingSlidingSyncSupport) => {
+                        self.sync_status = matrix::SyncStatus::MissingSlidingSyncSupport;
+                    }
+                    Err(e) => {
+                        self.sync_status = matrix::SyncStatus::Error(e.to_string());
+                    }
+                }
             }
             Message::Matrix(event) => {
                 match event {
@@ -612,9 +621,9 @@ impl Application for Claw {
                         let user_id = matrix.client().await.user_id()
                             .map(|u| u.to_string())
                             .ok_or_else(|| anyhow::anyhow!("Failed to get user ID after login"))?;
-                        matrix.start_sync().await;
+                        matrix.start_sync().await?;
                         Ok(user_id)
-                    }, |res: Result<String, anyhow::Error>| Action::from(Message::LoginFinished(res.map_err(|e| e.to_string()))));
+                    }, |res: Result<String, anyhow::Error>| Action::from(Message::LoginFinished(res.map_err(matrix::SyncError::from))));
                 }
             }
             Message::LoginFinished(res) => {
@@ -622,6 +631,9 @@ impl Application for Claw {
                 match res {
                     Ok(user_id) => {
                         self.user_id = Some(user_id);
+                    }
+                    Err(matrix::SyncError::MissingSlidingSyncSupport) => {
+                        self.sync_status = matrix::SyncStatus::MissingSlidingSyncSupport;
                     }
                     Err(e) => {
                         self.error = Some(format!("Login failed: {}", e));
@@ -646,11 +658,12 @@ impl Application for Claw {
             return self.view_login();
         }
 
-        let status_text = match self.sync_status {
-            matrix::SyncStatus::Disconnected => "Disconnected",
-            matrix::SyncStatus::Syncing => "Syncing...",
-            matrix::SyncStatus::Connected => "Connected",
-            matrix::SyncStatus::Error => "Sync Error",
+        let status_text = match &self.sync_status {
+            matrix::SyncStatus::Disconnected => "Disconnected".to_string(),
+            matrix::SyncStatus::Syncing => "Syncing...".to_string(),
+            matrix::SyncStatus::Connected => "Connected".to_string(),
+            matrix::SyncStatus::Error(e) => format!("⚠️ Sync Error: {}", e),
+            matrix::SyncStatus::MissingSlidingSyncSupport => "❌ Error: Your homeserver does not support Sliding Sync (MSC4186). This is required for Claw.".to_string(),
         };
 
         let mut room_list = column().spacing(5);
@@ -712,9 +725,15 @@ impl Application for Claw {
             .spacing(20)
             .padding(20)
             .width(cosmic::iced::Length::Fill)
-            .push(text::title1("Claw - Matrix Client"))
-            .push(text::body(format!("Status: {}", status_text)))
-            .push(text::body(selected_room_name));
+            .push(text::title1("Claw - Matrix Client"));
+
+        if let matrix::SyncStatus::Error(_) = &self.sync_status {
+            content = content.push(text::body(status_text).size(14));
+        } else {
+            content = content.push(text::body(format!("Status: {}", status_text)));
+        }
+
+        content = content.push(text::body(selected_room_name));
 
         if self.selected_room.is_some() {
             content = content.push(self.view_timeline());
@@ -789,7 +808,9 @@ impl Application for Claw {
                             SyncServiceState::Idle => matrix::SyncStatus::Connected,
                             SyncServiceState::Running => matrix::SyncStatus::Syncing,
                             SyncServiceState::Terminated => matrix::SyncStatus::Disconnected,
-                            SyncServiceState::Error => matrix::SyncStatus::Error,
+                            SyncServiceState::Error => {
+                                matrix::SyncStatus::Error("Sync error encountered. This may be due to missing server support for Sliding Sync (MSC4186) or network issues.".to_string())
+                            }
                         };
                         let _ = tx_status.send(Message::Matrix(matrix::MatrixEvent::SyncStatusChanged(sync_status)));
                     }

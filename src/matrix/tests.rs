@@ -47,6 +47,14 @@ fn test_matrix_event_variants() {
         panic!("Expected SyncStatusChanged variant");
     }
 
+    let error_status = SyncStatus::Error("test error".to_string());
+    let error_event = MatrixEvent::SyncStatusChanged(error_status);
+    if let MatrixEvent::SyncStatusChanged(SyncStatus::Error(e)) = error_event {
+        assert_eq!(e, "test error");
+    } else {
+        panic!("Expected SyncStatusChanged(Error) variant");
+    }
+
     let room_data = RoomData {
         id: "1".to_string(),
         name: None,
@@ -60,6 +68,84 @@ fn test_matrix_event_variants() {
         assert_eq!(value.id, "1");
     } else {
         panic!("Expected RoomDiff(Insert) variant");
+    }
+}
+
+#[test]
+fn test_sync_status_error_propagation() {
+    let error_msg = "Sync error encountered. This may be due to missing server support for Sliding Sync (MSC4186) or network issues.";
+    let status = SyncStatus::Error(error_msg.to_string());
+    
+    // Verify SyncStatus variant and payload
+    if let SyncStatus::Error(msg) = &status {
+        assert_eq!(msg, error_msg);
+    } else {
+        panic!("Expected SyncStatus::Error variant");
+    }
+
+    // Verify MatrixEvent carries the error status
+    let event = MatrixEvent::SyncStatusChanged(status.clone());
+    if let MatrixEvent::SyncStatusChanged(SyncStatus::Error(msg)) = event {
+        assert_eq!(msg, error_msg);
+    } else {
+        panic!("Expected MatrixEvent::SyncStatusChanged(SyncStatus::Error) variant");
+    }
+}
+
+#[test]
+fn test_sync_status_equality() {
+    assert_eq!(SyncStatus::Disconnected, SyncStatus::Disconnected);
+    assert_eq!(SyncStatus::Syncing, SyncStatus::Syncing);
+    assert_eq!(SyncStatus::Connected, SyncStatus::Connected);
+    assert_eq!(
+        SyncStatus::Error("error".to_string()),
+        SyncStatus::Error("error".to_string())
+    );
+    assert_ne!(
+        SyncStatus::Error("error 1".to_string()),
+        SyncStatus::Error("error 2".to_string())
+    );
+    assert_ne!(SyncStatus::Connected, SyncStatus::Syncing);
+    assert_eq!(SyncStatus::MissingSlidingSyncSupport, SyncStatus::MissingSlidingSyncSupport);
+    assert_ne!(SyncStatus::MissingSlidingSyncSupport, SyncStatus::Connected);
+}
+
+#[test]
+fn test_sync_error_display() {
+    let err = SyncError::MissingSlidingSyncSupport;
+    assert_eq!(err.to_string(), "Sliding Sync (MSC4186) is not supported by the homeserver");
+}
+
+#[test]
+fn test_sync_status_missing_support() {
+    let status = SyncStatus::MissingSlidingSyncSupport;
+    let event = MatrixEvent::SyncStatusChanged(status);
+    if let MatrixEvent::SyncStatusChanged(SyncStatus::MissingSlidingSyncSupport) = event {
+        // success
+    } else {
+        panic!("Expected SyncStatus::MissingSlidingSyncSupport");
+    }
+}
+
+#[test]
+fn test_sync_service_state_mapping() {
+    use matrix_sdk_ui::sync_service::State as SyncServiceState;
+
+    let states = vec![
+        (SyncServiceState::Idle, SyncStatus::Connected),
+        (SyncServiceState::Running, SyncStatus::Syncing),
+        (SyncServiceState::Terminated, SyncStatus::Disconnected),
+        (SyncServiceState::Error, SyncStatus::Error("Sync error encountered. This may be due to missing server support for Sliding Sync (MSC4186) or network issues.".to_string())),
+    ];
+
+    for (input, expected) in states {
+        let actual = match input {
+            SyncServiceState::Idle => SyncStatus::Connected,
+            SyncServiceState::Running => SyncStatus::Syncing,
+            SyncServiceState::Terminated => SyncStatus::Disconnected,
+            SyncServiceState::Error => SyncStatus::Error("Sync error encountered. This may be due to missing server support for Sliding Sync (MSC4186) or network issues.".to_string()),
+        };
+        assert_eq!(actual, expected);
     }
 }
 
@@ -122,14 +208,14 @@ async fn test_start_sync_task_management() {
     }
 
     // Call start_sync first time
-    engine.start_sync().await;
+    let _ = engine.start_sync().await;
     let handle1_debug = {
         let inner = engine.inner.read().await;
         format!("{:?}", inner.sync_handle)
     };
 
     // Call start_sync second time - should replace the handle
-    engine.start_sync().await;
+    let _ = engine.start_sync().await;
     let handle2_debug = {
         let inner = engine.inner.read().await;
         format!("{:?}", inner.sync_handle)

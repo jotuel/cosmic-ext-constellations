@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use thiserror::Error;
 use matrix_sdk::{
     config::StoreConfig,
     ruma::{UserId, OwnedDeviceId, RoomId, OwnedRoomId},
@@ -26,12 +27,43 @@ const BACKOFF_INITIAL: u64 = 2;
 const BACKOFF_MAX: u64 = 60;
 const BACKOFF_RESET_THRESHOLD: u64 = 30;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SyncStatus {
     Disconnected,
     Syncing,
     Connected,
-    Error,
+    Error(String),
+    MissingSlidingSyncSupport,
+}
+
+#[derive(Error, Debug, Clone)]
+pub enum SyncError {
+    #[error("Sliding Sync (MSC4186) is not supported by the homeserver")]
+    MissingSlidingSyncSupport,
+    #[error("Matrix error: {0}")]
+    Matrix(String),
+    #[error("HTTP error: {0}")]
+    Http(String),
+    #[error("Error: {0}")]
+    Anyhow(String),
+}
+
+impl From<matrix_sdk::Error> for SyncError {
+    fn from(e: matrix_sdk::Error) -> Self {
+        Self::Matrix(e.to_string())
+    }
+}
+
+impl From<matrix_sdk::HttpError> for SyncError {
+    fn from(e: matrix_sdk::HttpError) -> Self {
+        Self::Http(e.to_string())
+    }
+}
+
+impl From<anyhow::Error> for SyncError {
+    fn from(e: anyhow::Error) -> Self {
+        Self::Anyhow(e.to_string())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -292,7 +324,17 @@ impl MatrixEngine {
         })
     }
 
-    pub async fn start_sync(&self) {
+    pub async fn start_sync(&self) -> Result<(), SyncError> {
+        let client = self.client().await;
+        let request = matrix_sdk::ruma::api::client::discovery::get_supported_versions::Request::new();
+        let versions = client.send(request, None).await?;
+        let supports_sliding_sync = versions.unstable_features.contains_key("org.matrix.msc4186") || 
+                                   versions.versions.iter().any(|v| v == "v1.11");
+        
+        if !supports_sliding_sync {
+            return Err(SyncError::MissingSlidingSyncSupport);
+        }
+
         let mut inner = self.inner.write().await;
         
         if let Some(handle) = inner.sync_handle.take() {
@@ -322,6 +364,8 @@ impl MatrixEngine {
             });
             inner.sync_handle = Some(handle);
         }
+
+        Ok(())
     }
 
     pub async fn timeline(&self, room_id: &str) -> Result<Arc<Timeline>> {

@@ -10,10 +10,12 @@ CategoryCrate / ToolPurposeMatrix Logicmatrix-sdk-uiHigh-level RoomListService a
 4. The Markdown ComposerState Management: Track input_text: String and is_preview: bool.Toggle Logic: Use a Segmented Button to switch between cosmic-edit and the PreviewArea.The PreviewArea: A function that takes the raw string, parses it with pulldown-cmark, and returns a Column of text widgets styled for Bold, Italic, and Code.The Send Action: * Plaintext: Send the raw buffer.Formatted: Generate HTML via pulldown-cmark and send as formatted_body.
 
 ### Synchronization & Recovery
-To ensure a resilient connection, the background synchronization task implements an automatic retry loop with exponential backoff:
+To ensure a resilient connection, the background synchronization task implements an automatic retry loop with exponential backoff and integrated error reporting:
 - **Retry Mechanism**: If the `SyncService` stops due to a transient error, the engine automatically attempts to restart it.
-- **Exponential Backoff**: Retries use a doubling delay starting at 2 seconds (2s, 4s, 8s, 16s, 32s), capped at a maximum of 60 seconds.
-- **Backoff Reset**: The retry delay is reset to the initial 2 seconds if the service maintains a stable connection for at least 30 seconds.
+- **Error Reporting**: Sync failures are captured and propagated to the UI via the `SyncStatus::Error(String)` variant. The UI displays a descriptive error message in the status bar to inform the user of the failure.
+- **Diagnostic Details**: Due to current limitations in `matrix-sdk-ui` (v0.7.0) regarding specific error payload exposure on the `State` enum, a descriptive fallback is used: *"Sync error encountered. This may be due to missing server support for Sliding Sync (MSC4186) or network issues."*
+- **Exponential Backoff**: Retries use a doubling delay starting at 2 seconds (2s, 4s, 8s, 16s, 32s), capped at a maximum of 60 seconds. The error state persists in the UI until a retry attempt succeeds.
+- **Backoff Reset**: The retry delay is reset to the initial 2 seconds if the service maintains a stable connection for at least 30 seconds, at which point the error indicator is cleared from the status bar.
 
 ### Data Flow Logic: The "Bridge"
 To keep the UI responsive, all Matrix API calls must be handled via Commands.UI $\to$ SDK: The user clicks "Send" $\to$ Message::SendClicked $\to$ Command::perform(client.send(...)).SDK $\to$ UI: New message arrives in sync loop $\to$ Subscription yields Message::NewEvent $\to$ view() updates.
