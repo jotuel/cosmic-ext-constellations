@@ -2,9 +2,9 @@
 title: "Fix Sync Error Implementation Plan"
 design_ref: "docs/maestro/plans/2026-04-04-fix-sync-error-design.md"
 created: "2026-04-04T00:00:00Z"
-status: "approved"
+status: "draft"
 total_phases: 3
-estimated_files: 4
+estimated_files: 3
 task_complexity: "medium"
 ---
 
@@ -14,109 +14,109 @@ task_complexity: "medium"
 
 - **Total phases**: 3
 - **Agents involved**: coder, tester
-- **Estimated effort**: Medium. Adds `thiserror`, extends enum in core loop, updates UI handling, and adds testing.
+- **Estimated effort**: Medium. Implementation involves updating core Matrix engine logic and UI state mapping.
 
 ## Dependency Graph
 
 ```
-[Phase 1: coder]
+[Phase 1: Core Logic]
        |
        v
-[Phase 2: coder]
+[Phase 2: UI Integration]
        |
        v
-[Phase 3: tester]
+[Phase 3: Validation]
 ```
 
 ## Execution Strategy
 
 | Stage | Phases | Execution | Agent Count | Notes |
 |-------|--------|-----------|-------------|-------|
-| 1     | Phase 1 | Sequential | 1 | Foundation: Error Types & Probing |
-| 2     | Phase 2 | Sequential | 1 | UI State Integration |
-| 3     | Phase 3 | Sequential | 1 | Validation & Testing |
+| 1     | Phase 1 | Sequential | 1 | Foundation: SyncStatus and Probing logic |
+| 2     | Phase 2 | Sequential | 1 | Integration: UI error mapping |
+| 3     | Phase 3 | Sequential | 1 | Quality: Unit tests |
 
-## Phase 1: Error Types & Probing Logic
+## Phase 1: Core Logic Update
 
 ### Objective
-Define the `SyncError` enum using `thiserror` and update `MatrixEngine` to probe for MSC4186 before syncing.
+Update the `SyncStatus` enum and implement the proactive capability probe in the `MatrixEngine`.
 
 ### Agent: coder
 ### Parallel: No
 
 ### Files to Modify
 
-- `Cargo.toml` — Add `thiserror` dependency.
-- `src/matrix/mod.rs` — Define `SyncError`, add `MissingSlidingSyncSupport` to `SyncStatus`, and implement proactive MSC4186 probing in `start_sync` or engine initialization.
+- `src/matrix/mod.rs` — 
+    - Add `MissingSlidingSyncSupport` variant to `SyncStatus`.
+    - Implement the `get_supported_versions` probe within `MatrixEngine::start_sync`.
+    - Ensure the probe respects the existing `Backoff` retry logic.
 
 ### Implementation Details
-
-- Add `thiserror` to `Cargo.toml`.
-- Create `SyncError` enum with `thiserror` attributes for formatted error messages.
-- Update `SyncStatus` to include a new variant for missing capability.
-- Make `MatrixEngine` query supported versions on start.
+- Use `matrix_sdk::ruma::api::client::discovery::get_supported_versions::Request` for the probe.
+- Identify Sliding Sync support by checking `unstable_features` for `org.matrix.msc4186` or the Matrix version `v1.11`.
+- Update the background loop to yield `SyncStatus::MissingSlidingSyncSupport` if the probe fails the capability check.
 
 ### Validation
-
-- `cargo check` and `cargo clippy`
+- `cargo check` to ensure type safety.
+- `cargo clippy` for code quality.
 
 ### Dependencies
-
 - Blocked by: None
-- Blocks: [2]
+- Blocks: Phase 2
 
 ---
 
-## Phase 2: UI State Integration
+## Phase 2: UI Integration
 
 ### Objective
-Handle the new `SyncStatus::MissingSlidingSyncSupport` variant in the main application loop and display appropriate diagnostic messages.
+Update the application UI to handle and display the new `MissingSlidingSyncSupport` error state.
 
 ### Agent: coder
 ### Parallel: No
 
 ### Files to Modify
 
-- `src/main.rs` — Update the `SyncStatusChanged` match arm to handle the new variant and present it correctly in the UI.
+- `src/main.rs` — 
+    - Update the `Subscription` and `update` logic to handle the new `SyncStatus` variant.
+    - Add a user-facing error message in the `view` function for the missing capability state.
 
 ### Implementation Details
-
-- Ensure the UI maps the `MissingSlidingSyncSupport` to a clear, actionable message that indicates the homeserver needs to be updated.
+- Map `SyncStatus::MissingSlidingSyncSupport` to a clear diagnostic message: "Error: Your homeserver does not support Sliding Sync (MSC4186), which is required by Claw."
+- Ensure the error is displayed prominently in the status area when triggered.
 
 ### Validation
-
-- `cargo check` and `cargo clippy`
+- `cargo check` to verify match arm exhaustiveness.
+- Manual visual check of the UI message (if possible).
 
 ### Dependencies
-
-- Blocked by: [1]
-- Blocks: [3]
+- Blocked by: Phase 1
+- Blocks: Phase 3
 
 ---
 
 ## Phase 3: Validation & Testing
 
 ### Objective
-Add tests for the new error enum variants and verify parsing correctness.
+Verify the correctness of the new synchronization state transitions and error reporting.
 
 ### Agent: tester
 ### Parallel: No
 
 ### Files to Modify
 
-- `src/matrix/tests.rs` — Add unit tests for the error formatting and ensuring that `SyncStatus` mapping works correctly.
+- `src/matrix/tests.rs` — 
+    - Add test cases for the `SyncStatus` mapping.
+    - Mock or simulate a missing capability response to verify the engine's behavior.
 
 ### Implementation Details
-
-- Mock or instantiate the `SyncError` and verify the `Display` output.
+- Add a test `test_sync_status_missing_support` to verify that the enum is correctly handled in `MatrixEvent`.
+- Ensure `test_sync_status_equality` is updated for the new variant.
 
 ### Validation
-
 - `cargo test`
 
 ### Dependencies
-
-- Blocked by: [2]
+- Blocked by: Phase 2
 - Blocks: None
 
 ---
@@ -125,25 +125,24 @@ Add tests for the new error enum variants and verify parsing correctness.
 
 | # | File | Phase | Purpose |
 |---|------|-------|---------|
-| 1 | `Cargo.toml` | 1 | Add `thiserror` |
-| 2 | `src/matrix/mod.rs` | 1 | Core logic |
-| 3 | `src/main.rs` | 2 | UI Integration |
-| 4 | `src/matrix/tests.rs` | 3 | Testing |
+| 1 | `src/matrix/mod.rs` | 1 | Core engine logic and enum definitions |
+| 2 | `src/main.rs` | 2 | UI state mapping and error display |
+| 3 | `src/matrix/tests.rs` | 3 | Unit tests for sync states |
 
 ## Risk Classification
 
 | Phase | Risk | Rationale |
 |-------|------|-----------|
-| 1     | LOW  | Clean integration |
-| 2     | LOW  | Standard UI state update |
-| 3     | LOW  | Standard testing |
+| 1 | LOW | Localized change to the sync loop, leverages existing backoff. |
+| 2 | LOW | Standard update to iced message handling and view rendering. |
+| 3 | LOW | Standard testing phase. |
 
 ## Execution Profile
 
 ```
 Execution Profile:
 - Total phases: 3
-- Parallelizable phases: 0 (in 0 batches)
+- Parallelizable phases: 0
 - Sequential-only phases: 3
 - Estimated parallel wall time: N/A
 - Estimated sequential wall time: ~10 minutes

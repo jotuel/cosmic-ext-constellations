@@ -128,6 +128,23 @@ fn test_sync_status_missing_support() {
 }
 
 #[test]
+fn test_sync_error_to_status_mapping() {
+    let err = SyncError::MissingSlidingSyncSupport;
+    let status = match err {
+        SyncError::MissingSlidingSyncSupport => SyncStatus::MissingSlidingSyncSupport,
+        _ => SyncStatus::Error(err.to_string()),
+    };
+    assert_eq!(status, SyncStatus::MissingSlidingSyncSupport);
+
+    let err = SyncError::Matrix("some error".to_string());
+    let status = match err {
+        SyncError::MissingSlidingSyncSupport => SyncStatus::MissingSlidingSyncSupport,
+        _ => SyncStatus::Error(err.to_string()),
+    };
+    assert_eq!(status, SyncStatus::Error("Matrix error: some error".to_string()));
+}
+
+#[test]
 fn test_sync_service_state_mapping() {
     use matrix_sdk_ui::sync_service::State as SyncServiceState;
 

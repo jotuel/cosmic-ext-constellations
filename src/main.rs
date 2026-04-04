@@ -262,9 +262,15 @@ impl Claw {
             .align_x(Alignment::Center)
             .push(text::title1("Login to Matrix"));
 
-        if let Some(error) = &self.error {
+        let status_error = match &self.sync_status {
+            matrix::SyncStatus::Error(e) => Some(format!("⚠️ Sync Error: {}", e)),
+            matrix::SyncStatus::MissingSlidingSyncSupport => Some("Error: Your homeserver does not support Sliding Sync (MSC4186), which is required by Claw.".to_string()),
+            _ => None,
+        };
+
+        if let Some(error) = status_error.or_else(|| self.error.clone()) {
             content = content.push(
-                text::body(error.clone())
+                text::body(error)
             );
         }
 
@@ -610,6 +616,7 @@ impl Application for Claw {
                 if let Some(matrix) = &self.matrix {
                     self.is_logging_in = true;
                     self.error = None;
+                    self.sync_status = matrix::SyncStatus::Disconnected;
                     let matrix = matrix.clone();
                     let homeserver = self.login_homeserver.clone();
                     let username = self.login_username.clone();
@@ -663,7 +670,7 @@ impl Application for Claw {
             matrix::SyncStatus::Syncing => "Syncing...".to_string(),
             matrix::SyncStatus::Connected => "Connected".to_string(),
             matrix::SyncStatus::Error(e) => format!("⚠️ Sync Error: {}", e),
-            matrix::SyncStatus::MissingSlidingSyncSupport => "❌ Error: Your homeserver does not support Sliding Sync (MSC4186). This is required for Claw.".to_string(),
+            matrix::SyncStatus::MissingSlidingSyncSupport => "Error: Your homeserver does not support Sliding Sync (MSC4186), which is required by Claw.".to_string(),
         };
 
         let mut room_list = column().spacing(5);
@@ -727,7 +734,7 @@ impl Application for Claw {
             .width(cosmic::iced::Length::Fill)
             .push(text::title1("Claw - Matrix Client"));
 
-        if let matrix::SyncStatus::Error(_) = &self.sync_status {
+        if matches!(self.sync_status, matrix::SyncStatus::Error(_) | matrix::SyncStatus::MissingSlidingSyncSupport) {
             content = content.push(text::body(status_text).size(14));
         } else {
             content = content.push(text::body(format!("Status: {}", status_text)));
@@ -954,6 +961,10 @@ async fn get_room_data(engine: &matrix::MatrixEngine, entry: &matrix_sdk_ui::roo
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tracing_subscriber::fmt()
+        .with_env_filter("matrix_sdk=debug,matrix_sdk_ui=debug,cosmic_ext_claw=debug")
+        .with_writer(std::io::stderr)
+        .init();
     cosmic::app::run::<Claw>(cosmic::app::Settings::default(), ())?;
     Ok(())
 }

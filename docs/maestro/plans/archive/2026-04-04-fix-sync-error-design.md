@@ -4,7 +4,7 @@ created: "2026-04-04T00:00:00Z"
 status: "approved"
 authors: ["TechLead", "User"]
 type: "design"
-design_depth: "deep"
+design_depth: "standard"
 task_complexity: "medium"
 ---
 
@@ -12,55 +12,62 @@ task_complexity: "medium"
 
 ## Problem Statement
 
-The `cosmic-ext-claw` application currently experiences a "Sync Error" that is not adequately diagnosed for the user. When the underlying `matrix-sdk-ui` `SyncService` encounters an error—most notably when the Matrix homeserver lacks support for Sliding Sync (MSC4186)—the application surfaces a generic or static error message. This prevents users from distinguishing between transient network issues and permanent server capability limitations — *[Prioritizing diagnostic reporting over fallback mechanisms ensures users understand exactly why their client cannot connect, aligning with the goal of clarity]*. The objective is to implement preemptive capability probing and structured error reporting so the UI can clearly inform the user of the specific cause of the sync failure.
+The `cosmic-ext-claw` application currently experiences a "Sync Error" that is not adequately diagnosed for the user. While the project implements a background synchronization loop with exponential backoff, it lacks a robust pre-flight check to verify if the Matrix homeserver supports Sliding Sync (MSC4186), which is required by the `matrix-sdk-ui` v0.7.0 `SyncService` — *[Prioritizing pre-flight capability checks over generic runtime error mapping ensures that users on incompatible servers are immediately informed of the true cause of the error, rather than being stuck in an ambiguous "Sync Error" state]*. The objective is to implement a proactive capability probe during initialization to provide clear, actionable feedback when the server lacks necessary features.
 
 ## Requirements
 
 ### Functional Requirements
 
-1. **REQ-1**: The application MUST verify if the Matrix homeserver supports Sliding Sync (MSC4186) during the login or initialization phase, before launching the `SyncService` — *[A proactive probe prevents false starts and immediate failure in the sync loop]* *(considered: relying solely on `SyncService` error mapping — rejected because it delays feedback to the user)*.
-2. **REQ-2**: The application MUST define structured error types (`SyncError`) using `thiserror` to categorize sync failures — *[Using standard ecosystem tools ensures idiomatic and maintainable error definitions]*.
+1. **REQ-1**: The application MUST verify if the Matrix homeserver supports Sliding Sync (MSC4186) or Matrix v1.11 before initiating the synchronization loop — *[A proactive probe prevents false starts and immediate failure in the sync loop]* *(considered: relying solely on `SyncStatus::Error` mapping — rejected because it delays user feedback and makes parsing error context more complex)*.
+2. **REQ-2**: The `SyncStatus` enum in `src/matrix/mod.rs` MUST include a specific variant for `MissingSlidingSyncSupport` to allow the UI to display a targeted error message.
+3. **REQ-3**: The `MatrixEngine` MUST propagate the specific capability error result to the UI via the existing `iced::Subscription`.
 
 ### Non-Functional Requirements
 
-1. **REQ-3**: The startup performance impact of the capability probe MUST be minimal, ideally confined to a single asynchronous API request.
+1. **REQ-4**: The capability probe MUST be performed in a single asynchronous request using `get_supported_versions` to minimize impact on startup performance.
 
 ### Constraints
 
-- **REQ-4**: The error definitions and propagation mechanisms MUST integrate smoothly with the existing `matrix-sdk-ui` crate usage and the UI's `Message::Matrix(event)` enum.
+- **REQ-5**: The implementation MUST integrate with the existing `Backoff` logic in `src/matrix/mod.rs` to handle transient network errors during the pre-flight check.
 
 ## Approach
 
 ### Selected Approach
 
-**Early Probing & Extended `SyncStatus`**
+**Proactive Pre-flight & Fail-Fast**
 
-The application will issue a `get_supported_versions` API call before starting the `SyncService`. If the MSC4186 (Sliding Sync) feature is absent, the `MatrixEngine` will yield a new `SyncStatus::MissingSlidingSyncSupport` variant instead of attempting to connect — *[This fail-fast design ensures the user is immediately informed of the true cause of the error]* *(considered: mapping `SyncServiceState::Error` purely at runtime — rejected because it delays user feedback and makes parsing error payloads more complex)*. `Traces To: REQ-1, REQ-3`
+The application will issue a single `get_supported_versions` request through the `MatrixEngine` before starting the `SyncService`. If the MSC4186 (Sliding Sync) feature is absent, the `SyncStatus` will transition to `MissingSlidingSyncSupport` — *[This proactive design ensures the user is immediately informed of the true cause of the sync failure, rather than seeing a generic error after a delay]* *(considered: mapping `SyncServiceState::Error` purely at runtime — rejected because it delays feedback to the user and complicates error parsing)*. `Traces To: REQ-1, REQ-2, REQ-4`
 
-We will implement a `SyncError` enum backed by `thiserror` to model these failure states, and expand the existing `SyncStatus` enum to encompass these detailed errors. `Traces To: REQ-2, REQ-4`
+We will implement this check as a robust pre-flight asynchronous probe within `MatrixEngine::start_sync`, leveraging the existing `Backoff` for resilience. `Traces To: REQ-3, REQ-5`
 
 ### Alternatives Considered
 
-#### Runtime Error Mapping
+#### On-Demand Diagnostic Probe
 
-- **Description**: Rely on the underlying SDK's error output to infer a missing capability.
+- **Description**: Query server capabilities only after a `SyncStatus::Error` is detected.
 - **Pros**: Zero additional startup overhead.
-- **Cons**: Slower diagnostic feedback to the user and requires more complex UI-side parsing logic.
-- **Rejected Because**: It delays user feedback and complicates error parsing compared to proactive enum-based state updates.
+- **Cons**: User learns about incompatibility only after a generic failure and delay.
+- **Rejected Because**: It provides a poorer user experience for incompatible servers compared to a proactive check.
 
 ### Decision Matrix
 
-| Criterion | Weight | Early Probing | Runtime Mapping |
-|-----------|--------|---------------|-----------------|
-| **User Clarity** | 40% | 5: Immediate, preemptive diagnostics | 3: User informed only after failure |
-| **Ease of Implementation** | 30% | 4: Clean integration with existing enum pattern | 3: Requires more complex parsing logic |
-| **Performance (Startup)** | 20% | 3: Adds a single startup capability check | 5: Zero additional startup overhead |
-| **Maintainability** | 10% | 5: Idiomatic enum-based state management | 4: Slightly more complex mapping |
-| **Weighted Total** | | **4.3** | **3.6** |
+| Criterion | Weight | Approach 1 (Proactive) | Approach 2 (On-Demand) |
+|-----------|--------|------------------------|------------------------|
+| **User Experience** | 40% | 5: Immediate, fail-fast clarity | 3: User sees generic error first |
+| **Simplicity** | 30% | 4: Centralized in the sync loop | 3: Requires more complex event handling |
+| **Performance (Startup)** | 20% | 4: Minimal overhead (1 request) | 5: Zero additional startup overhead |
+| **Maintainability** | 10% | 5: Clear state transitions | 4: Slightly more complex mapping |
+| **Weighted Total** | | **4.5** | **3.6** |
 
 ## Risk Assessment
 
 | Risk | Severity | Likelihood | Mitigation |
 |------|----------|------------|------------|
-| The extra startup request for server capabilities could delay application responsiveness. | LOW | HIGH | Execute the `get_supported_versions` call concurrently where possible or implement a minimal timeout, returning a `NetworkError` variant to avoid indefinite hangs — *[Timeouts prevent degraded UX from unreachable servers]* `Traces To: REQ-3`. |
-| Existing `match` statements across the codebase that rely on `SyncStatus` may become non-exhaustive once new variants are added. | LOW | HIGH | The Rust compiler will flag these exhaustiveness failures, guiding the developer to update UI handling gracefully. We will rely on compiler checks to ensure complete coverage. `Traces To: REQ-4` |
+| Startup delay from extra capability probe request. | LOW | HIGH | Asynchronous execution with timeouts and retry logic — *[Timeouts prevent application hangs on slow servers]* `Traces To: REQ-4, REQ-5`. |
+| Non-exhaustive match arms in UI when `SyncStatus` changes. | LOW | HIGH | The Rust compiler will naturally flag missing match arms for the new variant. `Traces To: REQ-2, REQ-3` |
+
+## Success Criteria
+
+1. `MatrixEngine` proactively identifies and reports missing Sliding Sync (MSC4186) support before starting the sync service.
+2. The application surfaces a specific diagnostic message instead of a generic "Sync Error" when incompatibility is detected.
+3. Synchronization remains resilient to transient network errors during the pre-flight check.

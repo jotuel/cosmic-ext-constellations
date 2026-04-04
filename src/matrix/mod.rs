@@ -21,7 +21,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use serde::{Deserialize, Serialize};
-use tracing::{info, warn};
+use tracing::{info, error};
 
 const BACKOFF_INITIAL: u64 = 2;
 const BACKOFF_MAX: u64 = 60;
@@ -340,7 +340,7 @@ impl MatrixEngine {
         if let Some(handle) = inner.sync_handle.take() {
             handle.abort();
             if let Some(sync_service) = &inner.sync_service {
-                let _ = sync_service.stop();
+                let _ = sync_service.stop().await;
             }
         }
 
@@ -349,17 +349,24 @@ impl MatrixEngine {
             let handle = tokio::spawn(async move {
                 let mut backoff = Backoff::new(BACKOFF_INITIAL, BACKOFF_MAX);
                 loop {
-                    info!("Starting Matrix sync service...");
+                    let current_backoff = backoff.current;
+                    info!("Starting Matrix sync service (current backoff: {}s)...", current_backoff);
                     let start_time = std::time::Instant::now();
+                    
+                    // The start() future completes when the service is stopped or fails.
                     sync_service.start().await;
                     
-                    if start_time.elapsed().as_secs() > BACKOFF_RESET_THRESHOLD {
+                    let elapsed = start_time.elapsed();
+                    let state = sync_service.state().get();
+                    
+                    if elapsed.as_secs() > BACKOFF_RESET_THRESHOLD {
+                        info!("Matrix sync service ran for {:?}, resetting backoff.", elapsed);
                         backoff = Backoff::new(BACKOFF_INITIAL, BACKOFF_MAX);
                     }
                     
-                    let delay = backoff.next();
-                    warn!("Matrix sync service stopped. Retrying in {} seconds...", delay);
-                    tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
+                    let next_delay = backoff.next();
+                    error!("Matrix sync service stopped after {:?}. State: {:?}. Retrying in {} seconds...", elapsed, state, next_delay);
+                    tokio::time::sleep(std::time::Duration::from_secs(next_delay)).await;
                 }
             });
             inner.sync_handle = Some(handle);
