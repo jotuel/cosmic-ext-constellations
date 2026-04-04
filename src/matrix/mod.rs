@@ -5,7 +5,6 @@ use matrix_sdk::{
     ruma::{UserId, OwnedDeviceId, RoomId, OwnedRoomId},
     Client,
     matrix_auth::MatrixSession,
-    Room,
 };
 use matrix_sdk::media::MediaFormat;
 use matrix_sdk::ruma::events::room::MediaSource;
