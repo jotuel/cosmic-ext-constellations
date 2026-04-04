@@ -3,6 +3,9 @@ mod matrix;
 use cosmic::iced::{Alignment, Subscription};
 use cosmic::widget::{button, column, row, scrollable, text, container, text_input};
 use cosmic::{Application, Element, Task, Core, Action};
+use anyhow::Result;
+use matrix_sdk::ruma::events::room::message::MessageType;
+use matrix_sdk::ruma::events::room::MediaSource;
 use matrix_sdk_ui::sync_service::State as SyncServiceState;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -18,19 +21,41 @@ struct Claw {
     composer_text: String,
     composer_is_preview: bool,
     user_id: Option<String>,
+    media_cache: std::collections::HashMap<String, cosmic::iced::widget::image::Handle>,
+    creating_room: bool,
+    new_room_name: String,
+    error: Option<String>,
+    login_homeserver: String,
+    login_username: String,
+    login_password: String,
+    is_logging_in: bool,
+    is_initializing: bool,
 }
 
 #[derive(Debug, Clone)]
 enum Message {
     Matrix(matrix::MatrixEvent),
     RoomSelected(String),
-    EngineReady(matrix::MatrixEngine),
+    EngineReady(Result<matrix::MatrixEngine, String>),
     ComposerChanged(String),
     TogglePreview,
     SendMessage,
     MessageSent(Result<(), String>),
     LoadMore,
+    LoadMoreFinished(Result<(), String>),
     UserReady(Option<String>),
+    FetchMedia(MediaSource),
+    MediaFetched(String, Result<Vec<u8>, String>),
+    CreateRoom(String),
+    RoomCreated(Result<String, String>),
+    NewRoomNameChanged(String),
+    ToggleCreateRoom,
+    DismissError,
+    LoginHomeserverChanged(String),
+    LoginUsernameChanged(String),
+    LoginPasswordChanged(String),
+    SubmitLogin,
+    LoginFinished(Result<String, String>),
 }
 
 #[derive(Clone, Debug)]
@@ -70,18 +95,85 @@ impl Claw {
             if let Some(event) = item.as_event() {
                 if let Some(message) = event.content().as_message() {
                     let sender = event.sender().to_string();
-                    let body = message.body().to_string();
+                    let sender_name = match event.sender_profile() {
+                        matrix_sdk_ui::timeline::TimelineDetails::Ready(profile) => profile.display_name.as_deref().unwrap_or(&sender),
+                        _ => &sender,
+                    };
+                    let timestamp = event.timestamp().0.to_string();
+
+                    let reactions = event.reactions();
+                    let mut reaction_row = row().spacing(5);
+                    for (reaction, details) in reactions {
+                        let count = details.senders().count();
+                        reaction_row = reaction_row.push(
+                            container(text::body(format!("{} {}", reaction, count)).size(10))
+                                .padding(2)
+                        );
+                    }
 
                     let is_me = self.user_id.as_ref() == Some(&sender);
 
-                    let bubble = container(
-                        column()
-                            .spacing(2)
-                            .push(text::body(sender).size(10))
-                            .push(text::body(body))
-                    )
-                    .padding(10)
-                    .max_width(600);
+                    let mut sender_info = row().spacing(5).align_y(Alignment::Center);
+                    
+                    // Avatar placeholder
+                    sender_info = sender_info.push(
+                        container(text::body("👤").size(12))
+                            .padding(2)
+                    );
+                    
+                    sender_info = sender_info.push(text::body(sender_name.to_string()).size(10));
+                    sender_info = sender_info.push(text::body(timestamp).size(10));
+
+                    let mut bubble_col = column()
+                        .spacing(2)
+                        .push(sender_info);
+                    
+                    match message.msgtype() {
+                        MessageType::Image(image) => {
+                            let mxc_url = match &image.source {
+                                MediaSource::Plain(uri) => uri.to_string(),
+                                MediaSource::Encrypted(file) => file.url.to_string(),
+                            };
+                            bubble_col = bubble_col.push(text::body(format!("📷 Image: {}", image.body)));
+                            if let Some(handle) = self.media_cache.get(&mxc_url) {
+                                bubble_col = bubble_col.push(
+                                    cosmic::widget::image(handle.clone())
+                                        .width(300)
+                                );
+                            } else {
+                                bubble_col = bubble_col.push(
+                                    button::text("Download Image")
+                                        .on_press(Message::FetchMedia(image.source.clone()))
+                                );
+                            }
+                        }
+                        MessageType::File(file) => {
+                            let mxc_url = match &file.source {
+                                MediaSource::Plain(uri) => uri.to_string(),
+                                MediaSource::Encrypted(file) => file.url.to_string(),
+                            };
+                            bubble_col = bubble_col.push(text::body(format!("📁 File: {}", file.body)));
+                            if self.media_cache.contains_key(&mxc_url) {
+                                bubble_col = bubble_col.push(text::body("[Downloaded]"));
+                            } else {
+                                bubble_col = bubble_col.push(
+                                    button::text("Download File")
+                                        .on_press(Message::FetchMedia(file.source.clone()))
+                                );
+                            }
+                        }
+                        _ => {
+                            bubble_col = bubble_col.push(text::body(message.body().to_string()));
+                        }
+                    }
+                    
+                    if !reactions.is_empty() {
+                        bubble_col = bubble_col.push(reaction_row);
+                    }
+
+                    let bubble = container(bubble_col)
+                        .padding(10)
+                        .max_width(600);
 
                     let bubble_wrapper = container(bubble)
                         .width(cosmic::iced::Length::Fill)
@@ -161,6 +253,59 @@ impl Claw {
             .padding(10)
             .into()
     }
+
+    fn view_login(&self) -> Element<'_, Message> {
+        let mut content = column()
+            .spacing(10)
+            .padding(20)
+            .max_width(400)
+            .align_x(Alignment::Center)
+            .push(text::title1("Login to Matrix"));
+
+        if let Some(error) = &self.error {
+            content = content.push(
+                text::body(error.clone())
+            );
+        }
+
+        let homeserver_input = text_input("Homeserver", &self.login_homeserver);
+        let username_input = text_input("Username", &self.login_username);
+        let password_input = text_input("Password", &self.login_password).password();
+
+        let (homeserver_input, username_input, password_input) = if self.is_logging_in {
+            (homeserver_input, username_input, password_input)
+        } else {
+            (
+                homeserver_input.on_input(Message::LoginHomeserverChanged),
+                username_input.on_input(Message::LoginUsernameChanged),
+                password_input.on_input(Message::LoginPasswordChanged).on_submit(|_| Message::SubmitLogin),
+            )
+        };
+
+        content = content
+            .push(homeserver_input)
+            .push(username_input)
+            .push(password_input);
+
+        let login_button = if self.is_logging_in {
+            button::text("Logging in...")
+        } else {
+            let mut btn = button::text("Login");
+            if !self.login_homeserver.is_empty() && !self.login_username.is_empty() && !self.login_password.is_empty() {
+                btn = btn.on_press(Message::SubmitLogin);
+            }
+            btn
+        };
+
+        content = content.push(login_button);
+
+        container(content)
+            .width(cosmic::iced::Length::Fill)
+            .height(cosmic::iced::Length::Fill)
+            .align_x(Alignment::Center)
+            .align_y(Alignment::Center)
+            .into()
+    }
 }
 
 impl Application for Claw {
@@ -192,24 +337,42 @@ impl Application for Claw {
             composer_text: String::new(),
             composer_is_preview: false,
             user_id: None,
+            media_cache: std::collections::HashMap::new(),
+            creating_room: false,
+            new_room_name: String::new(),
+            error: None,
+            login_homeserver: "https://matrix.org".to_string(),
+            login_username: String::new(),
+            login_password: String::new(),
+            is_logging_in: false,
+            is_initializing: true,
         }, Task::perform(async move {
-            matrix::MatrixEngine::new(data_dir).await.expect("Failed to initialize Matrix engine")
-        }, |engine| Action::from(Message::EngineReady(engine))))
+            matrix::MatrixEngine::new(data_dir).await.map_err(|e| e.to_string())
+        }, |res| Action::from(Message::EngineReady(res))))
     }
 
     fn update(&mut self, message: Message) -> Task<Action<Self::Message>> {
         match message {
-            Message::EngineReady(engine) => {
-                self.matrix = Some(engine.clone());
-                return Task::perform(async move {
-                    let _ = engine.restore_session().await;
-                    let user_id = engine.client().await.user_id().map(|u| u.to_string());
-                    engine.start_sync().await;
-                    user_id
-                }, |user_id| Action::from(Message::UserReady(user_id)));
+            Message::EngineReady(res) => {
+                match res {
+                    Ok(engine) => {
+                        self.matrix = Some(engine.clone());
+                        return Task::perform(async move {
+                            let _ = engine.restore_session().await;
+                            let user_id = engine.client().await.user_id().map(|u| u.to_string());
+                            engine.start_sync().await;
+                            user_id
+                        }, |user_id| Action::from(Message::UserReady(user_id)));
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to initialize Matrix engine: {}", e));
+                        self.is_initializing = false;
+                    }
+                }
             }
             Message::UserReady(user_id) => {
                 self.user_id = user_id;
+                self.is_initializing = false;
             }
             Message::Matrix(event) => {
                 match event {
@@ -311,6 +474,9 @@ impl Application for Claw {
                     matrix::MatrixEvent::TimelineReset => {
                         self.timeline_items.clear();
                     }
+                    matrix::MatrixEvent::ReactionAdded { .. } => {
+                        // For now, we don't do anything specific as reactions are handled via TimelineDiff
+                    }
                 }
             }
             Message::LoadMore => {
@@ -320,7 +486,12 @@ impl Application for Claw {
                     return Task::perform(async move {
                         matrix.paginate_backwards(&room_id, 20).await
                             .map_err(|e| e.to_string())
-                    }, |_| Action::None);
+                    }, |res| Action::from(Message::LoadMoreFinished(res)));
+                }
+            }
+            Message::LoadMoreFinished(res) => {
+                if let Err(e) = res {
+                    self.error = Some(format!("Failed to load more messages: {}", e));
                 }
             }
             Message::RoomSelected(room_id) => {
@@ -358,7 +529,102 @@ impl Application for Claw {
                         self.composer_is_preview = false;
                     }
                     Err(e) => {
-                        eprintln!("Failed to send message: {}", e);
+                        self.error = Some(format!("Failed to send message: {}", e));
+                    }
+                }
+            }
+            Message::FetchMedia(source) => {
+                if let Some(matrix) = &self.matrix {
+                    let matrix = matrix.clone();
+                    let mxc_url = match &source {
+                        MediaSource::Plain(uri) => uri.to_string(),
+                        MediaSource::Encrypted(file) => file.url.to_string(),
+                    };
+                    return Task::perform(async move {
+                        matrix.fetch_media(source).await
+                            .map_err(|e| e.to_string())
+                    }, move |res| Action::from(Message::MediaFetched(mxc_url, res)));
+                }
+            }
+            Message::MediaFetched(mxc_url, res) => {
+                match res {
+                    Ok(data) => {
+                        self.media_cache.insert(mxc_url, cosmic::iced::widget::image::Handle::from_bytes(data));
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to fetch media: {}", e));
+                    }
+                }
+            }
+            Message::DismissError => {
+                self.error = None;
+            }
+            Message::ToggleCreateRoom => {
+                self.creating_room = !self.creating_room;
+                self.new_room_name.clear();
+            }
+            Message::NewRoomNameChanged(name) => {
+                self.new_room_name = name;
+            }
+            Message::CreateRoom(name) => {
+                if let Some(matrix) = &self.matrix {
+                    let matrix = matrix.clone();
+                    return Task::perform(async move {
+                        matrix.create_room(&name).await
+                            .map(|id| id.to_string())
+                            .map_err(|e| e.to_string())
+                    }, |res| Action::from(Message::RoomCreated(res)));
+                }
+            }
+            Message::RoomCreated(res) => {
+                match res {
+                    Ok(room_id) => {
+                        self.creating_room = false;
+                        self.new_room_name.clear();
+                        self.selected_room = Some(room_id);
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to create room: {}", e));
+                    }
+                }
+            }
+            Message::LoginHomeserverChanged(homeserver) => {
+                self.login_homeserver = homeserver;
+            }
+            Message::LoginUsernameChanged(username) => {
+                self.login_username = username;
+            }
+            Message::LoginPasswordChanged(password) => {
+                self.login_password = password;
+            }
+            Message::SubmitLogin => {
+                if let Some(matrix) = &self.matrix {
+                    self.is_logging_in = true;
+                    self.error = None;
+                    let matrix = matrix.clone();
+                    let homeserver = self.login_homeserver.clone();
+                    let username = self.login_username.clone();
+                    let password = self.login_password.clone();
+                    self.login_password.clear();
+                    
+                    return Task::perform(async move {
+                        matrix.login(&homeserver, &username, &password).await?;
+                        let user_id = matrix.client().await.user_id()
+                            .map(|u| u.to_string())
+                            .ok_or_else(|| anyhow::anyhow!("Failed to get user ID after login"))?;
+                        matrix.start_sync().await;
+                        Ok(user_id)
+                    }, |res: Result<String, anyhow::Error>| Action::from(Message::LoginFinished(res.map_err(|e| e.to_string()))));
+                }
+            }
+            Message::LoginFinished(res) => {
+                self.is_logging_in = false;
+                match res {
+                    Ok(user_id) => {
+                        self.user_id = Some(user_id);
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Login failed: {}", e));
                     }
                 }
             }
@@ -367,6 +633,19 @@ impl Application for Claw {
     }
 
     fn view(&self) -> Element<'_, Message> {
+        if self.is_initializing {
+            return container(text::title1("Initializing..."))
+                .width(cosmic::iced::Length::Fill)
+                .height(cosmic::iced::Length::Fill)
+                .align_x(Alignment::Center)
+                .align_y(Alignment::Center)
+                .into();
+        }
+
+        if self.user_id.is_none() {
+            return self.view_login();
+        }
+
         let status_text = match self.sync_status {
             matrix::SyncStatus::Disconnected => "Disconnected",
             matrix::SyncStatus::Syncing => "Syncing...",
@@ -375,10 +654,24 @@ impl Application for Claw {
         };
 
         let mut room_list = column().spacing(5);
+
+        let create_room_ui = if self.creating_room {
+            column().spacing(5)
+                .push(text_input("Room Name", &self.new_room_name)
+                    .on_input(Message::NewRoomNameChanged)
+                    .on_submit(|_| Message::CreateRoom(self.new_room_name.clone())))
+                .push(row().spacing(5)
+                    .push(button::text("Create").on_press(Message::CreateRoom(self.new_room_name.clone())))
+                    .push(button::text("Cancel").on_press(Message::ToggleCreateRoom)))
+        } else {
+            column().push(button::text("+ Create Room").on_press(Message::ToggleCreateRoom))
+        };
+
+        room_list = room_list.push(container(create_room_ui).padding(5));
+
         for room in &self.room_list {
             let name = room.name.as_deref().unwrap_or("Unknown Room");
             let room_id = room.id.clone();
-            let _is_selected = self.selected_room.as_ref() == Some(&room_id);
             
             let mut room_content = column().spacing(2);
             
@@ -448,6 +741,18 @@ impl Application for Claw {
             content = content.push(column().spacing(10).push(composer).push(controls));
         } else {
             content = content.align_x(Alignment::Center);
+        }
+
+        if let Some(error) = &self.error {
+            let error_bar = container(
+                row()
+                    .spacing(10)
+                    .align_y(Alignment::Center)
+                    .push(text::body(error))
+                    .push(button::text("Dismiss").on_press(Message::DismissError))
+            )
+            .padding(10);
+            content = content.push(error_bar);
         }
 
         row()

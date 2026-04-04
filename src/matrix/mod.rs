@@ -5,6 +5,8 @@ use matrix_sdk::{
     Client,
     matrix_auth::MatrixSession,
 };
+use matrix_sdk::media::{MediaRequest, MediaFormat};
+use matrix_sdk::ruma::events::room::MediaSource;
 use matrix_sdk::ruma::events::room::message::RoomMessageEventContent;
 use matrix_sdk::ruma::events::{AnySyncTimelineEvent, AnySyncMessageLikeEvent};
 use matrix_sdk_sqlite::SqliteStateStore;
@@ -18,6 +20,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use serde::{Deserialize, Serialize};
+use tracing::{info, warn};
+
+const BACKOFF_INITIAL: u64 = 2;
+const BACKOFF_MAX: u64 = 60;
+const BACKOFF_RESET_THRESHOLD: u64 = 30;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SyncStatus {
@@ -33,6 +40,7 @@ pub struct RoomData {
     pub name: Option<String>,
     pub last_message: Option<String>,
     pub unread_count: u32,
+    pub avatar_url: Option<String>,
 }
 
 pub type RoomListDiff = VectorDiff<RoomData>;
@@ -44,6 +52,7 @@ pub enum MatrixEvent {
     RoomDiff(RoomListDiff),
     TimelineDiff(TimelineDiff<TimelineItem>),
     TimelineReset,
+    ReactionAdded { room_id: String, event_id: String, reaction: String },
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -66,6 +75,7 @@ struct MatrixEngineInner {
     room_list_service: Option<Arc<RoomListService>>,
     timelines: HashMap<OwnedRoomId, Arc<Timeline>>,
     data_dir: PathBuf,
+    sync_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl std::fmt::Debug for MatrixEngineInner {
@@ -76,7 +86,25 @@ impl std::fmt::Debug for MatrixEngineInner {
             .field("room_list_service", &self.room_list_service.as_ref().map(|_| "RoomListService"))
             .field("timelines", &self.timelines.keys())
             .field("data_dir", &self.data_dir)
+            .field("sync_handle", &self.sync_handle.as_ref().map(|_| "JoinHandle"))
             .finish()
+    }
+}
+
+struct Backoff {
+    current: u64,
+    max: u64,
+}
+
+impl Backoff {
+    fn new(initial: u64, max: u64) -> Self {
+        Self { current: initial, max }
+    }
+
+    fn next(&mut self) -> u64 {
+        let next = self.current;
+        self.current = (self.current * 2).min(self.max);
+        next
     }
 }
 
@@ -103,6 +131,7 @@ impl MatrixEngine {
             room_list_service: None,
             timelines: HashMap::new(),
             data_dir,
+            sync_handle: None,
         };
 
         Ok(Self { inner: Arc::new(RwLock::new(inner)) })
@@ -237,6 +266,7 @@ impl MatrixEngine {
         let name = room.display_name().await.ok().map(|n| n.to_string());
         
         let unread_count = room.unread_notification_counts().notification_count as u32;
+        let avatar_url = room.avatar_url().map(|u| u.to_string());
         
         let last_message = if let Some(latest_event) = room.latest_event() {
             if let Ok(event) = latest_event.event().event.deserialize() {
@@ -258,16 +288,39 @@ impl MatrixEngine {
             name,
             last_message,
             unread_count,
+            avatar_url,
         })
     }
 
     pub async fn start_sync(&self) {
-        let inner = self.inner.read().await;
+        let mut inner = self.inner.write().await;
+        
+        if let Some(handle) = inner.sync_handle.take() {
+            handle.abort();
+            if let Some(sync_service) = &inner.sync_service {
+                let _ = sync_service.stop();
+            }
+        }
+
         if let Some(sync_service) = &inner.sync_service {
-            let sync_service: Arc<SyncService> = sync_service.clone();
-            tokio::spawn(async move {
-                sync_service.start().await;
+            let sync_service = sync_service.clone();
+            let handle = tokio::spawn(async move {
+                let mut backoff = Backoff::new(BACKOFF_INITIAL, BACKOFF_MAX);
+                loop {
+                    info!("Starting Matrix sync service...");
+                    let start_time = std::time::Instant::now();
+                    sync_service.start().await;
+                    
+                    if start_time.elapsed().as_secs() > BACKOFF_RESET_THRESHOLD {
+                        backoff = Backoff::new(BACKOFF_INITIAL, BACKOFF_MAX);
+                    }
+                    
+                    let delay = backoff.next();
+                    warn!("Matrix sync service stopped. Retrying in {} seconds...", delay);
+                    tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
+                }
             });
+            inner.sync_handle = Some(handle);
         }
     }
 
@@ -312,6 +365,32 @@ impl MatrixEngine {
 
         room.send(content).await?;
         Ok(())
+    }
+
+    pub async fn fetch_media(&self, source: MediaSource) -> Result<Vec<u8>> {
+        let client = self.client().await;
+        let content = client.media().get_media_content(&MediaRequest {
+            source,
+            format: MediaFormat::File,
+        }, true).await?;
+        Ok(content)
+    }
+
+    pub async fn create_room(&self, name: &str) -> Result<OwnedRoomId> {
+        let client = self.client().await;
+        let mut request = matrix_sdk::ruma::api::client::room::create_room::v3::Request::new();
+        request.name = Some(name.to_string());
+        let room = client.create_room(request).await?;
+        Ok(room.room_id().to_owned())
+    }
+
+    pub async fn login_oidc(&self) -> Result<url::Url> {
+        let client = self.client().await;
+        // In matrix-sdk 0.7, OIDC is handled via the oidc() method on matrix_auth()
+        // but it requires specific features and setup. 
+        // Given the "stub or placeholder" instruction for complexity:
+        let _ = client;
+        Err(anyhow::anyhow!("OIDC login is not yet implemented"))
     }
 }
 
