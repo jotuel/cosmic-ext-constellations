@@ -1,3 +1,5 @@
+#![recursion_limit = "256"]
+
 mod matrix;
 
 use cosmic::iced::{Alignment, Subscription};
@@ -103,8 +105,8 @@ impl Claw {
 
                     let reactions = event.reactions();
                     let mut reaction_row = row().spacing(5);
-                    for (reaction, details) in reactions {
-                        let count = details.senders().count();
+                    for (reaction, details) in reactions.iter() {
+                        let count = details.len();
                         reaction_row = reaction_row.push(
                             container(text::body(format!("{} {}", reaction, count)).size(10))
                                 .padding(2)
@@ -832,13 +834,17 @@ impl Application for Claw {
                         }
                         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                     };
-                    let (_entries, stream) = match room_list_service.all_rooms().await {
-                        Ok(rooms) => rooms.entries(),
+                    let rooms = match room_list_service.all_rooms().await {
+                        Ok(rooms) => rooms,
                         Err(_) => return,
                     };
+                    let (stream, controller) = rooms.entries_with_dynamic_adapters(20);
+
+                    use matrix_sdk_ui::room_list_service::filters;
+                    controller.set_filter(Box::new(filters::new_filter_all(vec![])));
 
                     use cosmic::iced::futures::StreamExt;
-                    let mut stream = stream;
+                    let mut stream = Box::pin(stream);
                     while let Some(diffs) = stream.next().await {
                         for diff in diffs {
                             let room_diff = match diff {
@@ -893,8 +899,8 @@ impl Application for Claw {
                                 }
                             };
 
-                            if let Some(rd) = room_diff {
-                                let _ = tx_rooms.send(Message::Matrix(matrix::MatrixEvent::RoomDiff(rd)));
+                            if let Some(diff) = room_diff {
+                                let _ = tx_rooms.send(Message::Matrix(matrix::MatrixEvent::RoomDiff(diff)));
                             }
                         }
                     }
@@ -947,14 +953,9 @@ impl Application for Claw {
     }
 }
 
-async fn get_room_data(engine: &matrix::MatrixEngine, entry: &matrix_sdk_ui::room_list_service::RoomListEntry) -> Option<matrix::RoomData> {
-    let room_id = match entry {
-        matrix_sdk_ui::room_list_service::RoomListEntry::Filled(id) => id,
-        matrix_sdk_ui::room_list_service::RoomListEntry::Invalidated(id) => id,
-        _ => return None,
-    };
-
+async fn get_room_data(engine: &matrix::MatrixEngine, room: &matrix_sdk_ui::room_list_service::Room) -> Option<matrix::RoomData> {
     let client = engine.client().await;
+    let room_id = room.id();
     let room = client.get_room(room_id)?;
     
     engine.fetch_room_data(&room).await.ok()

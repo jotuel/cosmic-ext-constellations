@@ -192,20 +192,8 @@ fn test_backoff_logic() {
     assert_eq!(backoff.next(), 60);
 }
 
-#[tokio::test]
-async fn test_start_sync_task_management() {
-    let tmp_dir = tempdir().unwrap();
-    let engine = MatrixEngine::new(tmp_dir.path().to_path_buf()).await.unwrap();
-    
-    // We need a real-ish client to build a SyncService
-    let client = Client::builder()
-        .homeserver_url("https://localhost:8080")
-        .build()
-        .await
-        .unwrap();
-    
-    // Set a dummy session so SyncService::builder doesn't fail
-    let session = matrix_sdk::matrix_auth::MatrixSession {
+fn create_test_session() -> matrix_sdk::matrix_auth::MatrixSession {
+    matrix_sdk::matrix_auth::MatrixSession {
         meta: matrix_sdk::SessionMeta {
             user_id: UserId::parse("@alice:localhost").unwrap(),
             device_id: matrix_sdk::ruma::OwnedDeviceId::from("DEVICEID"),
@@ -214,7 +202,25 @@ async fn test_start_sync_task_management() {
             access_token: "token".to_string(),
             refresh_token: None,
         },
-    };
+    }
+}
+
+#[tokio::test]
+async fn test_start_sync_task_management() {
+    let tmp_dir = tempdir().unwrap();
+    let engine = MatrixEngine::new(tmp_dir.path().to_path_buf()).await.unwrap();
+    
+    // We need a real-ish client to build a SyncService
+    let store_config = StoreConfig::new("test".to_owned());
+    let client = Client::builder()
+        .homeserver_url("https://localhost:8080")
+        .store_config(store_config)
+        .build()
+        .await
+        .unwrap();
+    
+    // Set a dummy session so SyncService::builder doesn't fail
+    let session = create_test_session();
     client.matrix_auth().restore_session(session).await.unwrap();
 
     let sync_service = Arc::new(SyncService::builder(client).build().await.unwrap());

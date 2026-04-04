@@ -5,13 +5,14 @@ use matrix_sdk::{
     ruma::{UserId, OwnedDeviceId, RoomId, OwnedRoomId},
     Client,
     matrix_auth::MatrixSession,
+    Room,
 };
-use matrix_sdk::media::{MediaRequest, MediaFormat};
+use matrix_sdk::media::MediaFormat;
 use matrix_sdk::ruma::events::room::MediaSource;
 use matrix_sdk::ruma::events::room::message::RoomMessageEventContent;
 use matrix_sdk::ruma::events::{AnySyncTimelineEvent, AnySyncMessageLikeEvent};
 use matrix_sdk_sqlite::SqliteStateStore;
-pub use matrix_sdk_ui::timeline::{Timeline, TimelineItem, PaginationOptions, VirtualTimelineItem};
+pub use matrix_sdk_ui::timeline::{Timeline, TimelineItem, VirtualTimelineItem, RoomExt};
 use matrix_sdk_ui::RoomListService;
 use matrix_sdk_ui::sync_service::SyncService;
 use eyeball_im::VectorDiff;
@@ -149,7 +150,7 @@ impl MatrixEngine {
         }
 
         let sqlite_store = SqliteStateStore::open(&store_path, None).await?;
-        let store_config = StoreConfig::default().state_store(sqlite_store);
+        let store_config = StoreConfig::new("claw".to_owned()).state_store(sqlite_store);
 
         let client = Client::builder()
             .homeserver_url("https://matrix.org")
@@ -179,7 +180,7 @@ impl MatrixEngine {
         let data_dir = self.inner.read().await.data_dir.clone();
         let store_path = data_dir.join("matrix-store.db");
         let sqlite_store = SqliteStateStore::open(&store_path, None).await?;
-        let store_config = StoreConfig::default().state_store(sqlite_store);
+        let store_config = StoreConfig::new("claw".to_owned()).state_store(sqlite_store);
 
         let client = Client::builder()
             .homeserver_url(&homeserver_url)
@@ -199,16 +200,13 @@ impl MatrixEngine {
         let room_list_service = sync_service.room_list_service();
         
         // Save session to oo7
-        if let Some(session) = client.session() {
-            let meta = session.meta();
-            let access_token = session.access_token();
-
+        if let Some(session) = client.matrix_auth().session() {
             let session_data = SessionData {
                 homeserver: homeserver_url,
-                user_id: meta.user_id.to_string(),
-                access_token: access_token.to_string(),
-                refresh_token: session.get_refresh_token().map(|t| t.to_string()),
-                device_id: meta.device_id.to_string(),
+                user_id: session.meta.user_id.to_string(),
+                access_token: session.tokens.access_token.to_string(),
+                refresh_token: session.tokens.refresh_token.clone(),
+                device_id: session.meta.device_id.to_string(),
             };
 
             let keyring = Keyring::new().await?;
@@ -257,7 +255,7 @@ impl MatrixEngine {
             let data_dir = self.inner.read().await.data_dir.clone();
             let store_path = data_dir.join("matrix-store.db");
             let sqlite_store = SqliteStateStore::open(&store_path, None).await?;
-            let store_config = StoreConfig::default().state_store(sqlite_store);
+            let store_config = StoreConfig::new("claw".to_owned()).state_store(sqlite_store);
 
             let client = Client::builder()
                 .homeserver_url(&session_data.homeserver)
@@ -295,13 +293,16 @@ impl MatrixEngine {
 
     pub async fn fetch_room_data(&self, room: &matrix_sdk::Room) -> Result<RoomData> {
         let id = room.room_id().to_string();
-        let name = room.display_name().await.ok().map(|n| n.to_string());
+        let name = match room.name() {
+            Some(n) => Some(n.to_string()),
+            None => room.cached_display_name().map(|n| n.to_string()),
+        };
         
         let unread_count = room.unread_notification_counts().notification_count as u32;
         let avatar_url = room.avatar_url().map(|u| u.to_string());
         
         let last_message = if let Some(latest_event) = room.latest_event() {
-            if let Ok(event) = latest_event.event().event.deserialize() {
+            if let Some(event) = latest_event.event().raw().deserialize().ok() {
                 match event {
                     AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::RoomMessage(e)) => {
                         e.as_original().map(|o| o.content.body().to_string())
@@ -386,9 +387,9 @@ impl MatrixEngine {
         }
 
         let rls = self.room_list_service().await.context("RoomListService not initialized")?;
-        let room = rls.room(&room_id).await
+        let room = rls.room(&room_id)
             .map_err(|e| anyhow::anyhow!("Failed to get room: {}", e))?;
-        let timeline = room.timeline().await;
+        let timeline = Arc::new(room.timeline_builder().build().await?);
         
         let mut inner = self.inner.write().await;
         inner.timelines.insert(room_id.to_owned(), timeline.clone());
@@ -398,7 +399,7 @@ impl MatrixEngine {
 
     pub async fn paginate_backwards(&self, room_id: &str, limit: u16) -> Result<()> {
         let timeline = self.timeline(room_id).await?;
-        timeline.paginate_backwards(PaginationOptions::simple_request(limit)).await?;
+        timeline.paginate_backwards(limit).await?;
         Ok(())
     }
 
@@ -420,10 +421,11 @@ impl MatrixEngine {
 
     pub async fn fetch_media(&self, source: MediaSource) -> Result<Vec<u8>> {
         let client = self.client().await;
-        let content = client.media().get_media_content(&MediaRequest {
+        let request = matrix_sdk::media::MediaRequestParameters {
             source,
             format: MediaFormat::File,
-        }, true).await?;
+        };
+        let content = client.media().get_media_content(&request, true).await?;
         Ok(content)
     }
 
