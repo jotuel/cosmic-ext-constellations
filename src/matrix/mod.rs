@@ -4,8 +4,9 @@ use matrix_sdk::{
     config::StoreConfig,
     ruma::{UserId, OwnedDeviceId, RoomId, OwnedRoomId},
     Client,
-    matrix_auth::MatrixSession,
+    SessionTokens,
 };
+use matrix_sdk::authentication::matrix::MatrixSession;
 use matrix_sdk::media::MediaFormat;
 use matrix_sdk::ruma::events::room::MediaSource;
 use matrix_sdk::ruma::events::room::message::RoomMessageEventContent;
@@ -245,7 +246,7 @@ impl MatrixEngine {
                     user_id: UserId::parse(session_data.user_id.clone())?,
                     device_id: OwnedDeviceId::from(session_data.device_id),
                 },
-                tokens: matrix_sdk::matrix_auth::MatrixSessionTokens {
+                tokens: SessionTokens {
                     access_token: session_data.access_token,
                     refresh_token: session_data.refresh_token,
                 },
@@ -262,7 +263,7 @@ impl MatrixEngine {
                 .build()
                 .await?;
 
-            client.matrix_auth().restore_session(matrix_session).await?;
+            client.restore_session(matrix_session).await?;
             
             let sync_service: Arc<SyncService> = Arc::new(SyncService::builder(client.clone()).build().await?);
             let room_list_service = sync_service.room_list_service();
@@ -301,7 +302,7 @@ impl MatrixEngine {
         let avatar_url = room.avatar_url().map(|u| u.to_string());
         
         let last_message = if let Some(latest_event) = room.latest_event() {
-            if let Some(event) = latest_event.event().raw().deserialize().ok() {
+            if let Ok(event) = latest_event.event().raw().deserialize() {
                 match event {
                     AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::RoomMessage(e)) => {
                         e.as_original().map(|o| o.content.body().to_string())
@@ -327,7 +328,7 @@ impl MatrixEngine {
     pub async fn start_sync(&self) -> Result<(), SyncError> {
         let client = self.client().await;
         let request = matrix_sdk::ruma::api::client::discovery::get_supported_versions::Request::new();
-        let versions = client.send(request, None).await?;
+        let versions = client.send(request).await?;
         let supports_sliding_sync = versions.unstable_features.contains_key("org.matrix.msc4186") || 
                                    versions.versions.iter().any(|v| v == "v1.11");
         

@@ -1,4 +1,4 @@
-#![recursion_limit = "256"]
+#![recursion_limit = "512"]
 
 mod matrix;
 
@@ -11,7 +11,7 @@ use matrix_sdk::ruma::events::room::MediaSource;
 use matrix_sdk_ui::sync_service::State as SyncServiceState;
 use std::path::PathBuf;
 use std::sync::Arc;
-use imbl::Vector;
+use eyeball_im::Vector;
 
 struct Claw {
     core: Core,
@@ -97,31 +97,52 @@ impl Claw {
             if let Some(event) = item.as_event() {
                 if let Some(message) = event.content().as_message() {
                     let sender = event.sender().to_string();
-                    let sender_name = match event.sender_profile() {
-                        matrix_sdk_ui::timeline::TimelineDetails::Ready(profile) => profile.display_name.as_deref().unwrap_or(&sender),
-                        _ => &sender,
+                    let (sender_name, avatar_url) = match event.sender_profile() {
+                        matrix_sdk_ui::timeline::TimelineDetails::Ready(profile) => (
+                            profile.display_name.as_deref().unwrap_or(&sender),
+                            profile.avatar_url.clone(),
+                        ),
+                        _ => (&sender as &str, None),
                     };
-                    let timestamp = event.timestamp().0.to_string();
+                    let ts_millis = u64::from(event.timestamp().0);
+                    let datetime = chrono::DateTime::from_timestamp_millis(ts_millis as i64).unwrap_or_default();
+                    let timestamp = datetime.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M:%S").to_string();
 
-                    let reactions = event.reactions();
                     let mut reaction_row = row().spacing(5);
-                    for (reaction, details) in reactions.iter() {
-                        let count = details.len();
-                        reaction_row = reaction_row.push(
-                            container(text::body(format!("{} {}", reaction, count)).size(10))
-                                .padding(2)
-                        );
+                    if let Some(reactions) = event.content().reactions() {
+                        for (reaction, details) in reactions.iter() {
+                            let count = details.len();
+                            reaction_row = reaction_row.push(
+                                container(text::body(format!("{} {}", reaction, count)).size(10))
+                                    .padding(2)
+                            );
+                        }
                     }
 
                     let is_me = self.user_id.as_ref() == Some(&sender);
 
                     let mut sender_info = row().spacing(5).align_y(Alignment::Center);
                     
-                    // Avatar placeholder
-                    sender_info = sender_info.push(
-                        container(text::body("👤").size(12))
-                            .padding(2)
-                    );
+                    if let Some(mxc_uri) = &avatar_url {
+                        let mxc_url = mxc_uri.to_string();
+                        if let Some(handle) = self.media_cache.get(&mxc_url) {
+                            sender_info = sender_info.push(
+                                cosmic::widget::image(handle.clone())
+                                    .width(20)
+                                    .height(20)
+                            );
+                        } else {
+                            sender_info = sender_info.push(
+                                container(text::body("👤").size(12))
+                                    .padding(2)
+                            );
+                        }
+                    } else {
+                        sender_info = sender_info.push(
+                            container(text::body("👤").size(12))
+                                .padding(2)
+                        );
+                    }
                     
                     sender_info = sender_info.push(text::body(sender_name.to_string()).size(10));
                     sender_info = sender_info.push(text::body(timestamp).size(10));
@@ -169,7 +190,7 @@ impl Claw {
                         }
                     }
                     
-                    if !reactions.is_empty() {
+                    if event.content().reactions().is_some_and(|r| !r.is_empty()) {
                         bubble_col = bubble_col.push(reaction_row);
                     }
 
@@ -184,7 +205,7 @@ impl Claw {
                     timeline = timeline.push(bubble_wrapper);
                 }
             } else if let Some(virt) = item.as_virtual() {
-                if let matrix::VirtualTimelineItem::DayDivider(_date) = virt {
+                if let matrix::VirtualTimelineItem::DateDivider(_date) = virt {
                     timeline = timeline.push(
                         container(text::body("--- Day Divider ---").size(12))
                             .width(cosmic::iced::Length::Fill)
@@ -207,15 +228,12 @@ impl Claw {
         
         for event in parser {
             match event {
-                pulldown_cmark::Event::Start(tag) => match tag {
-                    pulldown_cmark::Tag::Heading { .. } => {
-                        if row_has_content {
-                            preview_col = preview_col.push(current_row);
-                            current_row = row().spacing(0).align_y(Alignment::Center);
-                            row_has_content = false;
-                        }
+                pulldown_cmark::Event::Start(tag) => if let pulldown_cmark::Tag::Heading { .. } = tag {
+                    if row_has_content {
+                        preview_col = preview_col.push(current_row);
+                        current_row = row().spacing(0).align_y(Alignment::Center);
+                        row_has_content = false;
                     }
-                    _ => {}
                 },
                 pulldown_cmark::Event::End(tag) => match tag {
                     pulldown_cmark::TagEnd::Paragraph | pulldown_cmark::TagEnd::Heading(_) => {
@@ -444,6 +462,37 @@ impl Application for Claw {
                         }
                     }
                     matrix::MatrixEvent::TimelineDiff(diff) => {
+                        let mut tasks = Vec::new();
+                        let mut check_item = |item: &std::sync::Arc<matrix::TimelineItem>| {
+                            if let Some(event) = item.as_event() {
+                                if let matrix_sdk_ui::timeline::TimelineDetails::Ready(profile) = event.sender_profile() {
+                                    if let Some(avatar_url) = &profile.avatar_url {
+                                        let url_str = avatar_url.to_string();
+                                        if !self.media_cache.contains_key(&url_str) {
+                                            if let Some(matrix) = &self.matrix {
+                                                let matrix_clone = matrix.clone();
+                                                let mxc_url = url_str.clone();
+                                                let source = matrix_sdk::ruma::events::room::MediaSource::Plain(avatar_url.clone());
+                                                tasks.push(cosmic::iced::Task::perform(async move {
+                                                    matrix_clone.fetch_media(source).await.map_err(|e| e.to_string())
+                                                }, move |res| Message::MediaFetched(mxc_url.clone(), res).into()));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        };
+
+                        match &diff {
+                            eyeball_im::VectorDiff::Insert { value, .. } => check_item(value),
+                            eyeball_im::VectorDiff::Set { value, .. } => check_item(value),
+                            eyeball_im::VectorDiff::PushBack { value } => check_item(value),
+                            eyeball_im::VectorDiff::PushFront { value } => check_item(value),
+                            eyeball_im::VectorDiff::Append { values } => values.iter().for_each(&mut check_item),
+                            eyeball_im::VectorDiff::Reset { values } => values.iter().for_each(&mut check_item),
+                            _ => {}
+                        }
+
                         match diff {
                             eyeball_im::VectorDiff::Insert { index, value } => {
                                 if index <= self.timeline_items.len() {
@@ -486,6 +535,10 @@ impl Application for Claw {
                             eyeball_im::VectorDiff::Truncate { length } => {
                                 self.timeline_items.truncate(length);
                             }
+                        }
+
+                        if !tasks.is_empty() {
+                            return cosmic::iced::Task::batch(tasks);
                         }
                     }
                     matrix::MatrixEvent::TimelineReset => {
@@ -817,7 +870,8 @@ impl Application for Claw {
                             SyncServiceState::Idle => matrix::SyncStatus::Connected,
                             SyncServiceState::Running => matrix::SyncStatus::Syncing,
                             SyncServiceState::Terminated => matrix::SyncStatus::Disconnected,
-                            SyncServiceState::Error => {
+                            SyncServiceState::Offline => matrix::SyncStatus::Disconnected,
+                            SyncServiceState::Error(_) => {
                                 matrix::SyncStatus::Error("Sync error encountered. This may be due to missing server support for Sliding Sync (MSC4186) or network issues.".to_string())
                             }
                         };
@@ -937,7 +991,9 @@ impl Application for Claw {
 
                         use cosmic::iced::futures::StreamExt;
                         while let Some(diff) = stream.next().await {
-                            let _ = tx.send(Message::Matrix(matrix::MatrixEvent::TimelineDiff(diff)));
+                            for d in diff {
+                                let _ = tx.send(Message::Matrix(matrix::MatrixEvent::TimelineDiff(d)));
+                            }
                         }
                     });
 
@@ -953,9 +1009,9 @@ impl Application for Claw {
     }
 }
 
-async fn get_room_data(engine: &matrix::MatrixEngine, room: &matrix_sdk_ui::room_list_service::Room) -> Option<matrix::RoomData> {
+async fn get_room_data(engine: &matrix::MatrixEngine, room: &matrix_sdk::Room) -> Option<matrix::RoomData> {
     let client = engine.client().await;
-    let room_id = room.id();
+    let room_id = room.room_id();
     let room = client.get_room(room_id)?;
     
     engine.fetch_room_data(&room).await.ok()
