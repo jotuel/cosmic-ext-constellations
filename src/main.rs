@@ -833,6 +833,7 @@ impl Application for Constellations {
                 match res {
                     Ok(url) => {
                         tracing::info!("Opening URL: {}", redact_url(&url));
+                        let _ = open::that(url.as_str());
                         return Task::none();
                     }
                     Err(e) => {
