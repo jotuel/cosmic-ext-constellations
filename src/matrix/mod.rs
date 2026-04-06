@@ -436,10 +436,15 @@ impl MatrixEngine {
     }
 
     pub async fn login(&self, homeserver: &str, username: &str, password: &str) -> Result<()> {
-        let homeserver_url = if homeserver.starts_with("http") {
+        let homeserver_url = if homeserver.starts_with("https://")
+            || homeserver.starts_with("http://localhost")
+            || homeserver.starts_with("http://127.0.0.1")
+            || homeserver.starts_with("http://[::1]")
+        {
             homeserver.to_string()
         } else {
-            format!("https://{}", homeserver)
+            let stripped = homeserver.strip_prefix("http://").unwrap_or(homeserver);
+            format!("https://{}", stripped)
         };
 
         let data_dir = self.inner.read().await.data_dir.clone();
@@ -770,10 +775,15 @@ impl MatrixEngine {
     }
 
     pub async fn login_oidc(&self, homeserver: &str) -> Result<Url> {
-        let homeserver_url = if homeserver.starts_with("http") {
+        let homeserver_url = if homeserver.starts_with("https://")
+            || homeserver.starts_with("http://localhost")
+            || homeserver.starts_with("http://127.0.0.1")
+            || homeserver.starts_with("http://[::1]")
+        {
             homeserver.to_string()
         } else {
-            format!("https://{}", homeserver)
+            let stripped = homeserver.strip_prefix("http://").unwrap_or(homeserver);
+            format!("https://{}", stripped)
         };
 
         let data_dir = self.inner.read().await.data_dir.clone();
