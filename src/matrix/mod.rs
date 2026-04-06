@@ -2,22 +2,25 @@ use anyhow::{Context, Result};
 use thiserror::Error;
 use matrix_sdk::{
     config::StoreConfig,
-    ruma::{UserId, OwnedDeviceId, RoomId, OwnedRoomId},
+    ruma::{UserId, OwnedDeviceId, RoomId, OwnedRoomId, room::RoomType},
     Client,
     SessionTokens,
+    Room,
 };
 use matrix_sdk::authentication::matrix::MatrixSession;
 use matrix_sdk::media::MediaFormat;
 use matrix_sdk::ruma::events::room::MediaSource;
 use matrix_sdk::ruma::events::room::message::RoomMessageEventContent;
-use matrix_sdk::ruma::events::{AnySyncTimelineEvent, AnySyncMessageLikeEvent};
+use matrix_sdk::ruma::events::{AnySyncTimelineEvent, AnySyncMessageLikeEvent, SyncStateEvent};
+use matrix_sdk::ruma::events::space::child::SpaceChildEventContent;
+use matrix_sdk::ruma::events::space::parent::SpaceParentEventContent;
 use matrix_sdk_sqlite::SqliteStateStore;
 pub use matrix_sdk_ui::timeline::{Timeline, TimelineItem, VirtualTimelineItem, RoomExt};
-use matrix_sdk_ui::RoomListService;
+use matrix_sdk_ui::room_list_service::{RoomListService, RoomListDynamicEntriesController};
 use matrix_sdk_ui::sync_service::SyncService;
 use eyeball_im::VectorDiff;
 use oo7::Keyring;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -74,10 +77,89 @@ pub struct RoomData {
     pub last_message: Option<String>,
     pub unread_count: u32,
     pub avatar_url: Option<String>,
+    pub room_type: Option<RoomType>,
+    pub is_space: bool,
+    pub parent_space_id: Option<String>,
 }
 
 pub type RoomListDiff = VectorDiff<RoomData>;
 pub type TimelineDiff<T> = VectorDiff<Arc<T>>;
+
+#[derive(Debug, Default, Clone)]
+pub struct SpaceHierarchy {
+    /// Maps a space ID to its children (rooms or sub-spaces)
+    pub children: HashMap<OwnedRoomId, Vec<OwnedRoomId>>,
+    /// Maps a room/space ID to its parent spaces
+    pub parents: HashMap<OwnedRoomId, Vec<OwnedRoomId>>,
+    /// Set of all known space IDs
+    pub known_spaces: HashSet<OwnedRoomId>,
+}
+
+impl SpaceHierarchy {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn add_space(&mut self, space_id: OwnedRoomId) {
+        self.known_spaces.insert(space_id);
+    }
+
+    pub fn is_known_space(&self, room_id: &RoomId) -> bool {
+        self.known_spaces.contains(room_id)
+    }
+
+    pub fn add_child(&mut self, space_id: OwnedRoomId, child_id: OwnedRoomId) {
+        self.add_space(space_id.clone());
+        let children = self.children.entry(space_id.clone()).or_default();
+        if !children.contains(&child_id) {
+            children.push(child_id.clone());
+        }
+        
+        let parents = self.parents.entry(child_id).or_default();
+        if !parents.contains(&space_id) {
+            parents.push(space_id);
+        }
+    }
+
+    pub fn remove_child(&mut self, space_id: &RoomId, child_id: &RoomId) {
+        if let Some(children) = self.children.get_mut(space_id) {
+            children.retain(|id| id != child_id);
+        }
+        if let Some(parents) = self.parents.get_mut(child_id) {
+            parents.retain(|id| id != space_id);
+        }
+    }
+
+    pub fn is_in_space(&self, room_id: &RoomId, space_id: &RoomId) -> bool {
+        let mut visited = HashSet::new();
+        self.is_in_space_recursive(room_id, space_id, &mut visited)
+    }
+
+    fn is_in_space_recursive(
+        &self,
+        current_id: &RoomId,
+        target_space_id: &RoomId,
+        visited: &mut HashSet<OwnedRoomId>,
+    ) -> bool {
+        if current_id == target_space_id {
+            return true;
+        }
+
+        if !visited.insert(current_id.to_owned()) {
+            return false;
+        }
+
+        if let Some(parents) = self.parents.get(current_id) {
+            for parent in parents {
+                if self.is_in_space_recursive(parent, target_space_id, visited) {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum MatrixEvent {
@@ -106,9 +188,11 @@ struct MatrixEngineInner {
     client: Client,
     sync_service: Option<Arc<SyncService>>,
     room_list_service: Option<Arc<RoomListService>>,
+    room_list_controller: Option<Arc<RoomListDynamicEntriesController>>,
     timelines: HashMap<OwnedRoomId, Arc<Timeline>>,
     data_dir: PathBuf,
     sync_handle: Option<tokio::task::JoinHandle<()>>,
+    space_hierarchy: SpaceHierarchy,
 }
 
 impl std::fmt::Debug for MatrixEngineInner {
@@ -117,9 +201,11 @@ impl std::fmt::Debug for MatrixEngineInner {
             .field("client", &self.client)
             .field("sync_service", &self.sync_service.as_ref().map(|_| "SyncService"))
             .field("room_list_service", &self.room_list_service.as_ref().map(|_| "RoomListService"))
+            .field("room_list_controller", &self.room_list_controller.as_ref().map(|_| "RoomListDynamicEntriesController"))
             .field("timelines", &self.timelines.keys())
             .field("data_dir", &self.data_dir)
             .field("sync_handle", &self.sync_handle.as_ref().map(|_| "JoinHandle"))
+            .field("space_hierarchy", &self.space_hierarchy)
             .finish()
     }
 }
@@ -159,15 +245,79 @@ impl MatrixEngine {
             .await?;
 
         let inner = MatrixEngineInner {
-            client,
+            client: client.clone(),
             sync_service: None,
             room_list_service: None,
+            room_list_controller: None,
             timelines: HashMap::new(),
             data_dir,
             sync_handle: None,
+            space_hierarchy: SpaceHierarchy::new(),
         };
 
-        Ok(Self { inner: Arc::new(RwLock::new(inner)) })
+        let engine = Self { inner: Arc::new(RwLock::new(inner)) };
+        engine.setup_event_handlers(&client);
+        Ok(engine)
+    }
+
+    fn setup_event_handlers(&self, client: &Client) {
+        let inner_clone = self.inner.clone();
+        client.add_event_handler(move |event: SyncStateEvent<SpaceChildEventContent>, room: Room| {
+            let inner = inner_clone.clone();
+            async move {
+                let space_id = room.room_id().to_owned();
+                let child_id = match RoomId::parse(event.state_key()) {
+                    Ok(id) => id,
+                    Err(_) => return,
+                };
+                
+                let mut inner_write = inner.write().await;
+                match event {
+                    SyncStateEvent::Original(ev) => {
+                        if ev.content.via.is_empty() {
+                            inner_write.space_hierarchy.remove_child(&space_id, &child_id);
+                            info!("Space hierarchy updated: {} removed from {}", child_id, space_id);
+                        } else {
+                            inner_write.space_hierarchy.add_child(space_id.clone(), child_id.clone());
+                            info!("Space hierarchy updated: {} is child of {}", child_id, space_id);
+                        }
+                    }
+                    SyncStateEvent::Redacted(_) => {
+                        inner_write.space_hierarchy.remove_child(&space_id, &child_id);
+                        info!("Space hierarchy updated: {} removed from {} (redacted)", child_id, space_id);
+                    }
+                }
+            }
+        });
+
+        let inner_clone = self.inner.clone();
+        client.add_event_handler(move |event: SyncStateEvent<SpaceParentEventContent>, room: Room| {
+            let inner = inner_clone.clone();
+            async move {
+                let child_id = room.room_id().to_owned();
+                let parent_id = match RoomId::parse(event.state_key()) {
+                    Ok(id) => id,
+                    Err(_) => return,
+                };
+                
+                let mut inner_write = inner.write().await;
+                match event {
+                    SyncStateEvent::Original(ev) => {
+                        if ev.content.via.is_empty() {
+                            inner_write.space_hierarchy.remove_child(&parent_id, &child_id);
+                            info!("Space hierarchy updated: {} removed as parent of {}", parent_id, child_id);
+                        } else {
+                            inner_write.space_hierarchy.add_child(parent_id.clone(), child_id.clone());
+                            info!("Space hierarchy updated: {} is parent of {}", parent_id, child_id);
+                        }
+                    }
+                    SyncStateEvent::Redacted(_) => {
+                        inner_write.space_hierarchy.remove_child(&parent_id, &child_id);
+                        info!("Space hierarchy updated: {} removed as parent of {} (redacted)", parent_id, child_id);
+                    }
+                }
+            }
+        });
     }
 
     pub async fn login(&self, homeserver: &str, username: &str, password: &str) -> Result<()> {
@@ -221,6 +371,8 @@ impl MatrixEngine {
                 .await?;
         }
 
+        self.setup_event_handlers(&client);
+
         let mut inner = self.inner.write().await;
         inner.client = client;
         inner.sync_service = Some(sync_service);
@@ -268,6 +420,8 @@ impl MatrixEngine {
             let sync_service: Arc<SyncService> = Arc::new(SyncService::builder(client.clone()).build().await?);
             let room_list_service = sync_service.room_list_service();
             
+            self.setup_event_handlers(&client);
+
             let mut inner = self.inner.write().await;
             inner.client = client;
             inner.sync_service = Some(sync_service);
@@ -289,6 +443,37 @@ impl MatrixEngine {
 
     pub async fn room_list_service(&self) -> Option<Arc<RoomListService>> {
         self.inner.read().await.room_list_service.clone()
+    }
+
+    pub async fn set_room_list_controller(&self, controller: Arc<RoomListDynamicEntriesController>) {
+        let mut inner = self.inner.write().await;
+        inner.room_list_controller = Some(controller);
+    }
+
+    pub async fn update_room_list_filter(&self, selected_space: Option<OwnedRoomId>) -> Result<()> {
+        let inner = self.inner.read().await;
+        if let Some(controller) = &inner.room_list_controller {
+            use matrix_sdk_ui::room_list_service::filters;
+            
+            let filter: Box<dyn matrix_sdk_ui::room_list_service::filters::Filter + Send + Sync> = if let Some(space_id) = selected_space {
+                let hierarchy = inner.space_hierarchy.clone();
+                let space_id_clone = space_id.clone();
+                // Custom filter that checks if the room is in the selected space OR is a space itself
+                // This ensures the SpaceSwitcher always has access to all spaces.
+                Box::new(filters::new_filter_any(vec![
+                    Box::new(move |item: &matrix_sdk_ui::room_list_service::RoomListItem| {
+                        hierarchy.is_in_space(item.room_id(), &space_id_clone) ||
+                        hierarchy.is_known_space(item.room_id())
+                    })
+                ]))
+            } else {
+                // No space selected, show all rooms
+                Box::new(filters::new_filter_all(vec![]))
+            };
+            
+            controller.set_filter(filter);
+        }
+        Ok(())
     }
 
     pub async fn fetch_room_data(&self, room: &matrix_sdk::Room) -> Result<RoomData> {
@@ -316,12 +501,30 @@ impl MatrixEngine {
             None
         };
 
+        let room_type = room.room_type();
+        let is_space = room_type == Some(RoomType::Space);
+
+        if is_space {
+            let mut inner = self.inner.write().await;
+            inner.space_hierarchy.add_space(room.room_id().to_owned());
+        }
+
+        let parent_space_id = {
+            let inner = self.inner.read().await;
+            inner.space_hierarchy.parents.get(room.room_id())
+                .and_then(|parents| parents.first())
+                .map(|id| id.to_string())
+        };
+
         Ok(RoomData {
             id,
             name,
             last_message,
             unread_count,
             avatar_url,
+            room_type,
+            is_space,
+            parent_space_id,
         })
     }
 
@@ -435,6 +638,19 @@ impl MatrixEngine {
         request.name = Some(name.to_string());
         let room = client.create_room(request).await?;
         Ok(room.room_id().to_owned())
+    }
+
+    pub async fn is_in_space(&self, room_id: &RoomId, space_id: &RoomId) -> bool {
+        let inner = self.inner.read().await;
+        inner.space_hierarchy.is_in_space(room_id, space_id)
+    }
+
+    pub fn is_in_space_sync(&self, room_id: &RoomId, space_id: &RoomId) -> bool {
+        if let Ok(inner) = self.inner.try_read() {
+            inner.space_hierarchy.is_in_space(room_id, space_id)
+        } else {
+            false
+        }
     }
 
     pub async fn login_oidc(&self) -> Result<url::Url> {

@@ -6,6 +6,7 @@ use cosmic::iced::{Alignment, Subscription};
 use cosmic::widget::{button, column, row, scrollable, text, container, text_input};
 use cosmic::{Application, Element, Task, Core, Action};
 use anyhow::Result;
+use matrix_sdk::ruma::OwnedRoomId;
 use matrix_sdk::ruma::events::room::message::MessageType;
 use matrix_sdk::ruma::events::room::MediaSource;
 use matrix_sdk_ui::sync_service::State as SyncServiceState;
@@ -32,6 +33,7 @@ struct Constellations {
     login_password: String,
     is_logging_in: bool,
     is_initializing: bool,
+    selected_space: Option<OwnedRoomId>,
 }
 
 #[derive(Debug, Clone)]
@@ -58,6 +60,8 @@ enum Message {
     LoginPasswordChanged(String),
     SubmitLogin,
     LoginFinished(Result<String, matrix::SyncError>),
+    SelectSpace(Option<OwnedRoomId>),
+    NoOp,
 }
 
 #[derive(Clone, Debug)]
@@ -122,7 +126,7 @@ impl Constellations {
                     let is_me = self.user_id.as_ref() == Some(&sender);
 
                     let mut sender_info = row().spacing(5).align_y(Alignment::Center);
-                    
+
                     if let Some(mxc_uri) = &avatar_url {
                         let mxc_url = mxc_uri.to_string();
                         if let Some(handle) = self.media_cache.get(&mxc_url) {
@@ -143,14 +147,14 @@ impl Constellations {
                                 .padding(2)
                         );
                     }
-                    
+
                     sender_info = sender_info.push(text::body(sender_name.to_string()).size(10));
                     sender_info = sender_info.push(text::body(timestamp).size(10));
 
                     let mut bubble_col = column()
                         .spacing(2)
                         .push(sender_info);
-                    
+
                     match message.msgtype() {
                         MessageType::Image(image) => {
                             let mxc_url = match &image.source {
@@ -189,7 +193,7 @@ impl Constellations {
                             bubble_col = bubble_col.push(text::body(message.body().to_string()));
                         }
                     }
-                    
+
                     if event.content().reactions().is_some_and(|r| !r.is_empty()) {
                         bubble_col = bubble_col.push(reaction_row);
                     }
@@ -222,10 +226,10 @@ impl Constellations {
     fn view_preview(&self) -> Element<'_, Message> {
         let mut preview_col = column().spacing(10);
         let parser = pulldown_cmark::Parser::new(&self.composer_text);
-        
+
         let mut current_row = row().spacing(0).align_y(Alignment::Center);
         let mut row_has_content = false;
-        
+
         for event in parser {
             match event {
                 pulldown_cmark::Event::Start(tag) => if let pulldown_cmark::Tag::Heading { .. } = tag {
@@ -264,11 +268,11 @@ impl Constellations {
                 _ => {}
             }
         }
-        
+
         if row_has_content {
             preview_col = preview_col.push(current_row);
         }
-        
+
         container(scrollable(preview_col).height(100))
             .padding(10)
             .into()
@@ -342,6 +346,62 @@ impl Constellations {
         self.core.set_header_title(title.to_string());
         Task::none()
     }
+
+    fn view_space_switcher(&self) -> Element<'_, Message> {
+        let mut content = column().spacing(10).align_x(Alignment::Center);
+
+        // Global icon (All Rooms)
+        let is_global_selected = self.selected_space.is_none();
+        let global_container = container(text::body("🌐").size(24))
+            .padding(8)
+            .align_x(Alignment::Center);
+
+        let global_btn = if is_global_selected {
+            button::custom(global_container)
+        } else {
+            button::custom(global_container)
+                .on_press(Message::SelectSpace(None))
+        };
+
+        content = content.push(global_btn);
+
+        for space in self.room_list.iter().filter(|r| r.is_space) {
+            let space_id_str = space.id.clone();
+            let space_id = match matrix_sdk::ruma::RoomId::parse(space_id_str) {
+                Ok(id) => id.to_owned(),
+                Err(_) => continue,
+            };
+            let is_selected = self.selected_space.as_ref() == Some(&space_id);
+
+            let avatar: Element<'_, Message> = if let Some(url) = &space.avatar_url {
+                if let Some(handle) = self.media_cache.get(url) {
+                    cosmic::widget::image(handle.clone()).width(32).height(32).into()
+                } else {
+                    text::body(space.name.as_deref().unwrap_or("S").chars().next().unwrap_or('S').to_string()).size(24).into()
+                }
+            } else {
+                text::body(space.name.as_deref().unwrap_or("S").chars().next().unwrap_or('S').to_string()).size(24).into()
+            };
+
+            let space_container = container(avatar)
+                .padding(8)
+                .align_x(Alignment::Center);
+
+            let btn = if is_selected {
+                button::custom(space_container)
+            } else {
+                button::custom(space_container)
+                    .on_press(Message::SelectSpace(Some(space_id)))
+            };
+
+            content = content.push(btn);
+        }
+
+        container(scrollable(content))
+            .width(60)
+            .padding(5)
+            .into()
+    }
 }
 
 impl Application for Constellations {
@@ -363,8 +423,8 @@ impl Application for Constellations {
             .unwrap_or_else(|| PathBuf::from("."))
             .join("fi.joonastuomi.CosmicExtConstellations");
 
-        let mut app = Constellations { 
-            core: core.clone(), 
+        let mut app = Constellations {
+            core: core.clone(),
             matrix: None,
             sync_status: matrix::SyncStatus::Disconnected,
             room_list: Vec::new(),
@@ -382,6 +442,7 @@ impl Application for Constellations {
             login_password: String::new(),
             is_logging_in: false,
             is_initializing: true,
+            selected_space: None,
         };
 
         let title_task = app.update_title();
@@ -600,12 +661,12 @@ impl Application for Constellations {
                     if body.is_empty() {
                         return Task::none();
                     }
-                    
+
                     let html_body = matrix::markdown_to_html(&body);
-                    
+
                     let matrix = matrix.clone();
                     let room_id = room_id.clone();
-                    
+
                     return Task::perform(async move {
                         matrix.send_message(&room_id, body, Some(html_body)).await
                             .map_err(|e| e.to_string())
@@ -697,7 +758,7 @@ impl Application for Constellations {
                     let username = self.login_username.clone();
                     let password = self.login_password.clone();
                     self.login_password.clear();
-                    
+
                     return Task::perform(async move {
                         matrix.login(&homeserver, &username, &password).await?;
                         let user_id = matrix.client().await.user_id()
@@ -722,6 +783,16 @@ impl Application for Constellations {
                     }
                 }
             }
+            Message::SelectSpace(space_id) => {
+                self.selected_space = space_id.clone();
+                if let Some(matrix) = &self.matrix {
+                    let matrix = matrix.clone();
+                    return Task::perform(async move {
+                        let _ = matrix.update_room_list_filter(space_id).await;
+                    }, |_| Action::from(Message::NoOp));
+                }
+            }
+            Message::NoOp => {}
         }
         Task::none()
     }
@@ -764,34 +835,50 @@ impl Application for Constellations {
 
         room_list = room_list.push(container(create_room_ui).padding(5));
 
-        for room in &self.room_list {
+        let filtered_rooms = if let Some(selected_space) = &self.selected_space {
+            let mut rooms = Vec::new();
+            if let Some(matrix) = &self.matrix {
+                for room in self.room_list.iter().filter(|r| !r.is_space) {
+                    if let Ok(room_id) = matrix_sdk::ruma::RoomId::parse(&room.id) {
+                        if matrix.is_in_space_sync(&room_id, selected_space) {
+                            rooms.push(room);
+                        }
+                    }
+                }
+            }
+            rooms
+        } else {
+            self.room_list.iter().filter(|r| !r.is_space).collect()
+        };
+
+        for room in filtered_rooms {
             let name = room.name.as_deref().unwrap_or("Unknown Room");
             let room_id = room.id.clone();
-            
+
             let mut room_content = column().spacing(2);
-            
+
             let mut header = row().spacing(10).align_y(Alignment::Center);
             header = header.push(text::body("#"));
             header = header.push(text::body(name));
-            
+
             if room.unread_count > 0 {
                 header = header.push(text::body(format!("({})", room.unread_count)).size(12));
             }
-            
+
             room_content = room_content.push(header);
-            
+
             if let Some(last_msg) = &room.last_message {
                 let mut snippet = last_msg.clone();
                 if snippet.len() > 30 {
-                    snippet.truncate(27);
+                    snippet.truncate(26);
                     snippet.push_str("...");
                 }
                 room_content = room_content.push(text::body(snippet).size(12));
             }
-            
+
             let btn = button::custom(container(room_content).padding(5).width(cosmic::iced::Length::Fill))
                 .on_press(Message::RoomSelected(room_id));
-            
+
             room_list = room_list.push(btn);
         }
 
@@ -850,6 +937,7 @@ impl Application for Constellations {
         }
 
         row()
+            .push(self.view_space_switcher())
             .push(sidebar)
             .push(content)
             .into()
@@ -866,7 +954,7 @@ impl Application for Constellations {
             |wrapper| {
                 let engine = wrapper.0.clone();
                 let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-                
+
                 let tx_status = tx.clone();
                 let engine_status = engine.clone();
                 tokio::spawn(async move {
@@ -876,7 +964,7 @@ impl Application for Constellations {
                         }
                         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                     };
-                    
+
                     let mut status_stream = sync_service.state();
                     while let Some(status) = status_stream.next().await {
                         let sync_status = match status {
@@ -906,6 +994,8 @@ impl Application for Constellations {
                         Err(_) => return,
                     };
                     let (stream, controller) = rooms.entries_with_dynamic_adapters(20);
+                    let controller = Arc::new(controller);
+                    engine_rooms.set_room_list_controller(controller.clone()).await;
 
                     use matrix_sdk_ui::room_list_service::filters;
                     controller.set_filter(Box::new(filters::new_filter_all(vec![])));
@@ -986,7 +1076,7 @@ impl Application for Constellations {
                     let engine = wrapper.0.clone();
                     let room_id = room_id.clone();
                     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-                    
+
                     tokio::spawn(async move {
                         let timeline = match engine.timeline(&room_id).await {
                             Ok(t) => t,
@@ -995,7 +1085,7 @@ impl Application for Constellations {
 
                         let (items, mut stream) = timeline.subscribe().await;
                         let _ = tx.send(Message::Matrix(matrix::MatrixEvent::TimelineReset));
-                        
+
                         for (index, item) in items.into_iter().enumerate() {
                             let _ = tx.send(Message::Matrix(matrix::MatrixEvent::TimelineDiff(
                                 eyeball_im::VectorDiff::Insert { index, value: item }
@@ -1026,7 +1116,7 @@ async fn get_room_data(engine: &matrix::MatrixEngine, room: &matrix_sdk::Room) -
     let client = engine.client().await;
     let room_id = room.room_id();
     let room = client.get_room(room_id)?;
-    
+
     engine.fetch_room_data(&room).await.ok()
 }
 
