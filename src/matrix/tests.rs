@@ -250,10 +250,63 @@ fn test_sync_service_state_mapping() {
             SyncServiceState::Idle => SyncStatus::Connected,
             SyncServiceState::Running => SyncStatus::Syncing,
             SyncServiceState::Terminated => SyncStatus::Disconnected,
-            _ => unreachable!(),
+            SyncServiceState::Offline => SyncStatus::Disconnected,
+            SyncServiceState::Error(_) => SyncStatus::Error("Sync error encountered. This may be due to missing server support for Sliding Sync (MSC4186) or network issues.".to_string()),
         };
         assert_eq!(actual, expected);
     }
+}
+
+#[test]
+fn test_session_data_serialization() {
+    let session_data = SessionData {
+        homeserver: "https://matrix.org".to_string(),
+        user_id: "@alice:matrix.org".to_string(),
+        access_token: "access_token".to_string(),
+        refresh_token: Some("refresh_token".to_string()),
+        id_token: Some("id_token".to_string()),
+        device_id: "DEVICEID".to_string(),
+    };
+    let serialized = serde_json::to_string(&session_data).unwrap();
+    let deserialized: SessionData = serde_json::from_str(&serialized).unwrap();
+    assert_eq!(session_data.homeserver, deserialized.homeserver);
+    assert_eq!(session_data.user_id, deserialized.user_id);
+    assert_eq!(session_data.access_token, deserialized.access_token);
+    assert_eq!(session_data.refresh_token, deserialized.refresh_token);
+    assert_eq!(session_data.id_token, deserialized.id_token);
+    assert_eq!(session_data.device_id, deserialized.device_id);
+}
+
+#[tokio::test]
+async fn test_login_oidc_initiation_no_server() {
+    let tmp_dir = tempdir().unwrap();
+    let engine = MatrixEngine::new(tmp_dir.path().to_path_buf()).await.unwrap();
+    
+    let homeserver = "http://localhost:12345";
+    let result = engine.login_oidc(homeserver).await;
+    
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn test_complete_oidc_login_no_client() {
+    let tmp_dir = tempdir().unwrap();
+    let engine = MatrixEngine::new(tmp_dir.path().to_path_buf()).await.unwrap();
+    
+    let callback_url = Url::parse("com.system76.Claw://callback?code=test").unwrap();
+    let result = engine.complete_oidc_login(callback_url).await;
+    
+    assert!(result.is_err());
+    assert_eq!(result.unwrap_err().to_string(), "No OIDC login in progress");
+}
+
+#[tokio::test]
+async fn test_ipc_callback_trigger_failure() {
+    let test_uri = "com.system76.Claw://callback?code=test_code".to_string();
+    let result = crate::ipc::call_handle_callback(test_uri).await;
+    
+    // If no instance is running, it should fail to find the proxy.
+    assert!(result.is_err());
 }
 
 #[test]
@@ -282,13 +335,13 @@ fn test_backoff_logic() {
     assert_eq!(backoff.next(), 60);
 }
 
-fn create_test_session() -> MatrixSession {
-    MatrixSession {
+fn create_test_session() -> matrix_sdk::authentication::matrix::MatrixSession {
+    matrix_sdk::authentication::matrix::MatrixSession {
         meta: matrix_sdk::SessionMeta {
             user_id: UserId::parse("@alice:localhost").unwrap(),
             device_id: matrix_sdk::ruma::OwnedDeviceId::from("DEVICEID"),
         },
-        tokens: SessionTokens {
+        tokens: matrix_sdk::SessionTokens {
             access_token: "token".to_string(),
             refresh_token: None,
         },
@@ -311,7 +364,7 @@ async fn test_start_sync_task_management() {
     
     // Set a dummy session so SyncService::builder doesn't fail
     let session = create_test_session();
-    client.matrix_auth().restore_session(session, RoomLoadSettings::default()).await.unwrap();
+    client.restore_session(session).await.unwrap();
 
     let sync_service = Arc::new(SyncService::builder(client).build().await.unwrap());
     
