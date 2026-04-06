@@ -229,20 +229,7 @@ impl Backoff {
 
 impl MatrixEngine {
     pub async fn new(data_dir: PathBuf) -> Result<Self> {
-        let store_path = data_dir.join("matrix-store.db");
-        
-        if !data_dir.exists() {
-            std::fs::create_dir_all(&data_dir)?;
-        }
-
-        let sqlite_store = SqliteStateStore::open(&store_path, None).await?;
-        let store_config = StoreConfig::new("constellations".to_owned()).state_store(sqlite_store);
-
-        let client = Client::builder()
-            .homeserver_url("https://matrix.org")
-            .store_config(store_config)
-            .build()
-            .await?;
+        let client = Self::setup_client(data_dir.clone(), "https://matrix.org").await?;
 
         let inner = MatrixEngineInner {
             client: client.clone(),
@@ -328,15 +315,7 @@ impl MatrixEngine {
         };
 
         let data_dir = self.inner.read().await.data_dir.clone();
-        let store_path = data_dir.join("matrix-store.db");
-        let sqlite_store = SqliteStateStore::open(&store_path, None).await?;
-        let store_config = StoreConfig::new("constellations".to_owned()).state_store(sqlite_store);
-
-        let client = Client::builder()
-            .homeserver_url(&homeserver_url)
-            .store_config(store_config)
-            .build()
-            .await?;
+        let client = Self::setup_client(data_dir, &homeserver_url).await?;
 
         client
             .matrix_auth()
@@ -405,15 +384,7 @@ impl MatrixEngine {
             };
 
             let data_dir = self.inner.read().await.data_dir.clone();
-            let store_path = data_dir.join("matrix-store.db");
-            let sqlite_store = SqliteStateStore::open(&store_path, None).await?;
-            let store_config = StoreConfig::new("constellations".to_owned()).state_store(sqlite_store);
-
-            let client = Client::builder()
-                .homeserver_url(&session_data.homeserver)
-                .store_config(store_config)
-                .build()
-                .await?;
+            let client = Self::setup_client(data_dir, &session_data.homeserver).await?;
 
             client.restore_session(matrix_session).await?;
             
@@ -660,6 +631,25 @@ impl MatrixEngine {
         // Given the "stub or placeholder" instruction for complexity:
         let _ = client;
         Err(anyhow::anyhow!("OIDC login is not yet implemented"))
+    }
+
+    async fn setup_client(data_dir: PathBuf, homeserver_url: &str) -> Result<Client> {
+        let store_path = data_dir.join("matrix-store.db");
+
+        if !data_dir.exists() {
+            std::fs::create_dir_all(&data_dir)?;
+        }
+
+        let sqlite_store = SqliteStateStore::open(&store_path, None).await?;
+        let store_config = StoreConfig::new("constellations".to_owned()).state_store(sqlite_store);
+
+        let client = Client::builder()
+            .homeserver_url(homeserver_url)
+            .store_config(store_config)
+            .build()
+            .await?;
+
+        Ok(client)
     }
 }
 
