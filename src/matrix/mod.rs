@@ -242,7 +242,7 @@ impl MatrixEngine {
     async fn get_or_create_store_passphrase() -> Result<String> {
         let keyring = Keyring::new().await?;
         let mut attributes = HashMap::new();
-        attributes.insert("app_id", "com.system76.Claw");
+        attributes.insert("app_id", "fi.joonastuomi.Constellation");
         attributes.insert("type", "store-passphrase");
 
         let items = keyring.search_items(&attributes).await?;
@@ -259,7 +259,7 @@ impl MatrixEngine {
         let passphrase: String = buf.iter().map(|b| format!("{:02x}", b)).collect();
 
         keyring
-            .create_item("Claw Store Passphrase", &attributes, passphrase.as_bytes(), true)
+            .create_item("Constellation Store Passphrase", &attributes, passphrase.as_bytes(), true)
             .await?;
         Ok(passphrase)
     }

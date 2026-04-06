@@ -440,7 +440,7 @@ impl Application for Constellations {
 
         let mut tasks = Vec::new();
         tasks.push(Task::perform(async move {
-            matrix::MatrixEngine::new(data_dir).await.map_err(matrix::SyncError::from)
+            matrix::MatrixEngine::new(data_dir.expect("Error: No data dir")).await.map_err(matrix::SyncError::from)
         }, |res| Action::from(Message::EngineReady(res))));
 
         if let Some(uri) = flags {
