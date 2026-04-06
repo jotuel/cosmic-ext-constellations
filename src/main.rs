@@ -27,6 +27,7 @@ struct Constellations {
     composer_is_preview: bool,
     user_id: Option<String>,
     media_cache: std::collections::HashMap<String, cosmic::iced::widget::image::Handle>,
+    media_in_flight: std::collections::HashSet<String>,
     creating_room: bool,
     new_room_name: String,
     error: Option<String>,
@@ -587,6 +588,7 @@ impl Application for Constellations {
             composer_is_preview: false,
             user_id: None,
             media_cache: std::collections::HashMap::new(),
+            media_in_flight: std::collections::HashSet::new(),
             creating_room: false,
             new_room_name: String::new(),
             error: None,
@@ -650,6 +652,7 @@ impl Application for Constellations {
                     }
                     matrix::MatrixEvent::TimelineDiff(diff) => {
                         let mut tasks = Vec::new();
+                        let mut urls_to_fetch = Vec::new();
                         let mut check_item = |item: &std::sync::Arc<matrix::TimelineItem>| {
                             if let Some(event) = item.as_event() {
                                 if let matrix_sdk_ui::timeline::TimelineDetails::Ready(profile) =
@@ -657,6 +660,7 @@ impl Application for Constellations {
                                 {
                                     if let Some(avatar_url) = &profile.avatar_url {
                                         let url_str = avatar_url.to_string();
+<<<<<<< HEAD
                                         if !self.media_cache.contains_key(&url_str) {
                                             if let Some(matrix) = &self.matrix {
                                                 let matrix_clone = matrix.clone();
@@ -675,6 +679,10 @@ impl Application for Constellations {
                                                     },
                                                 ));
                                             }
+=======
+                                        if !self.media_cache.contains_key(&url_str) && !self.media_in_flight.contains(&url_str) {
+                                            urls_to_fetch.push((url_str, avatar_url.clone()));
+>>>>>>> refs/remotes/origin/perf/dedup-media-fetches-9186760583968428847
                                         }
                                     }
                                 }
@@ -695,7 +703,67 @@ impl Application for Constellations {
                             _ => {}
                         }
 
+<<<<<<< HEAD
                         self.timeline_items.apply_diff(diff);
+=======
+                        for (url_str, avatar_url) in urls_to_fetch {
+                            if !self.media_in_flight.contains(&url_str) {
+                                self.media_in_flight.insert(url_str.clone());
+                                if let Some(matrix) = &self.matrix {
+                                    let matrix_clone = matrix.clone();
+                                    let mxc_url = url_str.clone();
+                                    let source = matrix_sdk::ruma::events::room::MediaSource::Plain(avatar_url);
+                                    tasks.push(cosmic::iced::Task::perform(async move {
+                                        matrix_clone.fetch_media(source).await.map_err(|e| e.to_string())
+                                    }, move |res| Message::MediaFetched(mxc_url.clone(), res).into()));
+                                }
+                            }
+                        }
+
+                        match diff {
+                            eyeball_im::VectorDiff::Insert { index, value } => {
+                                if index <= self.timeline_items.len() {
+                                    self.timeline_items.insert(index, value);
+                                } else {
+                                    self.timeline_items.push_back(value);
+                                }
+                            }
+                            eyeball_im::VectorDiff::Remove { index } => {
+                                if index < self.timeline_items.len() {
+                                    self.timeline_items.remove(index);
+                                }
+                            }
+                            eyeball_im::VectorDiff::Set { index, value } => {
+                                if index < self.timeline_items.len() {
+                                    self.timeline_items.set(index, value);
+                                }
+                            }
+                            eyeball_im::VectorDiff::Reset { values } => {
+                                self.timeline_items = values;
+                            }
+                            eyeball_im::VectorDiff::PushBack { value } => {
+                                self.timeline_items.push_back(value);
+                            }
+                            eyeball_im::VectorDiff::PushFront { value } => {
+                                self.timeline_items.push_front(value);
+                            }
+                            eyeball_im::VectorDiff::PopBack => {
+                                self.timeline_items.pop_back();
+                            }
+                            eyeball_im::VectorDiff::PopFront => {
+                                self.timeline_items.pop_front();
+                            }
+                            eyeball_im::VectorDiff::Clear => {
+                                self.timeline_items.clear();
+                            }
+                            eyeball_im::VectorDiff::Append { values } => {
+                                self.timeline_items.extend(values);
+                            }
+                            eyeball_im::VectorDiff::Truncate { length } => {
+                                self.timeline_items.truncate(length);
+                            }
+                        }
+>>>>>>> refs/remotes/origin/perf/dedup-media-fetches-9186760583968428847
 
                         if !tasks.is_empty() {
                             return cosmic::iced::Task::batch(tasks);
@@ -779,6 +847,7 @@ impl Application for Constellations {
                         MediaSource::Plain(uri) => uri.to_string(),
                         MediaSource::Encrypted(file) => file.url.to_string(),
                     };
+<<<<<<< HEAD
                     return Task::perform(
                         async move { matrix.fetch_media(source).await.map_err(|e| e.to_string()) },
                         move |res| Action::from(Message::MediaFetched(mxc_url, res)),
@@ -791,6 +860,26 @@ impl Application for Constellations {
                         mxc_url,
                         cosmic::iced::widget::image::Handle::from_bytes(data),
                     );
+=======
+                    if !self.media_in_flight.contains(&mxc_url) {
+                        self.media_in_flight.insert(mxc_url.clone());
+                        return Task::perform(async move {
+                            matrix.fetch_media(source).await
+                                .map_err(|e| e.to_string())
+                        }, move |res| Action::from(Message::MediaFetched(mxc_url, res)));
+                    }
+                }
+            }
+            Message::MediaFetched(mxc_url, res) => {
+                self.media_in_flight.remove(&mxc_url);
+                match res {
+                    Ok(data) => {
+                        self.media_cache.insert(mxc_url, cosmic::iced::widget::image::Handle::from_bytes(data));
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to fetch media: {}", e));
+                    }
+>>>>>>> refs/remotes/origin/perf/dedup-media-fetches-9186760583968428847
                 }
                 Err(e) => {
                     self.error = Some(format!("Failed to fetch media: {}", e));
