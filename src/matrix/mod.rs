@@ -788,7 +788,8 @@ impl MatrixEngine {
 
         let data_dir = self.inner.read().await.data_dir.clone();
         let store_path = data_dir.join("matrix-store.db");
-        let sqlite_store = SqliteStateStore::open(&store_path, None).await?;
+        let passphrase = Self::get_or_create_store_passphrase().await?;
+        let sqlite_store = SqliteStateStore::open(&store_path, Some(passphrase.as_str())).await?;
         let store_config = StoreConfig::new("constellations".to_owned()).state_store(sqlite_store);
 
         let client = Client::builder()
@@ -864,7 +865,8 @@ impl MatrixEngine {
             std::fs::create_dir_all(&data_dir)?;
         }
 
-        let sqlite_store = SqliteStateStore::open(&store_path, None).await?;
+        let passphrase = Self::get_or_create_store_passphrase().await?;
+        let sqlite_store = SqliteStateStore::open(&store_path, Some(passphrase.as_str())).await?;
         let store_config = StoreConfig::new("constellations".to_owned()).state_store(sqlite_store);
 
         let client = Client::builder()
