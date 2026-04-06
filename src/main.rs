@@ -87,6 +87,108 @@ impl PartialEq for MatrixEngineWrapper {
 
 impl Eq for MatrixEngineWrapper {}
 
+trait ApplyVectorDiffExt<T> {
+    fn apply_diff(&mut self, diff: eyeball_im::VectorDiff<T>);
+}
+
+impl<T: Clone> ApplyVectorDiffExt<T> for Vec<T> {
+    fn apply_diff(&mut self, diff: eyeball_im::VectorDiff<T>) {
+        match diff {
+            eyeball_im::VectorDiff::Insert { index, value } => {
+                if index <= self.len() {
+                    self.insert(index, value);
+                } else {
+                    self.push(value);
+                }
+            }
+            eyeball_im::VectorDiff::Remove { index } => {
+                if index < self.len() {
+                    self.remove(index);
+                }
+            }
+            eyeball_im::VectorDiff::Set { index, value } => {
+                if index < self.len() {
+                    self[index] = value;
+                }
+            }
+            eyeball_im::VectorDiff::Reset { values } => {
+                *self = values.into_iter().collect();
+            }
+            eyeball_im::VectorDiff::PushBack { value } => {
+                self.push(value);
+            }
+            eyeball_im::VectorDiff::PushFront { value } => {
+                self.insert(0, value);
+            }
+            eyeball_im::VectorDiff::PopBack => {
+                self.pop();
+            }
+            eyeball_im::VectorDiff::PopFront => {
+                if !self.is_empty() {
+                    self.remove(0);
+                }
+            }
+            eyeball_im::VectorDiff::Clear => {
+                self.clear();
+            }
+            eyeball_im::VectorDiff::Append { values } => {
+                self.extend(values);
+            }
+            eyeball_im::VectorDiff::Truncate { length } => {
+                self.truncate(length);
+            }
+        }
+    }
+}
+
+impl<T: Clone> ApplyVectorDiffExt<T> for eyeball_im::Vector<T> {
+    fn apply_diff(&mut self, diff: eyeball_im::VectorDiff<T>) {
+        match diff {
+            eyeball_im::VectorDiff::Insert { index, value } => {
+                if index <= self.len() {
+                    self.insert(index, value);
+                } else {
+                    self.push_back(value);
+                }
+            }
+            eyeball_im::VectorDiff::Remove { index } => {
+                if index < self.len() {
+                    self.remove(index);
+                }
+            }
+            eyeball_im::VectorDiff::Set { index, value } => {
+                if index < self.len() {
+                    self.set(index, value);
+                }
+            }
+            eyeball_im::VectorDiff::Reset { values } => {
+                *self = values;
+            }
+            eyeball_im::VectorDiff::PushBack { value } => {
+                self.push_back(value);
+            }
+            eyeball_im::VectorDiff::PushFront { value } => {
+                self.push_front(value);
+            }
+            eyeball_im::VectorDiff::PopBack => {
+                self.pop_back();
+            }
+            eyeball_im::VectorDiff::PopFront => {
+                self.pop_front();
+            }
+            eyeball_im::VectorDiff::Clear => {
+                self.clear();
+            }
+            eyeball_im::VectorDiff::Append { values } => {
+                self.extend(values);
+            }
+            eyeball_im::VectorDiff::Truncate { length } => {
+                self.truncate(length);
+            }
+        }
+    }
+}
+
 impl Constellations {
     fn view_timeline(&self) -> Element<'_, Message> {
         let mut timeline = column().spacing(10).width(cosmic::iced::Length::Fill);
@@ -517,51 +619,7 @@ impl Application for Constellations {
                         self.sync_status = status;
                     }
                     matrix::MatrixEvent::RoomDiff(diff) => {
-                        match diff {
-                            eyeball_im::VectorDiff::Insert { index, value } => {
-                                if index <= self.room_list.len() {
-                                    self.room_list.insert(index, value);
-                                } else {
-                                    self.room_list.push(value);
-                                }
-                            }
-                            eyeball_im::VectorDiff::Remove { index } => {
-                                if index < self.room_list.len() {
-                                    self.room_list.remove(index);
-                                }
-                            }
-                            eyeball_im::VectorDiff::Set { index, value } => {
-                                if index < self.room_list.len() {
-                                    self.room_list[index] = value;
-                                }
-                            }
-                            eyeball_im::VectorDiff::Reset { values } => {
-                                self.room_list = values.into_iter().collect();
-                            }
-                            eyeball_im::VectorDiff::PushBack { value } => {
-                                self.room_list.push(value);
-                            }
-                            eyeball_im::VectorDiff::PushFront { value } => {
-                                self.room_list.insert(0, value);
-                            }
-                            eyeball_im::VectorDiff::PopBack => {
-                                self.room_list.pop();
-                            }
-                            eyeball_im::VectorDiff::PopFront => {
-                                if !self.room_list.is_empty() {
-                                    self.room_list.remove(0);
-                                }
-                            }
-                            eyeball_im::VectorDiff::Clear => {
-                                self.room_list.clear();
-                            }
-                            eyeball_im::VectorDiff::Append { values } => {
-                                self.room_list.extend(values);
-                            }
-                            eyeball_im::VectorDiff::Truncate { length } => {
-                                self.room_list.truncate(length);
-                            }
-                        }
+                        self.room_list.apply_diff(diff);
                         let _ = self.update_title();
                     }
                     matrix::MatrixEvent::TimelineDiff(diff) => {
@@ -596,49 +654,7 @@ impl Application for Constellations {
                             _ => {}
                         }
 
-                        match diff {
-                            eyeball_im::VectorDiff::Insert { index, value } => {
-                                if index <= self.timeline_items.len() {
-                                    self.timeline_items.insert(index, value);
-                                } else {
-                                    self.timeline_items.push_back(value);
-                                }
-                            }
-                            eyeball_im::VectorDiff::Remove { index } => {
-                                if index < self.timeline_items.len() {
-                                    self.timeline_items.remove(index);
-                                }
-                            }
-                            eyeball_im::VectorDiff::Set { index, value } => {
-                                if index < self.timeline_items.len() {
-                                    self.timeline_items.set(index, value);
-                                }
-                            }
-                            eyeball_im::VectorDiff::Reset { values } => {
-                                self.timeline_items = values;
-                            }
-                            eyeball_im::VectorDiff::PushBack { value } => {
-                                self.timeline_items.push_back(value);
-                            }
-                            eyeball_im::VectorDiff::PushFront { value } => {
-                                self.timeline_items.push_front(value);
-                            }
-                            eyeball_im::VectorDiff::PopBack => {
-                                self.timeline_items.pop_back();
-                            }
-                            eyeball_im::VectorDiff::PopFront => {
-                                self.timeline_items.pop_front();
-                            }
-                            eyeball_im::VectorDiff::Clear => {
-                                self.timeline_items.clear();
-                            }
-                            eyeball_im::VectorDiff::Append { values } => {
-                                self.timeline_items.extend(values);
-                            }
-                            eyeball_im::VectorDiff::Truncate { length } => {
-                                self.timeline_items.truncate(length);
-                            }
-                        }
+                        self.timeline_items.apply_diff(diff);
 
                         if !tasks.is_empty() {
                             return cosmic::iced::Task::batch(tasks);
