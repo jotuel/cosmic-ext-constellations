@@ -106,127 +106,144 @@ impl Constellations {
         for item in &self.timeline_items {
             if let Some(event) = item.as_event() {
                 if let Some(message) = event.content().as_message() {
-                    let sender = event.sender().to_string();
-                    let (sender_name, avatar_url) = match event.sender_profile() {
-                        matrix_sdk_ui::timeline::TimelineDetails::Ready(profile) => (
-                            profile.display_name.as_deref().unwrap_or(&sender),
-                            profile.avatar_url.clone(),
-                        ),
-                        _ => (&sender as &str, None),
-                    };
-                    let ts_millis = u64::from(event.timestamp().0);
-                    let datetime = chrono::DateTime::from_timestamp_millis(ts_millis as i64).unwrap_or_default();
-                    let timestamp = datetime.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M:%S").to_string();
-
-                    let mut reaction_row = row().spacing(5);
-                    if let Some(reactions) = event.content().reactions() {
-                        for (reaction, details) in reactions.iter() {
-                            let count = details.len();
-                            reaction_row = reaction_row.push(
-                                container(text::body(format!("{} {}", reaction, count)).size(10))
-                                    .padding(2)
-                            );
-                        }
-                    }
-
-                    let is_me = self.user_id.as_ref() == Some(&sender);
-
-                    let mut sender_info = row().spacing(5).align_y(Alignment::Center);
-
-                    if let Some(mxc_uri) = &avatar_url {
-                        let mxc_url = mxc_uri.to_string();
-                        if let Some(handle) = self.media_cache.get(&mxc_url) {
-                            sender_info = sender_info.push(
-                                cosmic::widget::image(handle.clone())
-                                    .width(20)
-                                    .height(20)
-                            );
-                        } else {
-                            sender_info = sender_info.push(
-                                container(text::body("👤").size(12))
-                                    .padding(2)
-                            );
-                        }
-                    } else {
-                        sender_info = sender_info.push(
-                            container(text::body("👤").size(12))
-                                .padding(2)
-                        );
-                    }
-
-                    sender_info = sender_info.push(text::body(sender_name.to_string()).size(10));
-                    sender_info = sender_info.push(text::body(timestamp).size(10));
-
-                    let mut bubble_col = column()
-                        .spacing(2)
-                        .push(sender_info);
-
-                    match message.msgtype() {
-                        MessageType::Image(image) => {
-                            let mxc_url = match &image.source {
-                                MediaSource::Plain(uri) => uri.to_string(),
-                                MediaSource::Encrypted(file) => file.url.to_string(),
-                            };
-                            bubble_col = bubble_col.push(text::body(format!("📷 Image: {}", image.body)));
-                            if let Some(handle) = self.media_cache.get(&mxc_url) {
-                                bubble_col = bubble_col.push(
-                                    cosmic::widget::image(handle.clone())
-                                        .width(300)
-                                );
-                            } else {
-                                bubble_col = bubble_col.push(
-                                    button::text("Download Image")
-                                        .on_press(Message::FetchMedia(image.source.clone()))
-                                );
-                            }
-                        }
-                        MessageType::File(file) => {
-                            let mxc_url = match &file.source {
-                                MediaSource::Plain(uri) => uri.to_string(),
-                                MediaSource::Encrypted(file) => file.url.to_string(),
-                            };
-                            bubble_col = bubble_col.push(text::body(format!("📁 File: {}", file.body)));
-                            if self.media_cache.contains_key(&mxc_url) {
-                                bubble_col = bubble_col.push(text::body("[Downloaded]"));
-                            } else {
-                                bubble_col = bubble_col.push(
-                                    button::text("Download File")
-                                        .on_press(Message::FetchMedia(file.source.clone()))
-                                );
-                            }
-                        }
-                        _ => {
-                            bubble_col = bubble_col.push(text::body(message.body().to_string()));
-                        }
-                    }
-
-                    if event.content().reactions().is_some_and(|r| !r.is_empty()) {
-                        bubble_col = bubble_col.push(reaction_row);
-                    }
-
-                    let bubble = container(bubble_col)
-                        .padding(10)
-                        .max_width(600);
-
-                    let bubble_wrapper = container(bubble)
-                        .width(cosmic::iced::Length::Fill)
-                        .align_x(if is_me { Alignment::End } else { Alignment::Start });
-
-                    timeline = timeline.push(bubble_wrapper);
+                    timeline = timeline.push(self.view_timeline_event(event, message));
                 }
             } else if let Some(virt) = item.as_virtual() {
-                if let matrix::VirtualTimelineItem::DateDivider(_date) = virt {
-                    timeline = timeline.push(
-                        container(text::body("--- Day Divider ---").size(12))
-                            .width(cosmic::iced::Length::Fill)
-                            .align_x(Alignment::Center)
-                            .padding(10)
-                    );
+                if let Some(el) = self.view_timeline_virtual(virt) {
+                    timeline = timeline.push(el);
                 }
             }
         }
 
         scrollable(timeline).height(cosmic::iced::Length::Fill).into()
+    }
+
+    fn view_timeline_event<'a>(
+        &'a self,
+        event: &'a matrix_sdk_ui::timeline::EventTimelineItem,
+        message: &'a matrix_sdk::ruma::events::room::message::MessageEventContent,
+    ) -> Element<'a, Message> {
+        let sender = event.sender().to_string();
+        let (sender_name, avatar_url) = match event.sender_profile() {
+            matrix_sdk_ui::timeline::TimelineDetails::Ready(profile) => (
+                profile.display_name.as_deref().unwrap_or(&sender),
+                profile.avatar_url.clone(),
+            ),
+            _ => (&sender as &str, None),
+        };
+        let ts_millis = u64::from(event.timestamp().0);
+        let datetime = chrono::DateTime::from_timestamp_millis(ts_millis as i64).unwrap_or_default();
+        let timestamp = datetime.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M:%S").to_string();
+
+        let mut reaction_row = row().spacing(5);
+        if let Some(reactions) = event.content().reactions() {
+            for (reaction, details) in reactions.iter() {
+                let count = details.len();
+                reaction_row = reaction_row.push(
+                    container(text::body(format!("{} {}", reaction, count)).size(10))
+                        .padding(2)
+                );
+            }
+        }
+
+        let is_me = self.user_id.as_ref() == Some(&sender);
+
+        let mut sender_info = row().spacing(5).align_y(Alignment::Center);
+
+        if let Some(mxc_uri) = &avatar_url {
+            let mxc_url = mxc_uri.to_string();
+            if let Some(handle) = self.media_cache.get(&mxc_url) {
+                sender_info = sender_info.push(
+                    cosmic::widget::image(handle.clone())
+                        .width(20)
+                        .height(20)
+                );
+            } else {
+                sender_info = sender_info.push(
+                    container(text::body("👤").size(12))
+                        .padding(2)
+                );
+            }
+        } else {
+            sender_info = sender_info.push(
+                container(text::body("👤").size(12))
+                    .padding(2)
+            );
+        }
+
+        sender_info = sender_info.push(text::body(sender_name.to_string()).size(10));
+        sender_info = sender_info.push(text::body(timestamp).size(10));
+
+        let mut bubble_col = column()
+            .spacing(2)
+            .push(sender_info);
+
+        match message.msgtype() {
+            MessageType::Image(image) => {
+                let mxc_url = match &image.source {
+                    MediaSource::Plain(uri) => uri.to_string(),
+                    MediaSource::Encrypted(file) => file.url.to_string(),
+                };
+                bubble_col = bubble_col.push(text::body(format!("📷 Image: {}", image.body)));
+                if let Some(handle) = self.media_cache.get(&mxc_url) {
+                    bubble_col = bubble_col.push(
+                        cosmic::widget::image(handle.clone())
+                            .width(300)
+                    );
+                } else {
+                    bubble_col = bubble_col.push(
+                        button::text("Download Image")
+                            .on_press(Message::FetchMedia(image.source.clone()))
+                    );
+                }
+            }
+            MessageType::File(file) => {
+                let mxc_url = match &file.source {
+                    MediaSource::Plain(uri) => uri.to_string(),
+                    MediaSource::Encrypted(file) => file.url.to_string(),
+                };
+                bubble_col = bubble_col.push(text::body(format!("📁 File: {}", file.body)));
+                if self.media_cache.contains_key(&mxc_url) {
+                    bubble_col = bubble_col.push(text::body("[Downloaded]"));
+                } else {
+                    bubble_col = bubble_col.push(
+                        button::text("Download File")
+                            .on_press(Message::FetchMedia(file.source.clone()))
+                    );
+                }
+            }
+            _ => {
+                bubble_col = bubble_col.push(text::body(message.body().to_string()));
+            }
+        }
+
+        if event.content().reactions().is_some_and(|r| !r.is_empty()) {
+            bubble_col = bubble_col.push(reaction_row);
+        }
+
+        let bubble = container(bubble_col)
+            .padding(10)
+            .max_width(600);
+
+        let bubble_wrapper = container(bubble)
+            .width(cosmic::iced::Length::Fill)
+            .align_x(if is_me { Alignment::End } else { Alignment::Start });
+
+        bubble_wrapper.into()
+    }
+
+    fn view_timeline_virtual<'a>(&'a self, virt: &'a matrix::VirtualTimelineItem) -> Option<Element<'a, Message>> {
+        if let matrix::VirtualTimelineItem::DateDivider(_date) = virt {
+            Some(
+                container(text::body("--- Day Divider ---").size(12))
+                    .width(cosmic::iced::Length::Fill)
+                    .align_x(Alignment::Center)
+                    .padding(10)
+                    .into()
+            )
+        } else {
+            None
+        }
     }
 
     fn view_preview(&self) -> Element<'_, Message> {
