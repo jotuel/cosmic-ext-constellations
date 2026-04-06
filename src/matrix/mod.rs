@@ -6,6 +6,7 @@ use matrix_sdk::{
     Client,
     SessionTokens,
     Room,
+    SessionChange,
 };
 use matrix_sdk::authentication::matrix::MatrixSession;
 use matrix_sdk::media::MediaFormat;
@@ -26,10 +27,13 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use serde::{Deserialize, Serialize};
 use tracing::{info, error};
+use url::Url;
 
 const BACKOFF_INITIAL: u64 = 2;
 const BACKOFF_MAX: u64 = 60;
 const BACKOFF_RESET_THRESHOLD: u64 = 30;
+const OIDC_CALLBACK_URL: &str = "fi.joonastuomi.CosmicExtConstellations://callback";
+const OIDC_CLIENT_ID: &str = "fi.joonastuomi.CosmicExtConstellations";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SyncStatus {
@@ -176,7 +180,10 @@ struct SessionData {
     user_id: String,
     access_token: String,
     refresh_token: Option<String>,
+    id_token: Option<String>,
     device_id: String,
+    #[serde(default)]
+    is_oidc: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -193,6 +200,8 @@ struct MatrixEngineInner {
     data_dir: PathBuf,
     sync_handle: Option<tokio::task::JoinHandle<()>>,
     space_hierarchy: SpaceHierarchy,
+    oidc_client: Option<Client>,
+    session_change_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl std::fmt::Debug for MatrixEngineInner {
@@ -206,6 +215,8 @@ impl std::fmt::Debug for MatrixEngineInner {
             .field("data_dir", &self.data_dir)
             .field("sync_handle", &self.sync_handle.as_ref().map(|_| "JoinHandle"))
             .field("space_hierarchy", &self.space_hierarchy)
+            .field("oidc_client", &self.oidc_client.as_ref().map(|_| "Client"))
+            .field("session_change_handle", &self.session_change_handle.as_ref().map(|_| "JoinHandle"))
             .finish()
     }
 }
@@ -228,6 +239,31 @@ impl Backoff {
 }
 
 impl MatrixEngine {
+    async fn get_or_create_store_passphrase() -> Result<String> {
+        let keyring = Keyring::new().await?;
+        let mut attributes = HashMap::new();
+        attributes.insert("app_id", "com.system76.Claw");
+        attributes.insert("type", "store-passphrase");
+
+        let items = keyring.search_items(&attributes).await?;
+        if let Some(item) = items.first() {
+            let secret = item.secret().await?;
+            return Ok(String::from_utf8(secret.to_vec())?);
+        }
+
+        // Generate a random passphrase using /dev/urandom
+        use std::io::Read;
+        let mut f = std::fs::File::open("/dev/urandom")?;
+        let mut buf = [0u8; 32];
+        f.read_exact(&mut buf)?;
+        let passphrase: String = buf.iter().map(|b| format!("{:02x}", b)).collect();
+        
+        keyring
+            .create_item("Claw Store Passphrase", &attributes, passphrase.as_bytes(), true)
+            .await?;
+        Ok(passphrase)
+    }
+
     pub async fn new(data_dir: PathBuf) -> Result<Self> {
         let store_path = data_dir.join("matrix-store.db");
         
@@ -241,8 +277,11 @@ impl MatrixEngine {
         let client = Client::builder()
             .homeserver_url("https://matrix.org")
             .store_config(store_config)
+            .handle_refresh_tokens()
             .build()
             .await?;
+
+        client.oauth().restore_registered_client(matrix_sdk::authentication::oauth::ClientId::new(OIDC_CLIENT_ID.to_string()));
 
         let inner = MatrixEngineInner {
             client: client.clone(),
@@ -253,11 +292,101 @@ impl MatrixEngine {
             data_dir,
             sync_handle: None,
             space_hierarchy: SpaceHierarchy::new(),
+            oidc_client: None,
+            session_change_handle: None,
         };
 
         let engine = Self { inner: Arc::new(RwLock::new(inner)) };
         engine.setup_event_handlers(&client);
+        engine.spawn_session_change_handler(client).await;
         Ok(engine)
+    }
+
+    async fn save_session_to_keyring(session_data: &SessionData) -> Result<()> {
+        let keyring = Keyring::new().await?;
+        let mut attributes = HashMap::new();
+        attributes.insert("app_id", "fi.joonastuomi.CosmicExtConstellations");
+        attributes.insert("type", "matrix-session");
+        
+        let secret = serde_json::to_vec(session_data)?;
+
+        keyring
+            .create_item("Constellations Matrix Session", &attributes, &secret, true)
+            .await?;
+        Ok(())
+    }
+
+    async fn spawn_session_change_handler(&self, client: Client) {
+        let mut subscriber = client.subscribe_to_session_changes();
+        let homeserver = client.homeserver().to_string();
+
+        let handle = tokio::spawn(async move {
+            loop {
+                match subscriber.recv().await {
+                    Ok(change) => {
+                        match change {
+                            SessionChange::TokensRefreshed => {
+                                info!("Session tokens refreshed, updating keyring...");
+                                
+                                if let Some(session) = client.oauth().user_session() {
+                                    let session_data = SessionData {
+                                        homeserver: homeserver.clone(),
+                                        user_id: session.meta.user_id.to_string(),
+                                        access_token: session.tokens.access_token.to_string(),
+                                        refresh_token: session.tokens.refresh_token.clone(),
+                                        id_token: None,
+                                        device_id: session.meta.device_id.to_string(),
+                                        is_oidc: true,
+                                    };
+
+                                    if let Err(e) = Self::save_session_to_keyring(&session_data).await {
+                                        error!("Failed to update session in keyring: {}", e);
+                                    } else {
+                                        info!("Successfully updated session in keyring.");
+                                    }
+                                } else if let Some(session) = client.matrix_auth().session() {
+                                    let session_data = SessionData {
+                                        homeserver: homeserver.clone(),
+                                        user_id: session.meta.user_id.to_string(),
+                                        access_token: session.tokens.access_token.to_string(),
+                                        refresh_token: session.tokens.refresh_token.clone(),
+                                        id_token: None,
+                                        device_id: session.meta.device_id.to_string(),
+                                        is_oidc: false,
+                                    };
+
+                                    if let Err(e) = Self::save_session_to_keyring(&session_data).await {
+                                        error!("Failed to update session in keyring: {}", e);
+                                    } else {
+                                        info!("Successfully updated session in keyring.");
+                                    }
+                                } else {
+                                    error!("Session tokens refreshed but client has no session!");
+                                }
+                            }
+                            SessionChange::UnknownToken { .. } => {
+                                error!("Session token is no longer valid!");
+                            }
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                        error!("Session change subscriber lagged by {} messages", n);
+                        continue;
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                        info!("Session change subscriber closed.");
+                        break;
+                    }
+                }
+            }
+        });
+
+        let mut inner = self.inner.write().await;
+        if let Some(old_handle) = inner.session_change_handle.take() {
+            old_handle.abort();
+        }
+        inner.session_change_handle = Some(handle);
+        drop(inner);
     }
 
     fn setup_event_handlers(&self, client: &Client) {
@@ -335,6 +464,7 @@ impl MatrixEngine {
         let client = Client::builder()
             .homeserver_url(&homeserver_url)
             .store_config(store_config)
+            .handle_refresh_tokens()
             .build()
             .await?;
 
@@ -356,27 +486,23 @@ impl MatrixEngine {
                 user_id: session.meta.user_id.to_string(),
                 access_token: session.tokens.access_token.to_string(),
                 refresh_token: session.tokens.refresh_token.clone(),
+                id_token: None,
                 device_id: session.meta.device_id.to_string(),
+                is_oidc: false,
             };
 
-            let keyring = Keyring::new().await?;
-            let mut attributes = HashMap::new();
-            attributes.insert("app_id", "fi.joonastuomi.CosmicExtConstellations");
-            attributes.insert("type", "matrix-session");
-            
-            let secret = serde_json::to_vec(&session_data)?;
-
-            keyring
-                .create_item("Constellations Matrix Session", &attributes, &secret, true)
-                .await?;
+            Self::save_session_to_keyring(&session_data).await?;
         }
 
         self.setup_event_handlers(&client);
 
         let mut inner = self.inner.write().await;
-        inner.client = client;
+        inner.client = client.clone();
         inner.sync_service = Some(sync_service);
         inner.room_list_service = Some(room_list_service);
+
+        drop(inner);
+        self.spawn_session_change_handler(client).await;
 
         Ok(())
     }
@@ -393,17 +519,6 @@ impl MatrixEngine {
             let secret = item.secret().await?;
             let session_data: SessionData = serde_json::from_slice(&secret)?;
 
-            let matrix_session = MatrixSession {
-                meta: matrix_sdk::SessionMeta {
-                    user_id: UserId::parse(session_data.user_id.clone())?,
-                    device_id: OwnedDeviceId::from(session_data.device_id),
-                },
-                tokens: SessionTokens {
-                    access_token: session_data.access_token,
-                    refresh_token: session_data.refresh_token,
-                },
-            };
-
             let data_dir = self.inner.read().await.data_dir.clone();
             let store_path = data_dir.join("matrix-store.db");
             let sqlite_store = SqliteStateStore::open(&store_path, None).await?;
@@ -412,10 +527,38 @@ impl MatrixEngine {
             let client = Client::builder()
                 .homeserver_url(&session_data.homeserver)
                 .store_config(store_config)
+                .handle_refresh_tokens()
                 .build()
                 .await?;
 
-            client.restore_session(matrix_session).await?;
+            if session_data.is_oidc {
+                client.oauth().restore_registered_client(matrix_sdk::authentication::oauth::ClientId::new(OIDC_CLIENT_ID.to_string()));
+                client.oauth().restore_session(matrix_sdk::authentication::oauth::OAuthSession {
+                    client_id: matrix_sdk::authentication::oauth::ClientId::new(OIDC_CLIENT_ID.to_string()),
+                    user: matrix_sdk::authentication::oauth::UserSession {
+                        meta: matrix_sdk::SessionMeta {
+                            user_id: UserId::parse(session_data.user_id.clone())?,
+                            device_id: OwnedDeviceId::from(session_data.device_id),
+                        },
+                        tokens: SessionTokens {
+                            access_token: session_data.access_token,
+                            refresh_token: session_data.refresh_token,
+                        },
+                    }
+                }, matrix_sdk::store::RoomLoadSettings::default()).await?;
+            } else {
+                let matrix_session = MatrixSession {
+                    meta: matrix_sdk::SessionMeta {
+                        user_id: UserId::parse(session_data.user_id.clone())?,
+                        device_id: OwnedDeviceId::from(session_data.device_id),
+                    },
+                    tokens: SessionTokens {
+                        access_token: session_data.access_token,
+                        refresh_token: session_data.refresh_token,
+                    },
+                };
+                client.restore_session(matrix_session).await?;
+            }
             
             let sync_service: Arc<SyncService> = Arc::new(SyncService::builder(client.clone()).build().await?);
             let room_list_service = sync_service.room_list_service();
@@ -423,9 +566,12 @@ impl MatrixEngine {
             self.setup_event_handlers(&client);
 
             let mut inner = self.inner.write().await;
-            inner.client = client;
+            inner.client = client.clone();
             inner.sync_service = Some(sync_service);
             inner.room_list_service = Some(room_list_service);
+            
+            drop(inner);
+            self.spawn_session_change_handler(client).await;
             
             return Ok(true);
         }
@@ -653,13 +799,82 @@ impl MatrixEngine {
         }
     }
 
-    pub async fn login_oidc(&self) -> Result<url::Url> {
-        let client = self.client().await;
-        // In matrix-sdk 0.7, OIDC is handled via the oidc() method on matrix_auth()
-        // but it requires specific features and setup. 
-        // Given the "stub or placeholder" instruction for complexity:
-        let _ = client;
-        Err(anyhow::anyhow!("OIDC login is not yet implemented"))
+    pub async fn login_oidc(&self, homeserver: &str) -> Result<Url> {
+        let homeserver_url = if homeserver.starts_with("http") {
+            homeserver.to_string()
+        } else {
+            format!("https://{}", homeserver)
+        };
+
+        let data_dir = self.inner.read().await.data_dir.clone();
+        let store_path = data_dir.join("matrix-store.db");
+        let sqlite_store = SqliteStateStore::open(&store_path, None).await?;
+        let store_config = StoreConfig::new("constellations".to_owned()).state_store(sqlite_store);
+
+        let client = Client::builder()
+            .homeserver_url(&homeserver_url)
+            .store_config(store_config)
+            .handle_refresh_tokens()
+            .build()
+            .await?;
+
+        client.oauth().restore_registered_client(matrix_sdk::authentication::oauth::ClientId::new(OIDC_CLIENT_ID.to_string()));
+
+        let redirect_uri = Url::parse(OIDC_CALLBACK_URL)?;
+        let login_url = client
+            .oauth()
+            .login(redirect_uri, None, None, None)
+            .build()
+            .await?
+            .url;
+
+        let mut inner = self.inner.write().await;
+        inner.oidc_client = Some(client);
+
+        Ok(login_url)
+    }
+
+    pub async fn complete_oidc_login(&self, callback_url: Url) -> Result<()> {
+        let client = {
+            let mut inner = self.inner.write().await;
+            inner.oidc_client.take().context("No OIDC login in progress")?
+        };
+
+        client
+            .oauth()
+            .finish_login(callback_url.into())
+            .await
+            .context("Failed to complete OIDC login")?;
+
+        let sync_service: Arc<SyncService> = Arc::new(SyncService::builder(client.clone()).build().await?);
+        let room_list_service = sync_service.room_list_service();
+        
+        self.setup_event_handlers(&client);
+        
+        // Save session to oo7
+        if let Some(session) = client.oauth().user_session() {
+            let session_data = SessionData {
+                homeserver: client.homeserver().to_string(),
+                user_id: session.meta.user_id.to_string(),
+                access_token: session.tokens.access_token.to_string(),
+                refresh_token: session.tokens.refresh_token.clone(),
+                id_token: None,
+                device_id: session.meta.device_id.to_string(),
+                is_oidc: true,
+            };
+
+            Self::save_session_to_keyring(&session_data).await?;
+        }
+
+        let mut inner = self.inner.write().await;
+        inner.client = client.clone();
+        inner.sync_service = Some(sync_service);
+        inner.room_list_service = Some(room_list_service);
+
+        drop(inner);
+        self.spawn_session_change_handler(client).await;
+
+        Ok(())
     }
 }
 
