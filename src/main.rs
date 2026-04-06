@@ -332,6 +332,16 @@ impl Constellations {
             .align_y(Alignment::Center)
             .into()
     }
+
+    fn update_title(&mut self) -> Task<Action<Message>> {
+        let selected_room_name = self.selected_room.as_ref().and_then(|id| {
+            self.room_list.iter().find(|r| &r.id == id).and_then(|r| r.name.as_deref())
+        });
+
+        let title = selected_room_name.unwrap_or("Constellations - Matrix Client");
+        self.core.set_header_title(title.to_string());
+        Task::none()
+    }
 }
 
 impl Application for Constellations {
@@ -339,14 +349,6 @@ impl Application for Constellations {
     type Message = Message;
     type Flags = ();
     const APP_ID: &'static str = "fi.joonastuomi.CosmicExtConstellations";
-
-    fn header(&self) -> Element<Self::Message> {
-        let selected_room_name = self.selected_room.as_ref().and_then(|id| {
-            self.room_list.iter().find(|r| &r.id == id).and_then(|r| r.name.as_deref())
-        });
-        let title = selected_room_name.unwrap_or("Constellations");
-        header_bar().title(title).into()
-    }
 
     fn core(&self) -> &Core {
         &self.core
@@ -361,7 +363,7 @@ impl Application for Constellations {
             .unwrap_or_else(|| PathBuf::from("."))
             .join("fi.joonastuomi.CosmicExtConstellations");
 
-        (Constellations { 
+        let mut app = Constellations { 
             core: core.clone(), 
             matrix: None,
             sync_status: matrix::SyncStatus::Disconnected,
@@ -380,9 +382,16 @@ impl Application for Constellations {
             login_password: String::new(),
             is_logging_in: false,
             is_initializing: true,
-        }, Task::perform(async move {
-            matrix::MatrixEngine::new(data_dir).await.map_err(matrix::SyncError::from)
-        }, |res| Action::from(Message::EngineReady(res))))
+        };
+
+        let title_task = app.update_title();
+
+        (app, Task::batch([
+            Task::perform(async move {
+                matrix::MatrixEngine::new(data_dir).await.map_err(matrix::SyncError::from)
+            }, |res| Action::from(Message::EngineReady(res))),
+            title_task,
+        ]))
     }
 
     fn update(&mut self, message: Message) -> Task<Action<Self::Message>> {
@@ -407,6 +416,7 @@ impl Application for Constellations {
             Message::UserReady(user_id, sync_res) => {
                 self.user_id = user_id;
                 self.is_initializing = false;
+                let _ = self.update_title();
                 match sync_res {
                     Ok(_) => {}
                     Err(matrix::SyncError::MissingSlidingSyncSupport) => {
@@ -468,6 +478,7 @@ impl Application for Constellations {
                                 self.room_list.truncate(length);
                             }
                         }
+                        let _ = self.update_title();
                     }
                     matrix::MatrixEvent::TimelineDiff(diff) => {
                         let mut tasks = Vec::new();
@@ -575,6 +586,7 @@ impl Application for Constellations {
             Message::RoomSelected(room_id) => {
                 self.selected_room = Some(room_id);
                 self.timeline_items.clear();
+                return self.update_title();
             }
             Message::ComposerChanged(text) => {
                 self.composer_text = text;
@@ -787,12 +799,6 @@ impl Application for Constellations {
             .width(250)
             .padding(10);
 
-        let selected_room_name = self.selected_room.as_ref().and_then(|id| {
-            self.room_list.iter().find(|r| &r.id == id).and_then(|r| r.name.as_deref())
-        });
-
-        let title = selected_room_name.unwrap_or("Constellations - Matrix Client");
-
         let mut content = column()
             .spacing(20)
             .padding(20)
@@ -803,8 +809,6 @@ impl Application for Constellations {
         } else {
             content = content.push(text::body(format!("Status: {}", status_text)));
         }
-
-        content = content.push(text::body(selected_room_name));
 
         if self.selected_room.is_some() {
             content = content.push(self.view_timeline());
