@@ -1,6 +1,7 @@
 #![recursion_limit = "512"]
 
 mod matrix;
+mod ipc;
 
 use cosmic::iced::{Alignment, Subscription};
 use cosmic::widget::{button, column, row, scrollable, text, container, text_input};
@@ -13,6 +14,7 @@ use matrix_sdk_ui::sync_service::State as SyncServiceState;
 use std::path::PathBuf;
 use std::sync::Arc;
 use eyeball_im::Vector;
+use url::Url;
 
 struct Constellations {
     core: Core,
@@ -32,6 +34,7 @@ struct Constellations {
     login_username: String,
     login_password: String,
     is_logging_in: bool,
+    is_oidc_logging_in: bool,
     is_initializing: bool,
     selected_space: Option<OwnedRoomId>,
 }
@@ -62,6 +65,9 @@ enum Message {
     LoginFinished(Result<String, matrix::SyncError>),
     SelectSpace(Option<OwnedRoomId>),
     NoOp,
+    SubmitOidcLogin,
+    OidcLoginStarted(Result<Url, String>),
+    OidcCallback(Url),
 }
 
 #[derive(Clone, Debug)]
@@ -302,7 +308,7 @@ impl Constellations {
         let username_input = text_input("Username", &self.login_username);
         let password_input = text_input("Password", &self.login_password).password();
 
-        let (homeserver_input, username_input, password_input) = if self.is_logging_in {
+        let (homeserver_input, username_input, password_input) = if self.is_logging_in || self.is_oidc_logging_in {
             (homeserver_input, username_input, password_input)
         } else {
             (
@@ -321,13 +327,23 @@ impl Constellations {
             button::text("Logging in...")
         } else {
             let mut btn = button::text("Login");
-            if !self.login_homeserver.is_empty() && !self.login_username.is_empty() && !self.login_password.is_empty() {
+            if !self.login_homeserver.is_empty() && !self.login_username.is_empty() && !self.login_password.is_empty() && !self.is_oidc_logging_in {
                 btn = btn.on_press(Message::SubmitLogin);
             }
             btn
         };
 
-        content = content.push(login_button);
+        let oidc_button = if self.is_oidc_logging_in {
+            button::text("Waiting for browser...")
+        } else {
+            let mut btn = button::text("Login with OIDC");
+            if !self.login_homeserver.is_empty() && !self.is_logging_in {
+                btn = btn.on_press(Message::SubmitOidcLogin);
+            }
+            btn
+        };
+
+        content = content.push(login_button).push(oidc_button);
 
         container(content)
             .width(cosmic::iced::Length::Fill)
@@ -407,7 +423,7 @@ impl Constellations {
 impl Application for Constellations {
     type Executor = cosmic::executor::Default;
     type Message = Message;
-    type Flags = ();
+    type Flags = Option<String>;
     const APP_ID: &'static str = "fi.joonastuomi.CosmicExtConstellations";
 
     fn core(&self) -> &Core {
@@ -418,9 +434,20 @@ impl Application for Constellations {
         &mut self.core
     }
 
-    fn init(core: Core, _flags: Self::Flags) -> (Self, Task<Action<Self::Message>>) {
+    fn init(core: Core, flags: Self::Flags) -> (Self, Task<Action<Self::Message>>) {
         let data_dir = dirs::data_dir()
             .map(|d| d.join("fi.joonastuomi.CosmicExtConstellations"));
+
+        let mut tasks = Vec::new();
+        tasks.push(Task::perform(async move {
+            matrix::MatrixEngine::new(data_dir).await.map_err(matrix::SyncError::from)
+        }, |res| Action::from(Message::EngineReady(res))));
+
+        if let Some(uri) = flags {
+            if let Ok(url) = Url::parse(&uri) {
+                tasks.push(Task::done(Action::from(Message::OidcCallback(url))));
+            }
+        }
 
         let mut app = Constellations {
             core: core.clone(),
@@ -440,22 +467,15 @@ impl Application for Constellations {
             login_username: String::new(),
             login_password: String::new(),
             is_logging_in: false,
+            is_oidc_logging_in: false,
             is_initializing: true,
             selected_space: None,
         };
 
         let title_task = app.update_title();
+        tasks.push(title_task);
 
-        (app, Task::batch([
-            Task::perform(async move {
-                if let Some(data_dir) = data_dir {
-                    matrix::MatrixEngine::new(data_dir).await.map_err(matrix::SyncError::from)
-                } else {
-                    Err(matrix::SyncError::Anyhow("Could not determine data directory".to_string()))
-                }
-            }, |res| Action::from(Message::EngineReady(res))),
-            title_task,
-        ]))
+        (app, Task::batch(tasks))
     }
 
     fn update(&mut self, message: Message) -> Task<Action<Self::Message>> {
@@ -774,6 +794,7 @@ impl Application for Constellations {
             }
             Message::LoginFinished(res) => {
                 self.is_logging_in = false;
+                self.is_oidc_logging_in = false;
                 match res {
                     Ok(user_id) => {
                         self.user_id = Some(user_id);
@@ -796,6 +817,45 @@ impl Application for Constellations {
                 }
             }
             Message::NoOp => {}
+            Message::SubmitOidcLogin => {
+                if let Some(matrix) = &self.matrix {
+                    self.is_oidc_logging_in = true;
+                    self.error = None;
+                    let matrix = matrix.clone();
+                    let homeserver = self.login_homeserver.clone();
+                    return Task::perform(async move {
+                        matrix.login_oidc(&homeserver).await.map_err(|e| e.to_string())
+                    }, |res| Action::from(Message::OidcLoginStarted(res)));
+                }
+            }
+            Message::OidcLoginStarted(res) => {
+                match res {
+                    Ok(url) => {
+                        tracing::info!("Opening URL: {}", redact_url(&url));
+                        let _ = open::that(url.as_str());
+                        return Task::none();
+                    }
+                    Err(e) => {
+                        self.is_oidc_logging_in = false;
+                        self.error = Some(format!("OIDC login failed to start: {}", e));
+                    }
+                }
+            }
+            Message::OidcCallback(url) => {
+                if let Some(matrix) = &self.matrix {
+                    self.is_oidc_logging_in = true;
+                    self.error = None;
+                    let matrix = matrix.clone();
+                    return Task::perform(async move {
+                        matrix.complete_oidc_login(url).await?;
+                        let user_id = matrix.client().await.user_id()
+                            .map(|u| u.to_string())
+                            .ok_or_else(|| anyhow::anyhow!("Failed to get user ID after OIDC login"))?;
+                        matrix.start_sync().await?;
+                        Ok(user_id)
+                    }, |res: Result<String, anyhow::Error>| Action::from(Message::LoginFinished(res.map_err(matrix::SyncError::from))));
+                }
+            }
         }
         Task::none()
     }
@@ -947,9 +1007,39 @@ impl Application for Constellations {
     }
 
     fn subscription(&self) -> Subscription<Self::Message> {
+        let ipc_sub = Subscription::run_with(
+            (),
+            |_| {
+                let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+                tokio::spawn(async move {
+                    match ipc::start_server(tx).await {
+                        Ok(_conn) => {
+                            tracing::info!("IPC server started and waiting");
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to start IPC server: {}", e);
+                            return;
+                        }
+                    }
+                    std::future::pending::<()>().await;
+                });
+                cosmic::iced::futures::stream::unfold(rx, |mut rx| async move {
+                    loop {
+                        if let Some(uri) = rx.recv().await {
+                            if let Ok(url) = Url::parse(&uri) {
+                                return Some((Message::OidcCallback(url), rx));
+                            }
+                        } else {
+                            return None;
+                        }
+                    }
+                })
+            }
+        );
+
         let matrix = match &self.matrix {
             Some(m) => m,
-            None => return Subscription::none(),
+            None => return ipc_sub,
         };
 
         let sync_sub = Subscription::run_with(
@@ -1108,9 +1198,9 @@ impl Application for Constellations {
                     })
                 }
             );
-            Subscription::batch([sync_sub, timeline_sub])
+            Subscription::batch([ipc_sub, sync_sub, timeline_sub])
         } else {
-            sync_sub
+            Subscription::batch([ipc_sub, sync_sub])
         }
     }
 }
@@ -1123,11 +1213,55 @@ async fn get_room_data(engine: &matrix::MatrixEngine, room: &matrix_sdk::Room) -
     engine.fetch_room_data(&room).await.ok()
 }
 
+fn redact_url(url: &Url) -> String {
+    let mut redacted = url.clone();
+    let pairs: Vec<(String, String)> = redacted.query_pairs().map(|(k, v)| (k.into_owned(), v.into_owned())).collect();
+    redacted.set_query(None);
+    for (k, mut v) in pairs {
+        if k == "code" || k == "state" {
+            v = "[REDACTED]".to_string();
+        }
+        redacted.query_pairs_mut().append_pair(&k, &v);
+    }
+    redacted.to_string()
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
         .with_env_filter("matrix_sdk=debug,matrix_sdk_ui=debug,cosmic_ext_constellations=debug")
         .with_writer(std::io::stderr)
         .init();
-    cosmic::app::run::<Constellations>(cosmic::app::Settings::default(), ())?;
+    let args: Vec<String> = std::env::args().collect();
+    let uri = args.get(1).filter(|u| u.starts_with("fi.joonastuomi.CosmicExtConstellations://")).cloned();
+
+    let rt = tokio::runtime::Runtime::new()?;
+    let is_running = rt.block_on(async {
+        let connection = match zbus::Connection::session().await {
+            Ok(conn) => conn,
+            Err(_) => return false,
+        };
+        let dbus = match zbus::fdo::DBusProxy::new(&connection).await {
+            Ok(proxy) => proxy,
+            Err(_) => return false,
+        };
+        dbus.name_has_owner(ipc::DBUS_NAME.try_into().unwrap()).await.unwrap_or(false)
+    });
+
+    if is_running {
+        if let Some(uri) = uri {
+            rt.block_on(async {
+                if let Err(e) = ipc::call_handle_callback(uri).await {
+                    tracing::error!("Failed to send URI to existing instance: {}", e);
+                }
+            });
+        }
+        tracing::info!("Another instance is already running, exiting.");
+        return Ok(());
+    }
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let _guard = rt.enter();
+
+    cosmic::app::run::<Constellations>(cosmic::app::Settings::default(), uri)?;
     Ok(())
 }
