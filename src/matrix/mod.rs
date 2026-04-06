@@ -118,7 +118,7 @@ impl SpaceHierarchy {
         if !children.contains(&child_id) {
             children.push(child_id.clone());
         }
-        
+
         let parents = self.parents.entry(child_id).or_default();
         if !parents.contains(&space_id) {
             parents.push(space_id);
@@ -257,7 +257,7 @@ impl MatrixEngine {
         let mut buf = [0u8; 32];
         f.read_exact(&mut buf)?;
         let passphrase: String = buf.iter().map(|b| format!("{:02x}", b)).collect();
-        
+
         keyring
             .create_item("Claw Store Passphrase", &attributes, passphrase.as_bytes(), true)
             .await?;
@@ -265,25 +265,7 @@ impl MatrixEngine {
     }
 
     pub async fn new(data_dir: PathBuf) -> Result<Self> {
-<<<<<<< code-health-extract-client-setup-logic-8203988727687457315
         let client = Self::setup_client(data_dir.clone(), "https://matrix.org").await?;
-=======
-        let store_path = data_dir.join("matrix-store.db");
-        
-        if !data_dir.exists() {
-            std::fs::create_dir_all(&data_dir)?;
-        }
-
-        let sqlite_store = SqliteStateStore::open(&store_path, None).await?;
-        let store_config = StoreConfig::new("constellations".to_owned()).state_store(sqlite_store);
-
-        let client = Client::builder()
-            .homeserver_url("https://matrix.org")
-            .store_config(store_config)
-            .handle_refresh_tokens()
-            .build()
-            .await?;
->>>>>>> main
 
         client.oauth().restore_registered_client(matrix_sdk::authentication::oauth::ClientId::new(OIDC_CLIENT_ID.to_string()));
 
@@ -311,7 +293,7 @@ impl MatrixEngine {
         let mut attributes = HashMap::new();
         attributes.insert("app_id", "fi.joonastuomi.CosmicExtConstellations");
         attributes.insert("type", "matrix-session");
-        
+
         let secret = serde_json::to_vec(session_data)?;
 
         keyring
@@ -331,7 +313,7 @@ impl MatrixEngine {
                         match change {
                             SessionChange::TokensRefreshed => {
                                 info!("Session tokens refreshed, updating keyring...");
-                                
+
                                 if let Some(session) = client.oauth().user_session() {
                                     let session_data = SessionData {
                                         homeserver: homeserver.clone(),
@@ -403,7 +385,7 @@ impl MatrixEngine {
                     Ok(id) => id,
                     Err(_) => return,
                 };
-                
+
                 let mut inner_write = inner.write().await;
                 match event {
                     SyncStateEvent::Original(ev) => {
@@ -432,7 +414,7 @@ impl MatrixEngine {
                     Ok(id) => id,
                     Err(_) => return,
                 };
-                
+
                 let mut inner_write = inner.write().await;
                 match event {
                     SyncStateEvent::Original(ev) => {
@@ -461,20 +443,8 @@ impl MatrixEngine {
         };
 
         let data_dir = self.inner.read().await.data_dir.clone();
-<<<<<<< code-health-extract-client-setup-logic-8203988727687457315
         let client = Self::setup_client(data_dir, &homeserver_url).await?;
-=======
-        let store_path = data_dir.join("matrix-store.db");
-        let sqlite_store = SqliteStateStore::open(&store_path, None).await?;
-        let store_config = StoreConfig::new("constellations".to_owned()).state_store(sqlite_store);
 
-        let client = Client::builder()
-            .homeserver_url(&homeserver_url)
-            .store_config(store_config)
-            .handle_refresh_tokens()
-            .build()
-            .await?;
->>>>>>> main
 
         client
             .matrix_auth()
@@ -486,7 +456,7 @@ impl MatrixEngine {
 
         let sync_service: Arc<SyncService> = Arc::new(SyncService::builder(client.clone()).build().await?);
         let room_list_service = sync_service.room_list_service();
-        
+
         // Save session to oo7
         if let Some(session) = client.matrix_auth().session() {
             let session_data = SessionData {
@@ -520,7 +490,7 @@ impl MatrixEngine {
         let mut attributes = HashMap::new();
         attributes.insert("app_id", "fi.joonastuomi.CosmicExtConstellations");
         attributes.insert("type", "matrix-session");
-        
+
         let items = keyring.search_items(&attributes).await?;
 
         if let Some(item) = items.first() {
@@ -528,20 +498,8 @@ impl MatrixEngine {
             let session_data: SessionData = serde_json::from_slice(&secret)?;
 
             let data_dir = self.inner.read().await.data_dir.clone();
-<<<<<<< code-health-extract-client-setup-logic-8203988727687457315
             let client = Self::setup_client(data_dir, &session_data.homeserver).await?;
-=======
-            let store_path = data_dir.join("matrix-store.db");
-            let sqlite_store = SqliteStateStore::open(&store_path, None).await?;
-            let store_config = StoreConfig::new("constellations".to_owned()).state_store(sqlite_store);
 
-            let client = Client::builder()
-                .homeserver_url(&session_data.homeserver)
-                .store_config(store_config)
-                .handle_refresh_tokens()
-                .build()
-                .await?;
->>>>>>> main
 
             if session_data.is_oidc {
                 client.oauth().restore_registered_client(matrix_sdk::authentication::oauth::ClientId::new(OIDC_CLIENT_ID.to_string()));
@@ -571,20 +529,20 @@ impl MatrixEngine {
                 };
                 client.restore_session(matrix_session).await?;
             }
-            
+
             let sync_service: Arc<SyncService> = Arc::new(SyncService::builder(client.clone()).build().await?);
             let room_list_service = sync_service.room_list_service();
-            
+
             self.setup_event_handlers(&client);
 
             let mut inner = self.inner.write().await;
             inner.client = client.clone();
             inner.sync_service = Some(sync_service);
             inner.room_list_service = Some(room_list_service);
-            
+
             drop(inner);
             self.spawn_session_change_handler(client).await;
-            
+
             return Ok(true);
         }
 
@@ -612,7 +570,7 @@ impl MatrixEngine {
         let inner = self.inner.read().await;
         if let Some(controller) = &inner.room_list_controller {
             use matrix_sdk_ui::room_list_service::filters;
-            
+
             let filter: Box<dyn matrix_sdk_ui::room_list_service::filters::Filter + Send + Sync> = if let Some(space_id) = selected_space {
                 let hierarchy = inner.space_hierarchy.clone();
                 let space_id_clone = space_id.clone();
@@ -628,7 +586,7 @@ impl MatrixEngine {
                 // No space selected, show all rooms
                 Box::new(filters::new_filter_all(vec![]))
             };
-            
+
             controller.set_filter(filter);
         }
         Ok(())
@@ -640,10 +598,10 @@ impl MatrixEngine {
             Some(n) => Some(n.to_string()),
             None => room.cached_display_name().map(|n| n.to_string()),
         };
-        
+
         let unread_count = room.unread_notification_counts().notification_count as u32;
         let avatar_url = room.avatar_url().map(|u| u.to_string());
-        
+
         let last_message = if let Some(latest_event) = room.latest_event() {
             if let Ok(event) = latest_event.event().raw().deserialize() {
                 match event {
@@ -690,15 +648,15 @@ impl MatrixEngine {
         let client = self.client().await;
         let request = matrix_sdk::ruma::api::client::discovery::get_supported_versions::Request::new();
         let versions = client.send(request).await?;
-        let supports_sliding_sync = versions.unstable_features.contains_key("org.matrix.msc4186") || 
+        let supports_sliding_sync = versions.unstable_features.contains_key("org.matrix.msc4186") ||
                                    versions.versions.iter().any(|v| v == "v1.11");
-        
+
         if !supports_sliding_sync {
             return Err(SyncError::MissingSlidingSyncSupport);
         }
 
         let mut inner = self.inner.write().await;
-        
+
         if let Some(handle) = inner.sync_handle.take() {
             handle.abort();
             if let Some(sync_service) = &inner.sync_service {
@@ -714,18 +672,18 @@ impl MatrixEngine {
                     let current_backoff = backoff.current;
                     info!("Starting Matrix sync service (current backoff: {}s)...", current_backoff);
                     let start_time = std::time::Instant::now();
-                    
+
                     // The start() future completes when the service is stopped or fails.
                     sync_service.start().await;
-                    
+
                     let elapsed = start_time.elapsed();
                     let state = sync_service.state().get();
-                    
+
                     if elapsed.as_secs() > BACKOFF_RESET_THRESHOLD {
                         info!("Matrix sync service ran for {:?}, resetting backoff.", elapsed);
                         backoff = Backoff::new(BACKOFF_INITIAL, BACKOFF_MAX);
                     }
-                    
+
                     let next_delay = backoff.next();
                     error!("Matrix sync service stopped after {:?}. State: {:?}. Retrying in {} seconds...", elapsed, state, next_delay);
                     tokio::time::sleep(std::time::Duration::from_secs(next_delay)).await;
@@ -739,7 +697,7 @@ impl MatrixEngine {
 
     pub async fn timeline(&self, room_id: &str) -> Result<Arc<Timeline>> {
         let room_id = RoomId::parse(room_id)?;
-        
+
         {
             let inner = self.inner.read().await;
             if let Some(timeline) = inner.timelines.get(&room_id) {
@@ -751,10 +709,10 @@ impl MatrixEngine {
         let room = rls.room(&room_id)
             .map_err(|e| anyhow::anyhow!("Failed to get room: {}", e))?;
         let timeline = Arc::new(room.timeline_builder().build().await?);
-        
+
         let mut inner = self.inner.write().await;
         inner.timelines.insert(room_id.to_owned(), timeline.clone());
-        
+
         Ok(timeline)
     }
 
@@ -860,9 +818,9 @@ impl MatrixEngine {
 
         let sync_service: Arc<SyncService> = Arc::new(SyncService::builder(client.clone()).build().await?);
         let room_list_service = sync_service.room_list_service();
-        
+
         self.setup_event_handlers(&client);
-        
+
         // Save session to oo7
         if let Some(session) = client.oauth().user_session() {
             let session_data = SessionData {
