@@ -1,32 +1,29 @@
 use anyhow::{Context, Result};
-use thiserror::Error;
-use matrix_sdk::{
-    config::StoreConfig,
-    ruma::{UserId, OwnedDeviceId, RoomId, OwnedRoomId, room::RoomType},
-    Client,
-    SessionTokens,
-    Room,
-    SessionChange,
-};
+use eyeball_im::VectorDiff;
 use matrix_sdk::authentication::matrix::MatrixSession;
 use matrix_sdk::media::MediaFormat;
-use matrix_sdk::ruma::events::room::MediaSource;
 use matrix_sdk::ruma::events::room::message::RoomMessageEventContent;
-use matrix_sdk::ruma::events::{AnySyncTimelineEvent, AnySyncMessageLikeEvent, SyncStateEvent};
+use matrix_sdk::ruma::events::room::MediaSource;
 use matrix_sdk::ruma::events::space::child::SpaceChildEventContent;
 use matrix_sdk::ruma::events::space::parent::SpaceParentEventContent;
+use matrix_sdk::ruma::events::{AnySyncMessageLikeEvent, AnySyncTimelineEvent, SyncStateEvent};
+use matrix_sdk::{
+    config::StoreConfig,
+    ruma::{room::RoomType, OwnedDeviceId, OwnedRoomId, RoomId, UserId},
+    Client, Room, SessionChange, SessionTokens,
+};
 use matrix_sdk_sqlite::SqliteStateStore;
-pub use matrix_sdk_ui::timeline::{Timeline, TimelineItem, VirtualTimelineItem, RoomExt};
-use matrix_sdk_ui::room_list_service::{RoomListService, RoomListDynamicEntriesController};
+use matrix_sdk_ui::room_list_service::{RoomListDynamicEntriesController, RoomListService};
 use matrix_sdk_ui::sync_service::SyncService;
-use eyeball_im::VectorDiff;
+pub use matrix_sdk_ui::timeline::{RoomExt, Timeline, TimelineItem, VirtualTimelineItem};
 use oo7::Keyring;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
+use thiserror::Error;
 use tokio::sync::RwLock;
-use serde::{Deserialize, Serialize};
-use tracing::{info, error};
+use tracing::{error, info};
 use url::Url;
 
 const BACKOFF_INITIAL: u64 = 2;
@@ -171,7 +168,11 @@ pub enum MatrixEvent {
     RoomDiff(RoomListDiff),
     TimelineDiff(TimelineDiff<TimelineItem>),
     TimelineReset,
-    ReactionAdded { room_id: String, event_id: String, reaction: String },
+    ReactionAdded {
+        room_id: String,
+        event_id: String,
+        reaction: String,
+    },
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -208,15 +209,33 @@ impl std::fmt::Debug for MatrixEngineInner {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("MatrixEngineInner")
             .field("client", &self.client)
-            .field("sync_service", &self.sync_service.as_ref().map(|_| "SyncService"))
-            .field("room_list_service", &self.room_list_service.as_ref().map(|_| "RoomListService"))
-            .field("room_list_controller", &self.room_list_controller.as_ref().map(|_| "RoomListDynamicEntriesController"))
+            .field(
+                "sync_service",
+                &self.sync_service.as_ref().map(|_| "SyncService"),
+            )
+            .field(
+                "room_list_service",
+                &self.room_list_service.as_ref().map(|_| "RoomListService"),
+            )
+            .field(
+                "room_list_controller",
+                &self
+                    .room_list_controller
+                    .as_ref()
+                    .map(|_| "RoomListDynamicEntriesController"),
+            )
             .field("timelines", &self.timelines.keys())
             .field("data_dir", &self.data_dir)
-            .field("sync_handle", &self.sync_handle.as_ref().map(|_| "JoinHandle"))
+            .field(
+                "sync_handle",
+                &self.sync_handle.as_ref().map(|_| "JoinHandle"),
+            )
             .field("space_hierarchy", &self.space_hierarchy)
             .field("oidc_client", &self.oidc_client.as_ref().map(|_| "Client"))
-            .field("session_change_handle", &self.session_change_handle.as_ref().map(|_| "JoinHandle"))
+            .field(
+                "session_change_handle",
+                &self.session_change_handle.as_ref().map(|_| "JoinHandle"),
+            )
             .finish()
     }
 }
@@ -228,7 +247,10 @@ struct Backoff {
 
 impl Backoff {
     fn new(initial: u64, max: u64) -> Self {
-        Self { current: initial, max }
+        Self {
+            current: initial,
+            max,
+        }
     }
 
     fn next(&mut self) -> u64 {
@@ -259,7 +281,12 @@ impl MatrixEngine {
         let passphrase: String = buf.iter().map(|b| format!("{:02x}", b)).collect();
 
         keyring
-            .create_item("Constellation Store Passphrase", &attributes, passphrase.as_bytes(), true)
+            .create_item(
+                "Constellation Store Passphrase",
+                &attributes,
+                passphrase.as_bytes(),
+                true,
+            )
             .await?;
         Ok(passphrase)
     }
@@ -267,7 +294,11 @@ impl MatrixEngine {
     pub async fn new(data_dir: PathBuf) -> Result<Self> {
         let client = Self::setup_client(data_dir.clone(), "https://matrix.org").await?;
 
-        client.oauth().restore_registered_client(matrix_sdk::authentication::oauth::ClientId::new(OIDC_CLIENT_ID.to_string()));
+        client
+            .oauth()
+            .restore_registered_client(matrix_sdk::authentication::oauth::ClientId::new(
+                OIDC_CLIENT_ID.to_string(),
+            ));
 
         let inner = MatrixEngineInner {
             client: client.clone(),
@@ -282,7 +313,9 @@ impl MatrixEngine {
             session_change_handle: None,
         };
 
-        let engine = Self { inner: Arc::new(RwLock::new(inner)) };
+        let engine = Self {
+            inner: Arc::new(RwLock::new(inner)),
+        };
         engine.setup_event_handlers(&client);
         engine.spawn_session_change_handler(client).await;
         Ok(engine)
@@ -309,52 +342,50 @@ impl MatrixEngine {
         let handle = tokio::spawn(async move {
             loop {
                 match subscriber.recv().await {
-                    Ok(change) => {
-                        match change {
-                            SessionChange::TokensRefreshed => {
-                                info!("Session tokens refreshed, updating keyring...");
+                    Ok(change) => match change {
+                        SessionChange::TokensRefreshed => {
+                            info!("Session tokens refreshed, updating keyring...");
 
-                                if let Some(session) = client.oauth().user_session() {
-                                    let session_data = SessionData {
-                                        homeserver: homeserver.clone(),
-                                        user_id: session.meta.user_id.to_string(),
-                                        access_token: session.tokens.access_token.to_string(),
-                                        refresh_token: session.tokens.refresh_token.clone(),
-                                        id_token: None,
-                                        device_id: session.meta.device_id.to_string(),
-                                        is_oidc: true,
-                                    };
+                            if let Some(session) = client.oauth().user_session() {
+                                let session_data = SessionData {
+                                    homeserver: homeserver.clone(),
+                                    user_id: session.meta.user_id.to_string(),
+                                    access_token: session.tokens.access_token.to_string(),
+                                    refresh_token: session.tokens.refresh_token.clone(),
+                                    id_token: None,
+                                    device_id: session.meta.device_id.to_string(),
+                                    is_oidc: true,
+                                };
 
-                                    if let Err(e) = Self::save_session_to_keyring(&session_data).await {
-                                        error!("Failed to update session in keyring: {}", e);
-                                    } else {
-                                        info!("Successfully updated session in keyring.");
-                                    }
-                                } else if let Some(session) = client.matrix_auth().session() {
-                                    let session_data = SessionData {
-                                        homeserver: homeserver.clone(),
-                                        user_id: session.meta.user_id.to_string(),
-                                        access_token: session.tokens.access_token.to_string(),
-                                        refresh_token: session.tokens.refresh_token.clone(),
-                                        id_token: None,
-                                        device_id: session.meta.device_id.to_string(),
-                                        is_oidc: false,
-                                    };
-
-                                    if let Err(e) = Self::save_session_to_keyring(&session_data).await {
-                                        error!("Failed to update session in keyring: {}", e);
-                                    } else {
-                                        info!("Successfully updated session in keyring.");
-                                    }
+                                if let Err(e) = Self::save_session_to_keyring(&session_data).await {
+                                    error!("Failed to update session in keyring: {}", e);
                                 } else {
-                                    error!("Session tokens refreshed but client has no session!");
+                                    info!("Successfully updated session in keyring.");
                                 }
-                            }
-                            SessionChange::UnknownToken { .. } => {
-                                error!("Session token is no longer valid!");
+                            } else if let Some(session) = client.matrix_auth().session() {
+                                let session_data = SessionData {
+                                    homeserver: homeserver.clone(),
+                                    user_id: session.meta.user_id.to_string(),
+                                    access_token: session.tokens.access_token.to_string(),
+                                    refresh_token: session.tokens.refresh_token.clone(),
+                                    id_token: None,
+                                    device_id: session.meta.device_id.to_string(),
+                                    is_oidc: false,
+                                };
+
+                                if let Err(e) = Self::save_session_to_keyring(&session_data).await {
+                                    error!("Failed to update session in keyring: {}", e);
+                                } else {
+                                    info!("Successfully updated session in keyring.");
+                                }
+                            } else {
+                                error!("Session tokens refreshed but client has no session!");
                             }
                         }
-                    }
+                        SessionChange::UnknownToken { .. } => {
+                            error!("Session token is no longer valid!");
+                        }
+                    },
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                         error!("Session change subscriber lagged by {} messages", n);
                         continue;
@@ -377,62 +408,96 @@ impl MatrixEngine {
 
     fn setup_event_handlers(&self, client: &Client) {
         let inner_clone = self.inner.clone();
-        client.add_event_handler(move |event: SyncStateEvent<SpaceChildEventContent>, room: Room| {
-            let inner = inner_clone.clone();
-            async move {
-                let space_id = room.room_id().to_owned();
-                let child_id = match RoomId::parse(event.state_key()) {
-                    Ok(id) => id,
-                    Err(_) => return,
-                };
+        client.add_event_handler(
+            move |event: SyncStateEvent<SpaceChildEventContent>, room: Room| {
+                let inner = inner_clone.clone();
+                async move {
+                    let space_id = room.room_id().to_owned();
+                    let child_id = match RoomId::parse(event.state_key()) {
+                        Ok(id) => id,
+                        Err(_) => return,
+                    };
 
-                let mut inner_write = inner.write().await;
-                match event {
-                    SyncStateEvent::Original(ev) => {
-                        if ev.content.via.is_empty() {
-                            inner_write.space_hierarchy.remove_child(&space_id, &child_id);
-                            info!("Space hierarchy updated: {} removed from {}", child_id, space_id);
-                        } else {
-                            inner_write.space_hierarchy.add_child(space_id.clone(), child_id.clone());
-                            info!("Space hierarchy updated: {} is child of {}", child_id, space_id);
+                    let mut inner_write = inner.write().await;
+                    match event {
+                        SyncStateEvent::Original(ev) => {
+                            if ev.content.via.is_empty() {
+                                inner_write
+                                    .space_hierarchy
+                                    .remove_child(&space_id, &child_id);
+                                info!(
+                                    "Space hierarchy updated: {} removed from {}",
+                                    child_id, space_id
+                                );
+                            } else {
+                                inner_write
+                                    .space_hierarchy
+                                    .add_child(space_id.clone(), child_id.clone());
+                                info!(
+                                    "Space hierarchy updated: {} is child of {}",
+                                    child_id, space_id
+                                );
+                            }
+                        }
+                        SyncStateEvent::Redacted(_) => {
+                            inner_write
+                                .space_hierarchy
+                                .remove_child(&space_id, &child_id);
+                            info!(
+                                "Space hierarchy updated: {} removed from {} (redacted)",
+                                child_id, space_id
+                            );
                         }
                     }
-                    SyncStateEvent::Redacted(_) => {
-                        inner_write.space_hierarchy.remove_child(&space_id, &child_id);
-                        info!("Space hierarchy updated: {} removed from {} (redacted)", child_id, space_id);
-                    }
                 }
-            }
-        });
+            },
+        );
 
         let inner_clone = self.inner.clone();
-        client.add_event_handler(move |event: SyncStateEvent<SpaceParentEventContent>, room: Room| {
-            let inner = inner_clone.clone();
-            async move {
-                let child_id = room.room_id().to_owned();
-                let parent_id = match RoomId::parse(event.state_key()) {
-                    Ok(id) => id,
-                    Err(_) => return,
-                };
+        client.add_event_handler(
+            move |event: SyncStateEvent<SpaceParentEventContent>, room: Room| {
+                let inner = inner_clone.clone();
+                async move {
+                    let child_id = room.room_id().to_owned();
+                    let parent_id = match RoomId::parse(event.state_key()) {
+                        Ok(id) => id,
+                        Err(_) => return,
+                    };
 
-                let mut inner_write = inner.write().await;
-                match event {
-                    SyncStateEvent::Original(ev) => {
-                        if ev.content.via.is_empty() {
-                            inner_write.space_hierarchy.remove_child(&parent_id, &child_id);
-                            info!("Space hierarchy updated: {} removed as parent of {}", parent_id, child_id);
-                        } else {
-                            inner_write.space_hierarchy.add_child(parent_id.clone(), child_id.clone());
-                            info!("Space hierarchy updated: {} is parent of {}", parent_id, child_id);
+                    let mut inner_write = inner.write().await;
+                    match event {
+                        SyncStateEvent::Original(ev) => {
+                            if ev.content.via.is_empty() {
+                                inner_write
+                                    .space_hierarchy
+                                    .remove_child(&parent_id, &child_id);
+                                info!(
+                                    "Space hierarchy updated: {} removed as parent of {}",
+                                    parent_id, child_id
+                                );
+                            } else {
+                                inner_write
+                                    .space_hierarchy
+                                    .add_child(parent_id.clone(), child_id.clone());
+                                info!(
+                                    "Space hierarchy updated: {} is parent of {}",
+                                    parent_id, child_id
+                                );
+                            }
+                        }
+                        SyncStateEvent::Redacted(_) => {
+                            inner_write
+                                .space_hierarchy
+                                .remove_child(&parent_id, &child_id);
+                            info!(
+                                "Space hierarchy updated: {} removed as parent of {} (redacted)",
+                                parent_id, child_id
+                            );
                         }
                     }
-                    SyncStateEvent::Redacted(_) => {
-                        inner_write.space_hierarchy.remove_child(&parent_id, &child_id);
-                        info!("Space hierarchy updated: {} removed as parent of {} (redacted)", parent_id, child_id);
-                    }
                 }
-            }
-        });
+            },
+        );
     }
 
     pub async fn login(&self, homeserver: &str, username: &str, password: &str) -> Result<()> {
@@ -445,7 +510,6 @@ impl MatrixEngine {
         let data_dir = self.inner.read().await.data_dir.clone();
         let client = Self::setup_client(data_dir, &homeserver_url).await?;
 
-
         client
             .matrix_auth()
             .login_username(username, password)
@@ -454,7 +518,8 @@ impl MatrixEngine {
             .await
             .context("Failed to login")?;
 
-        let sync_service: Arc<SyncService> = Arc::new(SyncService::builder(client.clone()).build().await?);
+        let sync_service: Arc<SyncService> =
+            Arc::new(SyncService::builder(client.clone()).build().await?);
         let room_list_service = sync_service.room_list_service();
 
         // Save session to oo7
@@ -500,22 +565,31 @@ impl MatrixEngine {
             let data_dir = self.inner.read().await.data_dir.clone();
             let client = Self::setup_client(data_dir, &session_data.homeserver).await?;
 
-
             if session_data.is_oidc {
-                client.oauth().restore_registered_client(matrix_sdk::authentication::oauth::ClientId::new(OIDC_CLIENT_ID.to_string()));
-                client.oauth().restore_session(matrix_sdk::authentication::oauth::OAuthSession {
-                    client_id: matrix_sdk::authentication::oauth::ClientId::new(OIDC_CLIENT_ID.to_string()),
-                    user: matrix_sdk::authentication::oauth::UserSession {
-                        meta: matrix_sdk::SessionMeta {
-                            user_id: UserId::parse(session_data.user_id.clone())?,
-                            device_id: OwnedDeviceId::from(session_data.device_id),
+                client.oauth().restore_registered_client(
+                    matrix_sdk::authentication::oauth::ClientId::new(OIDC_CLIENT_ID.to_string()),
+                );
+                client
+                    .oauth()
+                    .restore_session(
+                        matrix_sdk::authentication::oauth::OAuthSession {
+                            client_id: matrix_sdk::authentication::oauth::ClientId::new(
+                                OIDC_CLIENT_ID.to_string(),
+                            ),
+                            user: matrix_sdk::authentication::oauth::UserSession {
+                                meta: matrix_sdk::SessionMeta {
+                                    user_id: UserId::parse(session_data.user_id.clone())?,
+                                    device_id: OwnedDeviceId::from(session_data.device_id),
+                                },
+                                tokens: SessionTokens {
+                                    access_token: session_data.access_token,
+                                    refresh_token: session_data.refresh_token,
+                                },
+                            },
                         },
-                        tokens: SessionTokens {
-                            access_token: session_data.access_token,
-                            refresh_token: session_data.refresh_token,
-                        },
-                    }
-                }, matrix_sdk::store::RoomLoadSettings::default()).await?;
+                        matrix_sdk::store::RoomLoadSettings::default(),
+                    )
+                    .await?;
             } else {
                 let matrix_session = MatrixSession {
                     meta: matrix_sdk::SessionMeta {
@@ -530,7 +604,8 @@ impl MatrixEngine {
                 client.restore_session(matrix_session).await?;
             }
 
-            let sync_service: Arc<SyncService> = Arc::new(SyncService::builder(client.clone()).build().await?);
+            let sync_service: Arc<SyncService> =
+                Arc::new(SyncService::builder(client.clone()).build().await?);
             let room_list_service = sync_service.room_list_service();
 
             self.setup_event_handlers(&client);
@@ -561,7 +636,10 @@ impl MatrixEngine {
         self.inner.read().await.room_list_service.clone()
     }
 
-    pub async fn set_room_list_controller(&self, controller: Arc<RoomListDynamicEntriesController>) {
+    pub async fn set_room_list_controller(
+        &self,
+        controller: Arc<RoomListDynamicEntriesController>,
+    ) {
         let mut inner = self.inner.write().await;
         inner.room_list_controller = Some(controller);
     }
@@ -571,21 +649,22 @@ impl MatrixEngine {
         if let Some(controller) = &inner.room_list_controller {
             use matrix_sdk_ui::room_list_service::filters;
 
-            let filter: Box<dyn matrix_sdk_ui::room_list_service::filters::Filter + Send + Sync> = if let Some(space_id) = selected_space {
-                let hierarchy = inner.space_hierarchy.clone();
-                let space_id_clone = space_id.clone();
-                // Custom filter that checks if the room is in the selected space OR is a space itself
-                // This ensures the SpaceSwitcher always has access to all spaces.
-                Box::new(filters::new_filter_any(vec![
-                    Box::new(move |item: &matrix_sdk_ui::room_list_service::RoomListItem| {
-                        hierarchy.is_in_space(item.room_id(), &space_id_clone) ||
-                        hierarchy.is_known_space(item.room_id())
-                    })
-                ]))
-            } else {
-                // No space selected, show all rooms
-                Box::new(filters::new_filter_all(vec![]))
-            };
+            let filter: Box<dyn matrix_sdk_ui::room_list_service::filters::Filter + Send + Sync> =
+                if let Some(space_id) = selected_space {
+                    let hierarchy = inner.space_hierarchy.clone();
+                    let space_id_clone = space_id.clone();
+                    // Custom filter that checks if the room is in the selected space OR is a space itself
+                    // This ensures the SpaceSwitcher always has access to all spaces.
+                    Box::new(filters::new_filter_any(vec![Box::new(
+                        move |item: &matrix_sdk_ui::room_list_service::RoomListItem| {
+                            hierarchy.is_in_space(item.room_id(), &space_id_clone)
+                                || hierarchy.is_known_space(item.room_id())
+                        },
+                    )]))
+                } else {
+                    // No space selected, show all rooms
+                    Box::new(filters::new_filter_all(vec![]))
+                };
 
             controller.set_filter(filter);
         }
@@ -606,7 +685,14 @@ impl MatrixEngine {
             if let Ok(event) = latest_event.event().raw().deserialize() {
                 match event {
                     AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::RoomMessage(e)) => {
-                        e.as_original().map(|o| o.content.body().to_string())
+                        e.as_original().map(|o| {
+                            let mut msg = o.content.body().to_string();
+                            if msg.len() > 30 {
+                                msg.truncate(26);
+                                msg.push_str("...");
+                            }
+                            msg
+                        })
                     }
                     _ => None,
                 }
@@ -627,7 +713,10 @@ impl MatrixEngine {
 
         let parent_space_id = {
             let inner = self.inner.read().await;
-            inner.space_hierarchy.parents.get(room.room_id())
+            inner
+                .space_hierarchy
+                .parents
+                .get(room.room_id())
                 .and_then(|parents| parents.first())
                 .map(|id| id.to_string())
         };
@@ -646,10 +735,13 @@ impl MatrixEngine {
 
     pub async fn start_sync(&self) -> Result<(), SyncError> {
         let client = self.client().await;
-        let request = matrix_sdk::ruma::api::client::discovery::get_supported_versions::Request::new();
+        let request =
+            matrix_sdk::ruma::api::client::discovery::get_supported_versions::Request::new();
         let versions = client.send(request).await?;
-        let supports_sliding_sync = versions.unstable_features.contains_key("org.matrix.msc4186") ||
-                                   versions.versions.iter().any(|v| v == "v1.11");
+        let supports_sliding_sync = versions
+            .unstable_features
+            .contains_key("org.matrix.msc4186")
+            || versions.versions.iter().any(|v| v == "v1.11");
 
         if !supports_sliding_sync {
             return Err(SyncError::MissingSlidingSyncSupport);
@@ -670,7 +762,10 @@ impl MatrixEngine {
                 let mut backoff = Backoff::new(BACKOFF_INITIAL, BACKOFF_MAX);
                 loop {
                     let current_backoff = backoff.current;
-                    info!("Starting Matrix sync service (current backoff: {}s)...", current_backoff);
+                    info!(
+                        "Starting Matrix sync service (current backoff: {}s)...",
+                        current_backoff
+                    );
                     let start_time = std::time::Instant::now();
 
                     // The start() future completes when the service is stopped or fails.
@@ -680,7 +775,10 @@ impl MatrixEngine {
                     let state = sync_service.state().get();
 
                     if elapsed.as_secs() > BACKOFF_RESET_THRESHOLD {
-                        info!("Matrix sync service ran for {:?}, resetting backoff.", elapsed);
+                        info!(
+                            "Matrix sync service ran for {:?}, resetting backoff.",
+                            elapsed
+                        );
                         backoff = Backoff::new(BACKOFF_INITIAL, BACKOFF_MAX);
                     }
 
@@ -705,8 +803,12 @@ impl MatrixEngine {
             }
         }
 
-        let rls = self.room_list_service().await.context("RoomListService not initialized")?;
-        let room = rls.room(&room_id)
+        let rls = self
+            .room_list_service()
+            .await
+            .context("RoomListService not initialized")?;
+        let room = rls
+            .room(&room_id)
             .map_err(|e| anyhow::anyhow!("Failed to get room: {}", e))?;
         let timeline = Arc::new(room.timeline_builder().build().await?);
 
@@ -722,11 +824,15 @@ impl MatrixEngine {
         Ok(())
     }
 
-    pub async fn send_message(&self, room_id: &str, body: String, html_body: Option<String>) -> Result<()> {
+    pub async fn send_message(
+        &self,
+        room_id: &str,
+        body: String,
+        html_body: Option<String>,
+    ) -> Result<()> {
         let room_id = RoomId::parse(room_id)?;
         let client = self.client().await;
-        let room = client.get_room(&room_id)
-            .context("Room not found")?;
+        let room = client.get_room(&room_id).context("Room not found")?;
 
         let content = if let Some(html) = html_body {
             RoomMessageEventContent::text_html(body, html)
@@ -788,7 +894,11 @@ impl MatrixEngine {
             .build()
             .await?;
 
-        client.oauth().restore_registered_client(matrix_sdk::authentication::oauth::ClientId::new(OIDC_CLIENT_ID.to_string()));
+        client
+            .oauth()
+            .restore_registered_client(matrix_sdk::authentication::oauth::ClientId::new(
+                OIDC_CLIENT_ID.to_string(),
+            ));
 
         let redirect_uri = Url::parse(OIDC_CALLBACK_URL)?;
         let login_url = client
@@ -807,7 +917,10 @@ impl MatrixEngine {
     pub async fn complete_oidc_login(&self, callback_url: Url) -> Result<()> {
         let client = {
             let mut inner = self.inner.write().await;
-            inner.oidc_client.take().context("No OIDC login in progress")?
+            inner
+                .oidc_client
+                .take()
+                .context("No OIDC login in progress")?
         };
 
         client
@@ -816,7 +929,8 @@ impl MatrixEngine {
             .await
             .context("Failed to complete OIDC login")?;
 
-        let sync_service: Arc<SyncService> = Arc::new(SyncService::builder(client.clone()).build().await?);
+        let sync_service: Arc<SyncService> =
+            Arc::new(SyncService::builder(client.clone()).build().await?);
         let room_list_service = sync_service.room_list_service();
 
         self.setup_event_handlers(&client);
