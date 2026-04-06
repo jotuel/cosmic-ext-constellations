@@ -16,13 +16,30 @@ use std::sync::Arc;
 use eyeball_im::Vector;
 use url::Url;
 
+#[derive(Clone, Debug)]
+struct ConstellationsItem {
+    item: Arc<matrix::TimelineItem>,
+    timestamp: Option<String>,
+}
+
+impl ConstellationsItem {
+    fn new(item: Arc<matrix::TimelineItem>) -> Self {
+        let timestamp = item.as_event().map(|event| {
+            let ts_millis = u64::from(event.timestamp().0);
+            let datetime = chrono::DateTime::from_timestamp_millis(ts_millis as i64).unwrap_or_default();
+            datetime.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M:%S").to_string()
+        });
+        Self { item, timestamp }
+    }
+}
+
 struct Constellations {
     core: Core,
     matrix: Option<matrix::MatrixEngine>,
     sync_status: matrix::SyncStatus,
     room_list: Vec<matrix::RoomData>,
     selected_room: Option<String>,
-    timeline_items: Vector<Arc<matrix::TimelineItem>>,
+    timeline_items: Vector<ConstellationsItem>,
     composer_text: String,
     composer_is_preview: bool,
     user_id: Option<String>,
@@ -103,7 +120,8 @@ impl Constellations {
             );
         }
 
-        for item in &self.timeline_items {
+        for item_wrapper in &self.timeline_items {
+            let item = &item_wrapper.item;
             if let Some(event) = item.as_event() {
                 if let Some(message) = event.content().as_message() {
                     let sender = event.sender().to_string();
@@ -114,9 +132,8 @@ impl Constellations {
                         ),
                         _ => (&sender as &str, None),
                     };
-                    let ts_millis = u64::from(event.timestamp().0);
-                    let datetime = chrono::DateTime::from_timestamp_millis(ts_millis as i64).unwrap_or_default();
-                    let timestamp = datetime.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M:%S").to_string();
+
+                    let timestamp = item_wrapper.timestamp.as_deref().unwrap_or_default();
 
                     let mut reaction_row = row().spacing(5);
                     if let Some(reactions) = event.content().reactions() {
@@ -598,10 +615,11 @@ impl Application for Constellations {
 
                         match diff {
                             eyeball_im::VectorDiff::Insert { index, value } => {
+                                let wrapper = ConstellationsItem::new(value);
                                 if index <= self.timeline_items.len() {
-                                    self.timeline_items.insert(index, value);
+                                    self.timeline_items.insert(index, wrapper);
                                 } else {
-                                    self.timeline_items.push_back(value);
+                                    self.timeline_items.push_back(wrapper);
                                 }
                             }
                             eyeball_im::VectorDiff::Remove { index } => {
@@ -611,17 +629,17 @@ impl Application for Constellations {
                             }
                             eyeball_im::VectorDiff::Set { index, value } => {
                                 if index < self.timeline_items.len() {
-                                    self.timeline_items.set(index, value);
+                                    self.timeline_items.set(index, ConstellationsItem::new(value));
                                 }
                             }
                             eyeball_im::VectorDiff::Reset { values } => {
-                                self.timeline_items = values;
+                                self.timeline_items = values.into_iter().map(ConstellationsItem::new).collect();
                             }
                             eyeball_im::VectorDiff::PushBack { value } => {
-                                self.timeline_items.push_back(value);
+                                self.timeline_items.push_back(ConstellationsItem::new(value));
                             }
                             eyeball_im::VectorDiff::PushFront { value } => {
-                                self.timeline_items.push_front(value);
+                                self.timeline_items.push_front(ConstellationsItem::new(value));
                             }
                             eyeball_im::VectorDiff::PopBack => {
                                 self.timeline_items.pop_back();
@@ -633,7 +651,7 @@ impl Application for Constellations {
                                 self.timeline_items.clear();
                             }
                             eyeball_im::VectorDiff::Append { values } => {
-                                self.timeline_items.extend(values);
+                                self.timeline_items.extend(values.into_iter().map(ConstellationsItem::new));
                             }
                             eyeball_im::VectorDiff::Truncate { length } => {
                                 self.timeline_items.truncate(length);
