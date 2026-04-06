@@ -231,51 +231,27 @@ impl Constellations {
 
     fn view_preview(&self) -> Element<'_, Message> {
         let mut preview_col = column().spacing(10);
-        let parser = pulldown_cmark::Parser::new(&self.composer_text);
 
-        let mut current_row = row().spacing(0).align_y(Alignment::Center);
-        let mut row_has_content = false;
+        for cached_row in &self.composer_preview_cache {
+            let mut current_row = row().spacing(0).align_y(Alignment::Center);
 
-        for event in parser {
-            match event {
-                pulldown_cmark::Event::Start(tag) => if let pulldown_cmark::Tag::Heading { .. } = tag {
-                    if row_has_content {
-                        preview_col = preview_col.push(current_row);
-                        current_row = row().spacing(0).align_y(Alignment::Center);
-                        row_has_content = false;
+            for item in cached_row {
+                match item {
+                    PreviewItem::Text(t) => {
+                        current_row = current_row.push(text::body(t.clone()));
                     }
-                },
-                pulldown_cmark::Event::End(tag) => match tag {
-                    pulldown_cmark::TagEnd::Paragraph | pulldown_cmark::TagEnd::Heading(_) => {
-                        if row_has_content {
-                            preview_col = preview_col.push(current_row);
-                            current_row = row().spacing(0).align_y(Alignment::Center);
-                            row_has_content = false;
-                        }
+                    PreviewItem::Code(c) => {
+                        current_row = current_row.push(
+                            container(text::body(c.clone()))
+                                .padding(2)
+                        );
                     }
-                    _ => {}
-                },
-                pulldown_cmark::Event::Text(t) => {
-                    let txt = text::body(t.to_string());
-                    current_row = current_row.push(txt);
-                    row_has_content = true;
+                    PreviewItem::Space => {
+                        current_row = current_row.push(text::body(" "));
+                    }
                 }
-                pulldown_cmark::Event::Code(c) => {
-                    current_row = current_row.push(
-                        container(text::body(c.to_string()))
-                            .padding(2)
-                    );
-                    row_has_content = true;
-                }
-                pulldown_cmark::Event::SoftBreak | pulldown_cmark::Event::HardBreak => {
-                    current_row = current_row.push(text::body(" "));
-                    row_has_content = true;
-                }
-                _ => {}
             }
-        }
 
-        if row_has_content {
             preview_col = preview_col.push(current_row);
         }
 
@@ -673,6 +649,42 @@ impl Application for Constellations {
                 return self.update_title();
             }
             Message::ComposerChanged(text) => {
+                let parser = pulldown_cmark::Parser::new(&text);
+                let mut rows = Vec::new();
+                let mut current_row = Vec::new();
+                for event in parser {
+                    match event {
+                        pulldown_cmark::Event::Start(tag) => if let pulldown_cmark::Tag::Heading { .. } = tag {
+                            if !current_row.is_empty() {
+                                rows.push(current_row.clone());
+                                current_row.clear();
+                            }
+                        },
+                        pulldown_cmark::Event::End(tag) => match tag {
+                            pulldown_cmark::TagEnd::Paragraph | pulldown_cmark::TagEnd::Heading(_) => {
+                                if !current_row.is_empty() {
+                                    rows.push(current_row.clone());
+                                    current_row.clear();
+                                }
+                            }
+                            _ => {}
+                        },
+                        pulldown_cmark::Event::Text(t) => {
+                            current_row.push(PreviewItem::Text(t.to_string()));
+                        }
+                        pulldown_cmark::Event::Code(c) => {
+                            current_row.push(PreviewItem::Code(c.to_string()));
+                        }
+                        pulldown_cmark::Event::SoftBreak | pulldown_cmark::Event::HardBreak => {
+                            current_row.push(PreviewItem::Space);
+                        }
+                        _ => {}
+                    }
+                }
+                if !current_row.is_empty() {
+                    rows.push(current_row);
+                }
+                self.composer_preview_cache = rows;
                 self.composer_text = text;
             }
             Message::TogglePreview => {
