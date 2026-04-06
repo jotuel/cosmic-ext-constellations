@@ -927,21 +927,21 @@ impl Application for Constellations {
                                         .map(|data| eyeball_im::VectorDiff::Set { index, value: data })
                                 }
                                 eyeball_im::VectorDiff::Reset { values } => {
-                                    let mut new_values = Vec::new();
-                                    for value in values {
-                                        if let Some(data) = get_room_data(&engine_rooms, &value).await {
-                                            new_values.push(data);
-                                        }
-                                    }
+                                    let futures: Vec<_> = values.iter().map(|v| get_room_data(&engine_rooms, v)).collect();
+                                    let new_values: Vec<_> = cosmic::iced::futures::future::join_all(futures)
+                                        .await
+                                        .into_iter()
+                                        .flatten()
+                                        .collect();
                                     Some(eyeball_im::VectorDiff::Reset { values: new_values.into() })
                                 }
                                 eyeball_im::VectorDiff::Append { values } => {
-                                    let mut new_values = Vec::new();
-                                    for value in values {
-                                        if let Some(data) = get_room_data(&engine_rooms, &value).await {
-                                            new_values.push(data);
-                                        }
-                                    }
+                                    let futures: Vec<_> = values.iter().map(|v| get_room_data(&engine_rooms, v)).collect();
+                                    let new_values: Vec<_> = cosmic::iced::futures::future::join_all(futures)
+                                        .await
+                                        .into_iter()
+                                        .flatten()
+                                        .collect();
                                     Some(eyeball_im::VectorDiff::Append { values: new_values.into() })
                                 }
                                 eyeball_im::VectorDiff::Truncate { length } => {
