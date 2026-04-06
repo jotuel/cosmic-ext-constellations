@@ -1,7 +1,7 @@
 Agent: coder
 Phase: 1/3
 Batch: single
-Session: claw-foundation-phase1
+Session: constellations-foundation-phase1
 
 # Agent Base Protocol ... (injected)
 # Filesystem Safety Protocol ... (injected)
@@ -17,11 +17,11 @@ Do NOT use `run_shell_command` with cat, echo, printf, heredocs, or shell redire
 Task: Initialize the Rust project and set up the libcosmic application shell.
 
 Progress: Phase 1 of 3: Project Initialization & Foundation
-Session: claw-foundation-phase1
+Session: constellations-foundation-phase1
 
 Files to create:
-- /home/jwnz/Git/cosmic-ext-claw/Cargo.toml: Configure dependencies (libcosmic, matrix-sdk-ui, matrix-sdk-sqlite, tokio, oo7)
-- /home/jwnz/Git/cosmic-ext-claw/src/main.rs: Basic libcosmic application shell
+- /home/jwnz/Git/cosmic-ext-constellations/Cargo.toml: Configure dependencies (libcosmic, matrix-sdk-ui, matrix-sdk-sqlite, tokio, oo7)
+- /home/jwnz/Git/cosmic-ext-constellations/src/main.rs: Basic libcosmic application shell
 
 Deliverables:
 - Initialized Rust project
@@ -31,7 +31,7 @@ Deliverables:
 Validation: cargo check
 
 Context:
-This is the first phase of building 'claw', a COSMIC Matrix client. Follow the SPEC.md and .agents/skills/COSMIC-DEVELOPMENT.md for design patterns.
+This is the first phase of building 'constellations', a COSMIC Matrix client. Follow the SPEC.md and .agents/skills/COSMIC-DEVELOPMENT.md for design patterns.
 
 Do NOT:
 - Implement Matrix logic yet (Phase 2)

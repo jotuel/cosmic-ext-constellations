@@ -20,7 +20,7 @@ Progress: Phase 2 of 3: Matrix Engine & Auth Logic
 Session: claw-foundation-phase1
 
 Files to create:
-- /home/jwnz/Git/cosmic-ext-claw/src/matrix/mod.rs: Matrix engine with Client + SQLite persistence and basic Login logic.
+- /home/jwnz/Git/cosmic-ext-constellations/src/matrix/mod.rs: Matrix engine with Client + SQLite persistence and basic Login logic.
 
 Deliverables:
 - Matrix SDK Client initialization with SQLite store.

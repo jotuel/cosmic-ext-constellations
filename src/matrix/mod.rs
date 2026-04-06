@@ -150,7 +150,7 @@ impl MatrixEngine {
         }
 
         let sqlite_store = SqliteStateStore::open(&store_path, None).await?;
-        let store_config = StoreConfig::new("claw".to_owned()).state_store(sqlite_store);
+        let store_config = StoreConfig::new("constellations".to_owned()).state_store(sqlite_store);
 
         let client = Client::builder()
             .homeserver_url("https://matrix.org")
@@ -180,7 +180,7 @@ impl MatrixEngine {
         let data_dir = self.inner.read().await.data_dir.clone();
         let store_path = data_dir.join("matrix-store.db");
         let sqlite_store = SqliteStateStore::open(&store_path, None).await?;
-        let store_config = StoreConfig::new("claw".to_owned()).state_store(sqlite_store);
+        let store_config = StoreConfig::new("constellations".to_owned()).state_store(sqlite_store);
 
         let client = Client::builder()
             .homeserver_url(&homeserver_url)
@@ -191,7 +191,7 @@ impl MatrixEngine {
         client
             .matrix_auth()
             .login_username(username, password)
-            .initial_device_display_name("Claw Matrix Client")
+            .initial_device_display_name("Constellations Matrix Client")
             .send()
             .await
             .context("Failed to login")?;
@@ -211,13 +211,13 @@ impl MatrixEngine {
 
             let keyring = Keyring::new().await?;
             let mut attributes = HashMap::new();
-            attributes.insert("app_id", "com.system76.Claw");
+            attributes.insert("app_id", "fi.joonastuomi.CosmicExtConstellations");
             attributes.insert("type", "matrix-session");
             
             let secret = serde_json::to_vec(&session_data)?;
 
             keyring
-                .create_item("Claw Matrix Session", &attributes, &secret, true)
+                .create_item("Constellations Matrix Session", &attributes, &secret, true)
                 .await?;
         }
 
@@ -232,7 +232,7 @@ impl MatrixEngine {
     pub async fn restore_session(&self) -> Result<bool> {
         let keyring = Keyring::new().await?;
         let mut attributes = HashMap::new();
-        attributes.insert("app_id", "com.system76.Claw");
+        attributes.insert("app_id", "fi.joonastuomi.CosmicExtConstellations");
         attributes.insert("type", "matrix-session");
         
         let items = keyring.search_items(&attributes).await?;
@@ -255,7 +255,7 @@ impl MatrixEngine {
             let data_dir = self.inner.read().await.data_dir.clone();
             let store_path = data_dir.join("matrix-store.db");
             let sqlite_store = SqliteStateStore::open(&store_path, None).await?;
-            let store_config = StoreConfig::new("claw".to_owned()).state_store(sqlite_store);
+            let store_config = StoreConfig::new("constellations".to_owned()).state_store(sqlite_store);
 
             let client = Client::builder()
                 .homeserver_url(&session_data.homeserver)

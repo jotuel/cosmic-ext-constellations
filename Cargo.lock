@@ -953,33 +953,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "claw"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "cosmic-text 0.12.1",
- "dirs",
- "eyeball-im",
- "imbl",
- "libcosmic",
- "matrix-sdk",
- "matrix-sdk-sqlite",
- "matrix-sdk-ui",
- "oo7",
- "pulldown-cmark",
- "rusqlite",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 1.0.69",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "url",
-]
-
-[[package]]
 name = "clipboard-win"
 version = "5.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1148,6 +1121,33 @@ source = "git+https://github.com/pop-os/libcosmic?branch=master#97a805e5a184c122
 dependencies = [
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "cosmic-ext-constellations"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "cosmic-text 0.12.1",
+ "dirs",
+ "eyeball-im",
+ "imbl",
+ "libcosmic",
+ "matrix-sdk",
+ "matrix-sdk-sqlite",
+ "matrix-sdk-ui",
+ "oo7",
+ "pulldown-cmark",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "url",
 ]
 
 [[package]]

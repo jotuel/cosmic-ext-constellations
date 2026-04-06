@@ -20,8 +20,8 @@ Progress: Phase 3 of 3: Matrix Sync & Shell Integration
 Session: claw-foundation-phase1
 
 Files to modify:
-- /home/jwnz/Git/cosmic-ext-claw/src/main.rs: Add Matrix sync logic to `update()` and bridge events via `iced::Subscription`.
-- /home/jwnz/Git/cosmic-ext-claw/src/matrix/mod.rs: Add `sync()` method and event stream.
+- /home/jwnz/Git/cosmic-ext-constellations/src/main.rs: Add Matrix sync logic to `update()` and bridge events via `iced::Subscription`.
+- /home/jwnz/Git/cosmic-ext-constellations/src/matrix/mod.rs: Add `sync()` method and event stream.
 
 Deliverables:
 - Background Matrix sync task.

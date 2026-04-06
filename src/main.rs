@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use eyeball_im::Vector;
 
-struct Claw {
+struct Constellations {
     core: Core,
     matrix: Option<matrix::MatrixEngine>,
     sync_status: matrix::SyncStatus,
@@ -77,7 +77,7 @@ impl PartialEq for MatrixEngineWrapper {
 
 impl Eq for MatrixEngineWrapper {}
 
-impl Claw {
+impl Constellations {
     fn view_timeline(&self) -> Element<'_, Message> {
         let mut timeline = column().spacing(10).width(cosmic::iced::Length::Fill);
 
@@ -284,7 +284,7 @@ impl Claw {
 
         let status_error = match &self.sync_status {
             matrix::SyncStatus::Error(e) => Some(format!("⚠️ Sync Error: {}", e)),
-            matrix::SyncStatus::MissingSlidingSyncSupport => Some("Error: Your homeserver does not support Sliding Sync (MSC4186), which is required by Claw.".to_string()),
+            matrix::SyncStatus::MissingSlidingSyncSupport => Some("Error: Your homeserver does not support Sliding Sync (MSC4186), which is required by Constellations.".to_string()),
             _ => None,
         };
 
@@ -334,11 +334,19 @@ impl Claw {
     }
 }
 
-impl Application for Claw {
+impl Application for Constellations {
     type Executor = cosmic::executor::Default;
     type Message = Message;
     type Flags = ();
-    const APP_ID: &'static str = "com.system76.Claw";
+    const APP_ID: &'static str = "fi.joonastuomi.CosmicExtConstellations";
+
+    fn header(&self) -> Element<Self::Message> {
+        let selected_room_name = self.selected_room.as_ref().and_then(|id| {
+            self.room_list.iter().find(|r| &r.id == id).and_then(|r| r.name.as_deref())
+        });
+        let title = selected_room_name.unwrap_or("Constellations");
+        header_bar().title(title).into()
+    }
 
     fn core(&self) -> &Core {
         &self.core
@@ -351,9 +359,9 @@ impl Application for Claw {
     fn init(core: Core, _flags: Self::Flags) -> (Self, Task<Action<Self::Message>>) {
         let data_dir = dirs::data_dir()
             .unwrap_or_else(|| PathBuf::from("."))
-            .join("com.system76.Claw");
+            .join("fi.joonastuomi.CosmicExtConstellations");
 
-        (Claw { 
+        (Constellations { 
             core: core.clone(), 
             matrix: None,
             sync_status: matrix::SyncStatus::Disconnected,
@@ -725,7 +733,7 @@ impl Application for Claw {
             matrix::SyncStatus::Syncing => "Syncing...".to_string(),
             matrix::SyncStatus::Connected => "Connected".to_string(),
             matrix::SyncStatus::Error(e) => format!("⚠️ Sync Error: {}", e),
-            matrix::SyncStatus::MissingSlidingSyncSupport => "Error: Your homeserver does not support Sliding Sync (MSC4186), which is required by Claw.".to_string(),
+            matrix::SyncStatus::MissingSlidingSyncSupport => "Error: Your homeserver does not support Sliding Sync (MSC4186), which is required by Constellations.".to_string(),
         };
 
         let mut room_list = column().spacing(5);
@@ -781,13 +789,14 @@ impl Application for Claw {
 
         let selected_room_name = self.selected_room.as_ref().and_then(|id| {
             self.room_list.iter().find(|r| &r.id == id).and_then(|r| r.name.as_deref())
-        }).unwrap_or("Select a room to start chatting");
+        });
+
+        let title = selected_room_name.unwrap_or("Constellations - Matrix Client");
 
         let mut content = column()
             .spacing(20)
             .padding(20)
-            .width(cosmic::iced::Length::Fill)
-            .push(text::title1("Claw - Matrix Client"));
+            .width(cosmic::iced::Length::Fill);
 
         if matches!(self.sync_status, matrix::SyncStatus::Error(_) | matrix::SyncStatus::MissingSlidingSyncSupport) {
             content = content.push(text::body(status_text).size(14));
@@ -1019,9 +1028,9 @@ async fn get_room_data(engine: &matrix::MatrixEngine, room: &matrix_sdk::Room) -
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
-        .with_env_filter("matrix_sdk=debug,matrix_sdk_ui=debug,cosmic_ext_claw=debug")
+        .with_env_filter("matrix_sdk=debug,matrix_sdk_ui=debug,cosmic_ext_constellations=debug")
         .with_writer(std::io::stderr)
         .init();
-    cosmic::app::run::<Claw>(cosmic::app::Settings::default(), ())?;
+    cosmic::app::run::<Constellations>(cosmic::app::Settings::default(), ())?;
     Ok(())
 }
