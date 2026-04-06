@@ -249,6 +249,7 @@ impl MatrixEngine {
         if let Some(item) = items.first() {
             let secret = item.secret().await?;
             return Ok(String::from_utf8(secret.to_vec())?);
+<<<<<<< HEAD
         }
 
         // Generate a random passphrase using /dev/urandom
@@ -273,11 +274,18 @@ impl MatrixEngine {
         
         if !data_dir.exists() {
             std::fs::create_dir_all(&data_dir)?;
+=======
+>>>>>>> 817a3f2cb42b347911bd1c5b36512ed7838408fe
         }
 
-        let sqlite_store = SqliteStateStore::open(&store_path, None).await?;
-        let store_config = StoreConfig::new("constellations".to_owned()).state_store(sqlite_store);
+        // Generate a random passphrase using /dev/urandom
+        use std::io::Read;
+        let mut f = std::fs::File::open("/dev/urandom")?;
+        let mut buf = [0u8; 32];
+        f.read_exact(&mut buf)?;
+        let passphrase: String = buf.iter().map(|b| format!("{:02x}", b)).collect();
 
+<<<<<<< HEAD
         let client = Client::builder()
             .homeserver_url("https://matrix.org")
             .store_config(store_config)
@@ -288,6 +296,16 @@ impl MatrixEngine {
 =======
         let client = Self::setup_client(data_dir.clone(), "https://matrix.org").await?;
 >>>>>>> f9b92b3 (Removed conflict markers)
+=======
+        keyring
+            .create_item("Constellation Store Passphrase", &attributes, passphrase.as_bytes(), true)
+            .await?;
+        Ok(passphrase)
+    }
+
+    pub async fn new(data_dir: PathBuf) -> Result<Self> {
+        let client = Self::setup_client(data_dir.clone(), "https://matrix.org").await?;
+>>>>>>> 817a3f2cb42b347911bd1c5b36512ed7838408fe
 
         client.oauth().restore_registered_client(matrix_sdk::authentication::oauth::ClientId::new(OIDC_CLIENT_ID.to_string()));
 
@@ -467,6 +485,7 @@ impl MatrixEngine {
         let data_dir = self.inner.read().await.data_dir.clone();
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 >>>>>>> f9b92b3 (Removed conflict markers)
         let client = Self::setup_client(data_dir, &homeserver_url).await?;
@@ -481,6 +500,10 @@ impl MatrixEngine {
 >>>>>>> 5edc5ce (OIDC login option)
 =======
 >>>>>>> f9b92b3 (Removed conflict markers)
+=======
+        let client = Self::setup_client(data_dir, &homeserver_url).await?;
+
+>>>>>>> 817a3f2cb42b347911bd1c5b36512ed7838408fe
 
         client
             .matrix_auth()
@@ -536,6 +559,7 @@ impl MatrixEngine {
             let data_dir = self.inner.read().await.data_dir.clone();
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 >>>>>>> f9b92b3 (Removed conflict markers)
             let client = Self::setup_client(data_dir, &session_data.homeserver).await?;
@@ -580,6 +604,40 @@ impl MatrixEngine {
                 client.restore_session(matrix_session).await?;
             }
 
+=======
+            let client = Self::setup_client(data_dir, &session_data.homeserver).await?;
+
+
+            if session_data.is_oidc {
+                client.oauth().restore_registered_client(matrix_sdk::authentication::oauth::ClientId::new(OIDC_CLIENT_ID.to_string()));
+                client.oauth().restore_session(matrix_sdk::authentication::oauth::OAuthSession {
+                    client_id: matrix_sdk::authentication::oauth::ClientId::new(OIDC_CLIENT_ID.to_string()),
+                    user: matrix_sdk::authentication::oauth::UserSession {
+                        meta: matrix_sdk::SessionMeta {
+                            user_id: UserId::parse(session_data.user_id.clone())?,
+                            device_id: OwnedDeviceId::from(session_data.device_id),
+                        },
+                        tokens: SessionTokens {
+                            access_token: session_data.access_token,
+                            refresh_token: session_data.refresh_token,
+                        },
+                    }
+                }, matrix_sdk::store::RoomLoadSettings::default()).await?;
+            } else {
+                let matrix_session = MatrixSession {
+                    meta: matrix_sdk::SessionMeta {
+                        user_id: UserId::parse(session_data.user_id.clone())?,
+                        device_id: OwnedDeviceId::from(session_data.device_id),
+                    },
+                    tokens: SessionTokens {
+                        access_token: session_data.access_token,
+                        refresh_token: session_data.refresh_token,
+                    },
+                };
+                client.restore_session(matrix_session).await?;
+            }
+
+>>>>>>> 817a3f2cb42b347911bd1c5b36512ed7838408fe
             let sync_service: Arc<SyncService> = Arc::new(SyncService::builder(client.clone()).build().await?);
             let room_list_service = sync_service.room_list_service();
 

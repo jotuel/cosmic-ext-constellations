@@ -493,6 +493,7 @@ impl Application for Constellations {
         tasks.push(title_task);
 
 <<<<<<< HEAD
+<<<<<<< HEAD
         (app, Task::batch(tasks))
 =======
         (app, Task::batch([
@@ -506,6 +507,9 @@ impl Application for Constellations {
             title_task,
         ]))
 >>>>>>> aa261e5 (🔒 security: remove insecure data directory fallback)
+=======
+        (app, Task::batch(tasks))
+>>>>>>> 817a3f2cb42b347911bd1c5b36512ed7838408fe
     }
 
     fn update(&mut self, message: Message) -> Task<Action<Self::Message>> {
