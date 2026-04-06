@@ -436,8 +436,7 @@ impl Application for Constellations {
 
     fn init(core: Core, flags: Self::Flags) -> (Self, Task<Action<Self::Message>>) {
         let data_dir = dirs::data_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("fi.joonastuomi.CosmicExtConstellations");
+            .map(|d| d.join("fi.joonastuomi.CosmicExtConstellations"));
 
         let mut tasks = Vec::new();
         tasks.push(Task::perform(async move {
