@@ -420,8 +420,7 @@ impl Application for Constellations {
 
     fn init(core: Core, _flags: Self::Flags) -> (Self, Task<Action<Self::Message>>) {
         let data_dir = dirs::data_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("fi.joonastuomi.CosmicExtConstellations");
+            .map(|d| d.join("fi.joonastuomi.CosmicExtConstellations"));
 
         let mut app = Constellations {
             core: core.clone(),
@@ -449,7 +448,11 @@ impl Application for Constellations {
 
         (app, Task::batch([
             Task::perform(async move {
-                matrix::MatrixEngine::new(data_dir).await.map_err(matrix::SyncError::from)
+                if let Some(data_dir) = data_dir {
+                    matrix::MatrixEngine::new(data_dir).await.map_err(matrix::SyncError::from)
+                } else {
+                    Err(matrix::SyncError::Anyhow("Could not determine data directory".to_string()))
+                }
             }, |res| Action::from(Message::EngineReady(res))),
             title_task,
         ]))
