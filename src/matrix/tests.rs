@@ -1,5 +1,6 @@
 use super::*;
 use tempfile::tempdir;
+use matrix_sdk_base::store::RoomLoadSettings;
 
 #[tokio::test]
 async fn test_matrix_engine_init() {
@@ -28,6 +29,9 @@ fn test_room_data_serialization() {
         last_message: Some("Hello".to_string()),
         unread_count: 5,
         avatar_url: None,
+        room_type: None,
+        is_space: false,
+        parent_space_id: None,
     };
     let serialized = serde_json::to_string(&room_data).unwrap();
     let deserialized: RoomData = serde_json::from_str(&serialized).unwrap();
@@ -35,6 +39,90 @@ fn test_room_data_serialization() {
     assert_eq!(room_data.name, deserialized.name);
     assert_eq!(room_data.last_message, deserialized.last_message);
     assert_eq!(room_data.unread_count, deserialized.unread_count);
+    assert_eq!(room_data.room_type, deserialized.room_type);
+    assert_eq!(room_data.is_space, deserialized.is_space);
+    assert_eq!(room_data.parent_space_id, deserialized.parent_space_id);
+}
+
+#[test]
+fn test_space_hierarchy_basic() {
+    let mut hierarchy = SpaceHierarchy::new();
+    let space_id = RoomId::parse("!space:example.com").unwrap();
+    let room_id = RoomId::parse("!room:example.com").unwrap();
+
+    hierarchy.add_child(space_id.clone(), room_id.clone());
+
+    assert!(hierarchy.is_in_space(&room_id, &space_id));
+    assert!(!hierarchy.is_in_space(&space_id, &room_id));
+}
+
+#[test]
+fn test_space_hierarchy_nested() {
+    let mut hierarchy = SpaceHierarchy::new();
+    let top_space = RoomId::parse("!top:example.com").unwrap();
+    let sub_space = RoomId::parse("!sub:example.com").unwrap();
+    let room = RoomId::parse("!room:example.com").unwrap();
+
+    hierarchy.add_child(top_space.clone(), sub_space.clone());
+    hierarchy.add_child(sub_space.clone(), room.clone());
+
+    assert!(hierarchy.is_in_space(&room, &sub_space));
+    assert!(hierarchy.is_in_space(&room, &top_space));
+    assert!(hierarchy.is_in_space(&sub_space, &top_space));
+    assert!(!hierarchy.is_in_space(&top_space, &sub_space));
+}
+
+#[test]
+fn test_space_hierarchy_circular() {
+    let mut hierarchy = SpaceHierarchy::new();
+    let space_a = RoomId::parse("!a:example.com").unwrap();
+    let space_b = RoomId::parse("!b:example.com").unwrap();
+
+    hierarchy.add_child(space_a.clone(), space_b.clone());
+    hierarchy.add_child(space_b.clone(), space_a.clone());
+
+    // Should not stack overflow
+    assert!(hierarchy.is_in_space(&space_a, &space_b));
+    assert!(hierarchy.is_in_space(&space_b, &space_a));
+    
+    let room = RoomId::parse("!room:example.com").unwrap();
+    hierarchy.add_child(space_a.clone(), room.clone());
+    
+    assert!(hierarchy.is_in_space(&room, &space_a));
+    assert!(hierarchy.is_in_space(&room, &space_b));
+}
+
+#[test]
+fn test_space_hierarchy_multiple_parents() {
+    let mut hierarchy = SpaceHierarchy::new();
+    let space_1 = RoomId::parse("!space1:example.com").unwrap();
+    let space_2 = RoomId::parse("!space2:example.com").unwrap();
+    let room = RoomId::parse("!room:example.com").unwrap();
+
+    hierarchy.add_child(space_1.clone(), room.clone());
+    hierarchy.add_child(space_2.clone(), room.clone());
+
+    assert!(hierarchy.is_in_space(&room, &space_1));
+    assert!(hierarchy.is_in_space(&room, &space_2));
+}
+
+#[test]
+fn test_room_data_space_serialization() {
+    let room_data = RoomData {
+        id: "!room:example.com".to_string(),
+        name: Some("Example Room".to_string()),
+        last_message: Some("Hello".to_string()),
+        unread_count: 5,
+        avatar_url: None,
+        room_type: Some(RoomType::Space),
+        is_space: true,
+        parent_space_id: Some("!space:example.com".to_string()),
+    };
+    let serialized = serde_json::to_string(&room_data).unwrap();
+    let deserialized: RoomData = serde_json::from_str(&serialized).unwrap();
+    assert_eq!(room_data.room_type, deserialized.room_type);
+    assert_eq!(room_data.is_space, deserialized.is_space);
+    assert_eq!(room_data.parent_space_id, deserialized.parent_space_id);
 }
 
 #[test]
@@ -61,6 +149,9 @@ fn test_matrix_event_variants() {
         last_message: None,
         unread_count: 0,
         avatar_url: None,
+        room_type: None,
+        is_space: false,
+        parent_space_id: None,
     };
     let event = MatrixEvent::RoomDiff(VectorDiff::Insert { index: 0, value: room_data.clone() });
     if let MatrixEvent::RoomDiff(VectorDiff::Insert { index, value }) = event {
@@ -152,7 +243,6 @@ fn test_sync_service_state_mapping() {
         (SyncServiceState::Idle, SyncStatus::Connected),
         (SyncServiceState::Running, SyncStatus::Syncing),
         (SyncServiceState::Terminated, SyncStatus::Disconnected),
-        (SyncServiceState::Error, SyncStatus::Error("Sync error encountered. This may be due to missing server support for Sliding Sync (MSC4186) or network issues.".to_string())),
     ];
 
     for (input, expected) in states {
@@ -160,10 +250,63 @@ fn test_sync_service_state_mapping() {
             SyncServiceState::Idle => SyncStatus::Connected,
             SyncServiceState::Running => SyncStatus::Syncing,
             SyncServiceState::Terminated => SyncStatus::Disconnected,
-            SyncServiceState::Error => SyncStatus::Error("Sync error encountered. This may be due to missing server support for Sliding Sync (MSC4186) or network issues.".to_string()),
+            SyncServiceState::Offline => SyncStatus::Disconnected,
+            SyncServiceState::Error(_) => SyncStatus::Error("Sync error encountered. This may be due to missing server support for Sliding Sync (MSC4186) or network issues.".to_string()),
         };
         assert_eq!(actual, expected);
     }
+}
+
+#[test]
+fn test_session_data_serialization() {
+    let session_data = SessionData {
+        homeserver: "https://matrix.org".to_string(),
+        user_id: "@alice:matrix.org".to_string(),
+        access_token: "access_token".to_string(),
+        refresh_token: Some("refresh_token".to_string()),
+        id_token: Some("id_token".to_string()),
+        device_id: "DEVICEID".to_string(),
+    };
+    let serialized = serde_json::to_string(&session_data).unwrap();
+    let deserialized: SessionData = serde_json::from_str(&serialized).unwrap();
+    assert_eq!(session_data.homeserver, deserialized.homeserver);
+    assert_eq!(session_data.user_id, deserialized.user_id);
+    assert_eq!(session_data.access_token, deserialized.access_token);
+    assert_eq!(session_data.refresh_token, deserialized.refresh_token);
+    assert_eq!(session_data.id_token, deserialized.id_token);
+    assert_eq!(session_data.device_id, deserialized.device_id);
+}
+
+#[tokio::test]
+async fn test_login_oidc_initiation_no_server() {
+    let tmp_dir = tempdir().unwrap();
+    let engine = MatrixEngine::new(tmp_dir.path().to_path_buf()).await.unwrap();
+    
+    let homeserver = "http://localhost:12345";
+    let result = engine.login_oidc(homeserver).await;
+    
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn test_complete_oidc_login_no_client() {
+    let tmp_dir = tempdir().unwrap();
+    let engine = MatrixEngine::new(tmp_dir.path().to_path_buf()).await.unwrap();
+    
+    let callback_url = Url::parse("com.system76.Claw://callback?code=test").unwrap();
+    let result = engine.complete_oidc_login(callback_url).await;
+    
+    assert!(result.is_err());
+    assert_eq!(result.unwrap_err().to_string(), "No OIDC login in progress");
+}
+
+#[tokio::test]
+async fn test_ipc_callback_trigger_failure() {
+    let test_uri = "com.system76.Claw://callback?code=test_code".to_string();
+    let result = crate::ipc::call_handle_callback(test_uri).await;
+    
+    // If no instance is running, it should fail to find the proxy.
+    assert!(result.is_err());
 }
 
 #[test]
@@ -192,13 +335,13 @@ fn test_backoff_logic() {
     assert_eq!(backoff.next(), 60);
 }
 
-fn create_test_session() -> matrix_sdk::matrix_auth::MatrixSession {
-    matrix_sdk::matrix_auth::MatrixSession {
+fn create_test_session() -> matrix_sdk::authentication::matrix::MatrixSession {
+    matrix_sdk::authentication::matrix::MatrixSession {
         meta: matrix_sdk::SessionMeta {
             user_id: UserId::parse("@alice:localhost").unwrap(),
             device_id: matrix_sdk::ruma::OwnedDeviceId::from("DEVICEID"),
         },
-        tokens: matrix_sdk::matrix_auth::MatrixSessionTokens {
+        tokens: matrix_sdk::SessionTokens {
             access_token: "token".to_string(),
             refresh_token: None,
         },
@@ -221,7 +364,7 @@ async fn test_start_sync_task_management() {
     
     // Set a dummy session so SyncService::builder doesn't fail
     let session = create_test_session();
-    client.matrix_auth().restore_session(session).await.unwrap();
+    client.restore_session(session).await.unwrap();
 
     let sync_service = Arc::new(SyncService::builder(client).build().await.unwrap());
     
