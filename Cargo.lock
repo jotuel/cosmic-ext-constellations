@@ -1135,6 +1135,7 @@ dependencies = [
  "imbl",
  "libcosmic",
  "matrix-sdk",
+ "matrix-sdk-base",
  "matrix-sdk-sqlite",
  "matrix-sdk-ui",
  "oo7",
