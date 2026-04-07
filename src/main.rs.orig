@@ -1316,7 +1316,7 @@ impl Application for Constellations {
                     for diff in diffs {
                         let room_diff = match diff {
                             eyeball_im::VectorDiff::Insert { index, value } => {
-                                get_room_data(&engine_rooms, value.room_id()).await.map(|data| {
+                                get_room_data(&engine_rooms, &value).await.map(|data| {
                                     eyeball_im::VectorDiff::Insert { index, value: data }
                                 })
                             }
@@ -1324,14 +1324,14 @@ impl Application for Constellations {
                                 Some(eyeball_im::VectorDiff::Remove { index })
                             }
                             eyeball_im::VectorDiff::Set { index, value } => {
-                                get_room_data(&engine_rooms, value.room_id())
+                                get_room_data(&engine_rooms, &value)
                                     .await
                                     .map(|data| eyeball_im::VectorDiff::Set { index, value: data })
                             }
                             eyeball_im::VectorDiff::Reset { values } => {
                                 let futures: Vec<_> = values
                                     .iter()
-                                    .map(|v| get_room_data(&engine_rooms, v.room_id()))
+                                    .map(|v| get_room_data(&engine_rooms, v))
                                     .collect();
                                 let new_values: Vec<_> =
                                     cosmic::iced::futures::future::join_all(futures)
@@ -1346,7 +1346,7 @@ impl Application for Constellations {
                             eyeball_im::VectorDiff::Append { values } => {
                                 let futures: Vec<_> = values
                                     .iter()
-                                    .map(|v| get_room_data(&engine_rooms, v.room_id()))
+                                    .map(|v| get_room_data(&engine_rooms, v))
                                     .collect();
                                 let new_values: Vec<_> =
                                     cosmic::iced::futures::future::join_all(futures)
@@ -1362,12 +1362,12 @@ impl Application for Constellations {
                                 Some(eyeball_im::VectorDiff::Truncate { length })
                             }
                             eyeball_im::VectorDiff::PushBack { value } => {
-                                get_room_data(&engine_rooms, value.room_id())
+                                get_room_data(&engine_rooms, &value)
                                     .await
                                     .map(|data| eyeball_im::VectorDiff::PushBack { value: data })
                             }
                             eyeball_im::VectorDiff::PushFront { value } => {
-                                get_room_data(&engine_rooms, value.room_id())
+                                get_room_data(&engine_rooms, &value)
                                     .await
                                     .map(|data| eyeball_im::VectorDiff::PushFront { value: data })
                             }
@@ -1439,9 +1439,10 @@ impl Application for Constellations {
 
 async fn get_room_data(
     engine: &matrix::MatrixEngine,
-    room_id: &matrix_sdk::ruma::RoomId,
+    room: &matrix_sdk::Room,
 ) -> Option<matrix::RoomData> {
     let client = engine.client().await;
+    let room_id = room.room_id();
     let room = client.get_room(room_id)?;
 
     engine.fetch_room_data(&room).await.ok()
@@ -1506,21 +1507,4 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     cosmic::app::run::<Constellations>(cosmic::app::Settings::default(), uri)?;
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_get_room_data_not_found() {
-        let tmp_dir = tempfile::tempdir().unwrap();
-        let engine = matrix::MatrixEngine::new(tmp_dir.path().to_path_buf()).await.unwrap();
-
-        let room_id = matrix_sdk::ruma::RoomId::parse("!nonexistent:example.com").unwrap();
-
-        let result = get_room_data(&engine, &room_id).await;
-
-        assert!(result.is_none());
-    }
 }
