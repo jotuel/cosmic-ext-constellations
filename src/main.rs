@@ -646,160 +646,392 @@ impl Application for Constellations {
         (app, Task::batch(tasks))
     }
 
+    fn handle_engine_ready(&mut self, res: Result<matrix::MatrixEngine, matrix::SyncError>) -> Task<Action<Self::Message>> {
+        match res {
+            Ok(engine) => {
+                self.matrix = Some(engine.clone());
+                Task::perform(
+                    async move {
+                        let _ = engine.restore_session().await;
+                        let user_id = engine.client().await.user_id().map(|u| u.to_string());
+                        let sync_res = engine.start_sync().await;
+                        (user_id, sync_res)
+                    },
+                    |(user_id, sync_res)| Action::from(Message::UserReady(user_id, sync_res)),
+                )
+            }
+            Err(e) => {
+                self.error = Some(format!("Failed to initialize Matrix engine: {}", e));
+                self.is_initializing = false;
+                Task::none()
+            }
+        }
+    }
+
+    fn handle_user_ready(&mut self, user_id: Option<String>, sync_res: Result<(), matrix::SyncError>) -> Task<Action<Self::Message>> {
+        self.user_id = user_id;
+        self.is_initializing = false;
+        let title_task = self.update_title();
+        match sync_res {
+            Ok(_) => {}
+            Err(matrix::SyncError::MissingSlidingSyncSupport) => {
+                self.sync_status = matrix::SyncStatus::MissingSlidingSyncSupport;
+            }
+            Err(e) => {
+                self.sync_status = matrix::SyncStatus::Error(e.to_string());
+            }
+        }
+        title_task
+    }
+
+    fn handle_timeline_diff(&mut self, diff: eyeball_im::VectorDiff<std::sync::Arc<matrix::TimelineItem>>) -> Task<Action<Self::Message>> {
+        let mut tasks = Vec::new();
+        let mut check_item = |item: &std::sync::Arc<matrix::TimelineItem>| {
+            if let Some(event) = item.as_event() {
+                if let matrix_sdk_ui::timeline::TimelineDetails::Ready(profile) =
+                    event.sender_profile()
+                {
+                    if let Some(avatar_url) = &profile.avatar_url {
+                        let url_str = avatar_url.to_string();
+                        if !self.media_cache.contains_key(&url_str) {
+                            if let Some(matrix) = &self.matrix {
+                                let matrix_clone = matrix.clone();
+                                let mxc_url = url_str.clone();
+                                let source = matrix_sdk::ruma::events::room::MediaSource::Plain(avatar_url.clone());
+                                tasks.push(cosmic::iced::Task::perform(
+                                    async move {
+                                        matrix_clone
+                                            .fetch_media(source)
+                                            .await
+                                            .map_err(|e| e.to_string())
+                                    },
+                                    move |res| {
+                                        Message::MediaFetched(mxc_url.clone(), res)
+                                            .into()
+                                    },
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        match &diff {
+            eyeball_im::VectorDiff::Insert { value, .. } => check_item(value),
+            eyeball_im::VectorDiff::Set { value, .. } => check_item(value),
+            eyeball_im::VectorDiff::PushBack { value } => check_item(value),
+            eyeball_im::VectorDiff::PushFront { value } => check_item(value),
+            eyeball_im::VectorDiff::Append { values } => {
+                values.iter().for_each(&mut check_item)
+            }
+            eyeball_im::VectorDiff::Reset { values } => {
+                values.iter().for_each(&mut check_item)
+            }
+            _ => {}
+        }
+
+        let mapped_diff = match diff {
+            eyeball_im::VectorDiff::Insert { index, value } => eyeball_im::VectorDiff::Insert {
+                index,
+                value: ConstellationsItem::new(value, self.user_id.as_deref()),
+            },
+            eyeball_im::VectorDiff::Set { index, value } => eyeball_im::VectorDiff::Set {
+                index,
+                value: ConstellationsItem::new(value, self.user_id.as_deref()),
+            },
+            eyeball_im::VectorDiff::PushBack { value } => eyeball_im::VectorDiff::PushBack {
+                value: ConstellationsItem::new(value, self.user_id.as_deref()),
+            },
+            eyeball_im::VectorDiff::PushFront { value } => eyeball_im::VectorDiff::PushFront {
+                value: ConstellationsItem::new(value, self.user_id.as_deref()),
+            },
+            eyeball_im::VectorDiff::Append { values } => eyeball_im::VectorDiff::Append {
+                values: values.into_iter().map(|v| ConstellationsItem::new(v, self.user_id.as_deref())).collect(),
+            },
+            eyeball_im::VectorDiff::Reset { values } => eyeball_im::VectorDiff::Reset {
+                values: values.into_iter().map(|v| ConstellationsItem::new(v, self.user_id.as_deref())).collect(),
+            },
+            eyeball_im::VectorDiff::Remove { index } => eyeball_im::VectorDiff::Remove { index },
+            eyeball_im::VectorDiff::PopBack => eyeball_im::VectorDiff::PopBack,
+            eyeball_im::VectorDiff::PopFront => eyeball_im::VectorDiff::PopFront,
+            eyeball_im::VectorDiff::Clear => eyeball_im::VectorDiff::Clear,
+            eyeball_im::VectorDiff::Truncate { length } => eyeball_im::VectorDiff::Truncate { length },
+        };
+
+        self.timeline_items.apply_diff(mapped_diff);
+
+        if !tasks.is_empty() {
+            cosmic::iced::Task::batch(tasks)
+        } else {
+            Task::none()
+        }
+    }
+
+    fn handle_matrix_event(&mut self, event: matrix::MatrixEvent) -> Task<Action<Self::Message>> {
+        match event {
+            matrix::MatrixEvent::SyncStatusChanged(status) => {
+                self.sync_status = status;
+                Task::none()
+            }
+            matrix::MatrixEvent::SyncIndicatorChanged(show) => {
+                self.show_sync_indicator = show;
+                Task::none()
+            }
+            matrix::MatrixEvent::RoomDiff(diff) => {
+                self.room_list.apply_diff(diff);
+                self.update_title()
+            }
+            matrix::MatrixEvent::TimelineDiff(diff) => {
+                self.handle_timeline_diff(diff)
+            }
+            matrix::MatrixEvent::TimelineReset => {
+                self.timeline_items.clear();
+                Task::none()
+            }
+            matrix::MatrixEvent::ReactionAdded { .. } => {
+                // For now, we don't do anything specific as reactions are handled via TimelineDiff
+                Task::none()
+            }
+        }
+    }
+
+    fn handle_load_more(&mut self) -> Task<Action<Self::Message>> {
+        if let (Some(matrix), Some(room_id)) = (&self.matrix, &self.selected_room) {
+            let matrix = matrix.clone();
+            let room_id = room_id.clone();
+            Task::perform(
+                async move {
+                    matrix
+                        .paginate_backwards(&room_id, 20)
+                        .await
+                        .map_err(|e| e.to_string())
+                },
+                |res| Action::from(Message::LoadMoreFinished(res)),
+            )
+        } else {
+            Task::none()
+        }
+    }
+
+    fn handle_send_message(&mut self) -> Task<Action<Self::Message>> {
+        if let (Some(matrix), Some(room_id)) = (&self.matrix, &self.selected_room) {
+            let body = self.composer_text.clone();
+            if body.is_empty() {
+                return Task::none();
+            }
+
+            let html_body = matrix::markdown_to_html(&body);
+
+            let matrix = matrix.clone();
+            let room_id = room_id.clone();
+
+            Task::perform(
+                async move {
+                    matrix
+                        .send_message(&room_id, body, Some(html_body))
+                        .await
+                        .map_err(|e| e.to_string())
+                },
+                |res| Action::from(Message::MessageSent(res)),
+            )
+        } else {
+            Task::none()
+        }
+    }
+
+    fn handle_create_room(&mut self, name: String) -> Task<Action<Self::Message>> {
+        if let Some(matrix) = &self.matrix {
+            let matrix = matrix.clone();
+            Task::perform(
+                async move {
+                    matrix
+                        .create_room(&name)
+                        .await
+                        .map(|id| id.to_string())
+                        .map_err(|e| e.to_string())
+                },
+                |res| Action::from(Message::RoomCreated(res)),
+            )
+        } else {
+            Task::none()
+        }
+    }
+
+    fn handle_select_space(&mut self, space_id: Option<OwnedRoomId>) -> Task<Action<Self::Message>> {
+        self.selected_space = space_id.clone();
+        if let Some(matrix) = &self.matrix {
+            let matrix = matrix.clone();
+            Task::perform(
+                async move {
+                    let _ = matrix.update_room_list_filter(space_id).await;
+                },
+                |_| Action::from(Message::NoOp),
+            )
+        } else {
+            Task::none()
+        }
+    }
+
+    fn handle_fetch_media(&mut self, source: MediaSource) -> Task<Action<Self::Message>> {
+        if let Some(matrix) = &self.matrix {
+            let matrix = matrix.clone();
+            let mxc_url = match &source {
+                MediaSource::Plain(uri) => uri.to_string(),
+                MediaSource::Encrypted(file) => file.url.to_string(),
+            };
+            Task::perform(
+                async move { matrix.fetch_media(source).await.map_err(|e| e.to_string()) },
+                move |res| Action::from(Message::MediaFetched(mxc_url, res)),
+            )
+        } else {
+            Task::none()
+        }
+    }
+
+    fn handle_media_fetched(&mut self, mxc_url: String, res: Result<Vec<u8>, String>) -> Task<Action<Self::Message>> {
+        match res {
+            Ok(data) => {
+                self.media_cache.insert(
+                    mxc_url,
+                    cosmic::iced::widget::image::Handle::from_bytes(data),
+                );
+            }
+            Err(e) => {
+                self.error = Some(format!("Failed to fetch media: {}", e));
+            }
+        }
+        Task::none()
+    }
+
+    fn handle_submit_login(&mut self) -> Task<Action<Self::Message>> {
+        if let Some(matrix) = &self.matrix {
+            self.is_logging_in = true;
+            self.error = None;
+            self.sync_status = matrix::SyncStatus::Disconnected;
+            let matrix = matrix.clone();
+            let homeserver = self.login_homeserver.clone();
+            let username = self.login_username.clone();
+            let password = self.login_password.clone();
+            self.login_password.clear();
+
+            Task::perform(
+                async move {
+                    matrix.login(&homeserver, &username, &password).await?;
+                    let user_id = matrix
+                        .client()
+                        .await
+                        .user_id()
+                        .map(|u| u.to_string())
+                        .ok_or_else(|| {
+                            anyhow::anyhow!("Failed to get user ID after login")
+                        })?;
+                    matrix.start_sync().await?;
+                    Ok(user_id)
+                },
+                |res: Result<String, anyhow::Error>| {
+                    Action::from(Message::LoginFinished(
+                        res.map_err(matrix::SyncError::from),
+                    ))
+                },
+            )
+        } else {
+            Task::none()
+        }
+    }
+
+    fn handle_login_finished(&mut self, res: Result<String, matrix::SyncError>) -> Task<Action<Self::Message>> {
+        self.is_logging_in = false;
+        self.is_oidc_logging_in = false;
+        match res {
+            Ok(user_id) => {
+                self.user_id = Some(user_id);
+            }
+            Err(matrix::SyncError::MissingSlidingSyncSupport) => {
+                self.sync_status = matrix::SyncStatus::MissingSlidingSyncSupport;
+            }
+            Err(e) => {
+                self.error = Some(format!("Login failed: {}", e));
+            }
+        }
+        Task::none()
+    }
+
+    fn handle_submit_oidc_login(&mut self) -> Task<Action<Self::Message>> {
+        if let Some(matrix) = &self.matrix {
+            self.is_oidc_logging_in = true;
+            self.error = None;
+            let matrix = matrix.clone();
+            let homeserver = self.login_homeserver.clone();
+            Task::perform(
+                async move {
+                    matrix
+                        .login_oidc(&homeserver)
+                        .await
+                        .map_err(|e| e.to_string())
+                },
+                |res| Action::from(Message::OidcLoginStarted(res)),
+            )
+        } else {
+            Task::none()
+        }
+    }
+
+    fn handle_oidc_login_started(&mut self, res: Result<Url, String>) -> Task<Action<Self::Message>> {
+        match res {
+            Ok(url) => {
+                tracing::info!("Opening URL: {}", redact_url(&url));
+                let _ = open::that(url.as_str());
+            }
+            Err(e) => {
+                self.is_oidc_logging_in = false;
+                self.error = Some(format!("OIDC login failed to start: {}", e));
+            }
+        }
+        Task::none()
+    }
+
+    fn handle_oidc_callback(&mut self, url: Url) -> Task<Action<Self::Message>> {
+        if let Some(matrix) = &self.matrix {
+            self.is_oidc_logging_in = true;
+            self.error = None;
+            let matrix = matrix.clone();
+            Task::perform(
+                async move {
+                    matrix.complete_oidc_login(url).await?;
+                    let user_id = matrix
+                        .client()
+                        .await
+                        .user_id()
+                        .map(|u| u.to_string())
+                        .ok_or_else(|| {
+                            anyhow::anyhow!("Failed to get user ID after OIDC login")
+                        })?;
+                    matrix.start_sync().await?;
+                    Ok(user_id)
+                },
+                |res: Result<String, anyhow::Error>| {
+                    Action::from(Message::LoginFinished(
+                        res.map_err(matrix::SyncError::from),
+                    ))
+                },
+            )
+        } else {
+            Task::none()
+        }
+    }
+
     fn update(&mut self, message: Message) -> Task<Action<Self::Message>> {
         match message {
-            Message::EngineReady(res) => match res {
-                Ok(engine) => {
-                    self.matrix = Some(engine.clone());
-                    return Task::perform(
-                        async move {
-                            let _ = engine.restore_session().await;
-                            let user_id = engine.client().await.user_id().map(|u| u.to_string());
-                            let sync_res = engine.start_sync().await;
-                            (user_id, sync_res)
-                        },
-                        |(user_id, sync_res)| Action::from(Message::UserReady(user_id, sync_res)),
-                    );
-                }
-                Err(e) => {
-                    self.error = Some(format!("Failed to initialize Matrix engine: {}", e));
-                    self.is_initializing = false;
-                }
-            },
-            Message::UserReady(user_id, sync_res) => {
-                self.user_id = user_id;
-                self.is_initializing = false;
-                let _ = self.update_title();
-                match sync_res {
-                    Ok(_) => {}
-                    Err(matrix::SyncError::MissingSlidingSyncSupport) => {
-                        self.sync_status = matrix::SyncStatus::MissingSlidingSyncSupport;
-                    }
-                    Err(e) => {
-                        self.sync_status = matrix::SyncStatus::Error(e.to_string());
-                    }
-                }
-            }
-            Message::Matrix(event) => {
-                match event {
-                    matrix::MatrixEvent::SyncStatusChanged(status) => {
-                        self.sync_status = status;
-                    }
-                    matrix::MatrixEvent::SyncIndicatorChanged(show) => {
-                        self.show_sync_indicator = show;
-                    }
-                    matrix::MatrixEvent::RoomDiff(diff) => {
-                        self.room_list.apply_diff(diff);
-                        let _ = self.update_title();
-                    }
-                    matrix::MatrixEvent::TimelineDiff(diff) => {
-                        let mut tasks = Vec::new();
-                        let mut check_item = |item: &std::sync::Arc<matrix::TimelineItem>| {
-                            if let Some(event) = item.as_event() {
-                                if let matrix_sdk_ui::timeline::TimelineDetails::Ready(profile) =
-                                    event.sender_profile()
-                                {
-                                    if let Some(avatar_url) = &profile.avatar_url {
-                                        let url_str = avatar_url.to_string();
-                                        if !self.media_cache.contains_key(&url_str) {
-                                            if let Some(matrix) = &self.matrix {
-                                                let matrix_clone = matrix.clone();
-                                                let mxc_url = url_str.clone();
-                                                let source = matrix_sdk::ruma::events::room::MediaSource::Plain(avatar_url.clone());
-                                                tasks.push(cosmic::iced::Task::perform(
-                                                    async move {
-                                                        matrix_clone
-                                                            .fetch_media(source)
-                                                            .await
-                                                            .map_err(|e| e.to_string())
-                                                    },
-                                                    move |res| {
-                                                        Message::MediaFetched(mxc_url.clone(), res)
-                                                            .into()
-                                                    },
-                                                ));
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        };
-
-                        match &diff {
-                            eyeball_im::VectorDiff::Insert { value, .. } => check_item(value),
-                            eyeball_im::VectorDiff::Set { value, .. } => check_item(value),
-                            eyeball_im::VectorDiff::PushBack { value } => check_item(value),
-                            eyeball_im::VectorDiff::PushFront { value } => check_item(value),
-                            eyeball_im::VectorDiff::Append { values } => {
-                                values.iter().for_each(&mut check_item)
-                            }
-                            eyeball_im::VectorDiff::Reset { values } => {
-                                values.iter().for_each(&mut check_item)
-                            }
-                            _ => {}
-                        }
-
-                        let mapped_diff = match diff {
-                            eyeball_im::VectorDiff::Insert { index, value } => eyeball_im::VectorDiff::Insert {
-                                index,
-                                value: ConstellationsItem::new(value, self.user_id.as_deref()),
-                            },
-                            eyeball_im::VectorDiff::Set { index, value } => eyeball_im::VectorDiff::Set {
-                                index,
-                                value: ConstellationsItem::new(value, self.user_id.as_deref()),
-                            },
-                            eyeball_im::VectorDiff::PushBack { value } => eyeball_im::VectorDiff::PushBack {
-                                value: ConstellationsItem::new(value, self.user_id.as_deref()),
-                            },
-                            eyeball_im::VectorDiff::PushFront { value } => eyeball_im::VectorDiff::PushFront {
-                                value: ConstellationsItem::new(value, self.user_id.as_deref()),
-                            },
-                            eyeball_im::VectorDiff::Append { values } => eyeball_im::VectorDiff::Append {
-                                values: values.into_iter().map(|v| ConstellationsItem::new(v, self.user_id.as_deref())).collect(),
-                            },
-                            eyeball_im::VectorDiff::Reset { values } => eyeball_im::VectorDiff::Reset {
-                                values: values.into_iter().map(|v| ConstellationsItem::new(v, self.user_id.as_deref())).collect(),
-                            },
-                            eyeball_im::VectorDiff::Remove { index } => eyeball_im::VectorDiff::Remove { index },
-                            eyeball_im::VectorDiff::PopBack => eyeball_im::VectorDiff::PopBack,
-                            eyeball_im::VectorDiff::PopFront => eyeball_im::VectorDiff::PopFront,
-                            eyeball_im::VectorDiff::Clear => eyeball_im::VectorDiff::Clear,
-                            eyeball_im::VectorDiff::Truncate { length } => eyeball_im::VectorDiff::Truncate { length },
-                        };
-
-                        self.timeline_items.apply_diff(mapped_diff);
-
-                        if !tasks.is_empty() {
-                            return cosmic::iced::Task::batch(tasks);
-                        }
-                    }
-                    matrix::MatrixEvent::TimelineReset => {
-                        self.timeline_items.clear();
-                    }
-                    matrix::MatrixEvent::ReactionAdded { .. } => {
-                        // For now, we don't do anything specific as reactions are handled via TimelineDiff
-                    }
-                }
-            }
-            Message::LoadMore => {
-                if let (Some(matrix), Some(room_id)) = (&self.matrix, &self.selected_room) {
-                    let matrix = matrix.clone();
-                    let room_id = room_id.clone();
-                    return Task::perform(
-                        async move {
-                            matrix
-                                .paginate_backwards(&room_id, 20)
-                                .await
-                                .map_err(|e| e.to_string())
-                        },
-                        |res| Action::from(Message::LoadMoreFinished(res)),
-                    );
-                }
-            }
+            Message::EngineReady(res) => return self.handle_engine_ready(res),
+            Message::UserReady(user_id, sync_res) => return self.handle_user_ready(user_id, sync_res),
+            Message::Matrix(event) => return self.handle_matrix_event(event),
+            Message::LoadMore => return self.handle_load_more(),
             Message::LoadMoreFinished(res) => {
                 if let Err(e) = res {
                     self.error = Some(format!("Failed to load more messages: {}", e));
                 }
+                Task::none()
             }
             Message::RoomSelected(room_id) => {
                 self.selected_room = Some(room_id);
@@ -808,228 +1040,74 @@ impl Application for Constellations {
             }
             Message::ComposerChanged(text) => {
                 self.composer_text = text;
+                Task::none()
             }
             Message::TogglePreview => {
                 self.composer_is_preview = !self.composer_is_preview;
+                Task::none()
             }
-            Message::SendMessage => {
-                if let (Some(matrix), Some(room_id)) = (&self.matrix, &self.selected_room) {
-                    let body = self.composer_text.clone();
-                    if body.is_empty() {
-                        return Task::none();
+            Message::SendMessage => return self.handle_send_message(),
+            Message::MessageSent(res) => {
+                match res {
+                    Ok(_) => {
+                        self.composer_text.clear();
+                        self.composer_is_preview = false;
                     }
-
-                    let html_body = matrix::markdown_to_html(&body);
-
-                    let matrix = matrix.clone();
-                    let room_id = room_id.clone();
-
-                    return Task::perform(
-                        async move {
-                            matrix
-                                .send_message(&room_id, body, Some(html_body))
-                                .await
-                                .map_err(|e| e.to_string())
-                        },
-                        |res| Action::from(Message::MessageSent(res)),
-                    );
+                    Err(e) => {
+                        self.error = Some(format!("Failed to send message: {}", e));
+                    }
                 }
+                Task::none()
             }
-            Message::MessageSent(res) => match res {
-                Ok(_) => {
-                    self.composer_text.clear();
-                    self.composer_is_preview = false;
-                }
-                Err(e) => {
-                    self.error = Some(format!("Failed to send message: {}", e));
-                }
-            },
-            Message::FetchMedia(source) => {
-                if let Some(matrix) = &self.matrix {
-                    let matrix = matrix.clone();
-                    let mxc_url = match &source {
-                        MediaSource::Plain(uri) => uri.to_string(),
-                        MediaSource::Encrypted(file) => file.url.to_string(),
-                    };
-                    return Task::perform(
-                        async move { matrix.fetch_media(source).await.map_err(|e| e.to_string()) },
-                        move |res| Action::from(Message::MediaFetched(mxc_url, res)),
-                    );
-                }
-            }
-            Message::MediaFetched(mxc_url, res) => match res {
-                Ok(data) => {
-                    self.media_cache.insert(
-                        mxc_url,
-                        cosmic::iced::widget::image::Handle::from_bytes(data),
-                    );
-                }
-                Err(e) => {
-                    self.error = Some(format!("Failed to fetch media: {}", e));
-                }
-            },
+            Message::FetchMedia(source) => return self.handle_fetch_media(source),
+            Message::MediaFetched(mxc_url, res) => return self.handle_media_fetched(mxc_url, res),
             Message::DismissError => {
                 self.error = None;
+                Task::none()
             }
             Message::ToggleCreateRoom => {
                 self.creating_room = !self.creating_room;
                 self.new_room_name.clear();
+                Task::none()
             }
             Message::NewRoomNameChanged(name) => {
                 self.new_room_name = name;
+                Task::none()
             }
-            Message::CreateRoom(name) => {
-                if let Some(matrix) = &self.matrix {
-                    let matrix = matrix.clone();
-                    return Task::perform(
-                        async move {
-                            matrix
-                                .create_room(&name)
-                                .await
-                                .map(|id| id.to_string())
-                                .map_err(|e| e.to_string())
-                        },
-                        |res| Action::from(Message::RoomCreated(res)),
-                    );
+            Message::CreateRoom(name) => return self.handle_create_room(name),
+            Message::RoomCreated(res) => {
+                match res {
+                    Ok(room_id) => {
+                        self.creating_room = false;
+                        self.new_room_name.clear();
+                        self.selected_room = Some(room_id);
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to create room: {}", e));
+                    }
                 }
+                Task::none()
             }
-            Message::RoomCreated(res) => match res {
-                Ok(room_id) => {
-                    self.creating_room = false;
-                    self.new_room_name.clear();
-                    self.selected_room = Some(room_id);
-                }
-                Err(e) => {
-                    self.error = Some(format!("Failed to create room: {}", e));
-                }
-            },
             Message::LoginHomeserverChanged(homeserver) => {
                 self.login_homeserver = homeserver;
+                Task::none()
             }
             Message::LoginUsernameChanged(username) => {
                 self.login_username = username;
+                Task::none()
             }
             Message::LoginPasswordChanged(password) => {
                 self.login_password = password;
+                Task::none()
             }
-            Message::SubmitLogin => {
-                if let Some(matrix) = &self.matrix {
-                    self.is_logging_in = true;
-                    self.error = None;
-                    self.sync_status = matrix::SyncStatus::Disconnected;
-                    let matrix = matrix.clone();
-                    let homeserver = self.login_homeserver.clone();
-                    let username = self.login_username.clone();
-                    let password = self.login_password.clone();
-                    self.login_password.clear();
-
-                    return Task::perform(
-                        async move {
-                            matrix.login(&homeserver, &username, &password).await?;
-                            let user_id = matrix
-                                .client()
-                                .await
-                                .user_id()
-                                .map(|u| u.to_string())
-                                .ok_or_else(|| {
-                                    anyhow::anyhow!("Failed to get user ID after login")
-                                })?;
-                            matrix.start_sync().await?;
-                            Ok(user_id)
-                        },
-                        |res: Result<String, anyhow::Error>| {
-                            Action::from(Message::LoginFinished(
-                                res.map_err(matrix::SyncError::from),
-                            ))
-                        },
-                    );
-                }
-            }
-            Message::LoginFinished(res) => {
-                self.is_logging_in = false;
-                self.is_oidc_logging_in = false;
-                match res {
-                    Ok(user_id) => {
-                        self.user_id = Some(user_id);
-                    }
-                    Err(matrix::SyncError::MissingSlidingSyncSupport) => {
-                        self.sync_status = matrix::SyncStatus::MissingSlidingSyncSupport;
-                    }
-                    Err(e) => {
-                        self.error = Some(format!("Login failed: {}", e));
-                    }
-                }
-            }
-            Message::SelectSpace(space_id) => {
-                self.selected_space = space_id.clone();
-                if let Some(matrix) = &self.matrix {
-                    let matrix = matrix.clone();
-                    return Task::perform(
-                        async move {
-                            let _ = matrix.update_room_list_filter(space_id).await;
-                        },
-                        |_| Action::from(Message::NoOp),
-                    );
-                }
-            }
-            Message::NoOp => {}
-            Message::SubmitOidcLogin => {
-                if let Some(matrix) = &self.matrix {
-                    self.is_oidc_logging_in = true;
-                    self.error = None;
-                    let matrix = matrix.clone();
-                    let homeserver = self.login_homeserver.clone();
-                    return Task::perform(
-                        async move {
-                            matrix
-                                .login_oidc(&homeserver)
-                                .await
-                                .map_err(|e| e.to_string())
-                        },
-                        |res| Action::from(Message::OidcLoginStarted(res)),
-                    );
-                }
-            }
-            Message::OidcLoginStarted(res) => match res {
-                Ok(url) => {
-                    tracing::info!("Opening URL: {}", redact_url(&url));
-                    let _ = open::that(url.as_str());
-                    return Task::none();
-                }
-                Err(e) => {
-                    self.is_oidc_logging_in = false;
-                    self.error = Some(format!("OIDC login failed to start: {}", e));
-                }
-            },
-            Message::OidcCallback(url) => {
-                if let Some(matrix) = &self.matrix {
-                    self.is_oidc_logging_in = true;
-                    self.error = None;
-                    let matrix = matrix.clone();
-                    return Task::perform(
-                        async move {
-                            matrix.complete_oidc_login(url).await?;
-                            let user_id = matrix
-                                .client()
-                                .await
-                                .user_id()
-                                .map(|u| u.to_string())
-                                .ok_or_else(|| {
-                                    anyhow::anyhow!("Failed to get user ID after OIDC login")
-                                })?;
-                            matrix.start_sync().await?;
-                            Ok(user_id)
-                        },
-                        |res: Result<String, anyhow::Error>| {
-                            Action::from(Message::LoginFinished(
-                                res.map_err(matrix::SyncError::from),
-                            ))
-                        },
-                    );
-                }
-            }
+            Message::SubmitLogin => return self.handle_submit_login(),
+            Message::LoginFinished(res) => return self.handle_login_finished(res),
+            Message::SelectSpace(space_id) => return self.handle_select_space(space_id),
+            Message::NoOp => Task::none(),
+            Message::SubmitOidcLogin => return self.handle_submit_oidc_login(),
+            Message::OidcLoginStarted(res) => return self.handle_oidc_login_started(res),
+            Message::OidcCallback(url) => return self.handle_oidc_callback(url),
         }
-        Task::none()
     }
 
     fn view(&self) -> Element<'_, Message> {
