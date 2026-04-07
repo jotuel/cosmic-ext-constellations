@@ -1,7 +1,7 @@
-use zbus::{interface, Connection, proxy};
-use zbus::names::WellKnownName;
 use std::error::Error;
 use tokio::sync::mpsc;
+use zbus::names::WellKnownName;
+use zbus::{interface, proxy, Connection};
 
 pub const DBUS_NAME: &str = "com.system76.Claw";
 pub const DBUS_PATH: &str = "/com/system76/Claw";
@@ -35,7 +35,10 @@ pub async fn start_server(tx: mpsc::UnboundedSender<String>) -> Result<Connectio
     let connection = Connection::session().await?;
     let name = WellKnownName::try_from(DBUS_NAME)?;
     connection.request_name(name).await?;
-    connection.object_server().at(DBUS_PATH, IpcInterface { tx }).await?;
+    connection
+        .object_server()
+        .at(DBUS_PATH, IpcInterface { tx })
+        .await?;
     Ok(connection)
 }
 
