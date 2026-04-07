@@ -22,7 +22,7 @@ struct Constellations {
     sync_status: matrix::SyncStatus,
     room_list: Vec<matrix::RoomData>,
     selected_room: Option<String>,
-    timeline_items: Vector<Arc<matrix::TimelineItem>>,
+    timeline_items: Vector<ConstellationsItem>,
     composer_text: String,
     composer_is_preview: bool,
     user_id: Option<String>,
@@ -141,6 +141,58 @@ impl<T: Clone> ApplyVectorDiffExt<T> for Vec<T> {
     }
 }
 
+#[derive(Clone, Debug)]
+struct ConstellationsItem {
+    pub item: Arc<matrix::TimelineItem>,
+    pub sender: String,
+    pub sender_name: String,
+    pub avatar_url: Option<String>,
+    pub timestamp: String,
+    pub is_me: bool,
+}
+
+impl ConstellationsItem {
+    fn new(item: Arc<matrix::TimelineItem>, user_id: Option<&str>) -> Self {
+        let mut sender = String::new();
+        let mut sender_name = String::new();
+        let mut avatar_url = None;
+        let mut timestamp = String::new();
+        let mut is_me = false;
+
+        if let Some(event) = item.as_event() {
+            sender = event.sender().to_string();
+            let (name, url) = match event.sender_profile() {
+                matrix_sdk_ui::timeline::TimelineDetails::Ready(profile) => (
+                    profile.display_name.as_deref().unwrap_or(&sender).to_string(),
+                    profile.avatar_url.as_ref().map(|uri| uri.to_string()),
+                ),
+                _ => (sender.clone(), None),
+            };
+            sender_name = name;
+            avatar_url = url;
+
+            let ts_millis = u64::from(event.timestamp().0);
+            let datetime = chrono::DateTime::from_timestamp_millis(ts_millis as i64)
+                .unwrap_or_default();
+            timestamp = datetime
+                .with_timezone(&chrono::Local)
+                .format("%Y-%m-%d %H:%M:%S")
+                .to_string();
+
+            is_me = user_id == Some(&sender);
+        }
+
+        Self {
+            item,
+            sender,
+            sender_name,
+            avatar_url,
+            timestamp,
+            is_me,
+        }
+    }
+}
+
 impl<T: Clone> ApplyVectorDiffExt<T> for eyeball_im::Vector<T> {
     fn apply_diff(&mut self, diff: eyeball_im::VectorDiff<T>) {
         match diff {
@@ -203,23 +255,13 @@ impl Constellations {
         }
 
         for item in &self.timeline_items {
-            if let Some(event) = item.as_event() {
+            if let Some(event) = item.item.as_event() {
                 if let Some(message) = event.content().as_message() {
-                    let sender = event.sender().to_string();
-                    let (sender_name, avatar_url) = match event.sender_profile() {
-                        matrix_sdk_ui::timeline::TimelineDetails::Ready(profile) => (
-                            profile.display_name.as_deref().unwrap_or(&sender),
-                            profile.avatar_url.clone(),
-                        ),
-                        _ => (&sender as &str, None),
-                    };
-                    let ts_millis = u64::from(event.timestamp().0);
-                    let datetime = chrono::DateTime::from_timestamp_millis(ts_millis as i64)
-                        .unwrap_or_default();
-                    let timestamp = datetime
-                        .with_timezone(&chrono::Local)
-                        .format("%Y-%m-%d %H:%M:%S")
-                        .to_string();
+                    let sender = &item.sender;
+                    let sender_name = &item.sender_name;
+                    let avatar_url = &item.avatar_url;
+                    let timestamp = &item.timestamp;
+                    let is_me = item.is_me;
 
                     let mut reaction_row = row().spacing(5);
                     if let Some(reactions) = event.content().reactions() {
@@ -232,13 +274,10 @@ impl Constellations {
                         }
                     }
 
-                    let is_me = self.user_id.as_ref() == Some(&sender);
-
                     let mut sender_info = row().spacing(5).align_y(Alignment::Center);
 
-                    if let Some(mxc_uri) = &avatar_url {
-                        let mxc_url = mxc_uri.to_string();
-                        if let Some(handle) = self.media_cache.get(&mxc_url) {
+                    if let Some(mxc_url) = avatar_url {
+                        if let Some(handle) = self.media_cache.get(mxc_url) {
                             sender_info = sender_info
                                 .push(cosmic::widget::image(handle.clone()).width(20).height(20));
                         } else {
@@ -251,7 +290,7 @@ impl Constellations {
                     }
 
                     sender_info = sender_info.push(text::body(sender_name.to_string()).size(10));
-                    sender_info = sender_info.push(text::body(timestamp).size(10));
+                    sender_info = sender_info.push(text::body(timestamp.clone()).size(10));
 
                     let mut bubble_col = column().spacing(2).push(sender_info);
 
@@ -310,7 +349,7 @@ impl Constellations {
 
                     timeline = timeline.push(bubble_wrapper);
                 }
-            } else if let Some(virt) = item.as_virtual() {
+            } else if let Some(virt) = item.item.as_virtual() {
                 if let matrix::VirtualTimelineItem::DateDivider(_date) = virt {
                     timeline = timeline.push(
                         container(text::body("--- Day Divider ---").size(12))
@@ -695,7 +734,35 @@ impl Application for Constellations {
                             _ => {}
                         }
 
-                        self.timeline_items.apply_diff(diff);
+                        let mapped_diff = match diff {
+                            eyeball_im::VectorDiff::Insert { index, value } => eyeball_im::VectorDiff::Insert {
+                                index,
+                                value: ConstellationsItem::new(value, self.user_id.as_deref()),
+                            },
+                            eyeball_im::VectorDiff::Set { index, value } => eyeball_im::VectorDiff::Set {
+                                index,
+                                value: ConstellationsItem::new(value, self.user_id.as_deref()),
+                            },
+                            eyeball_im::VectorDiff::PushBack { value } => eyeball_im::VectorDiff::PushBack {
+                                value: ConstellationsItem::new(value, self.user_id.as_deref()),
+                            },
+                            eyeball_im::VectorDiff::PushFront { value } => eyeball_im::VectorDiff::PushFront {
+                                value: ConstellationsItem::new(value, self.user_id.as_deref()),
+                            },
+                            eyeball_im::VectorDiff::Append { values } => eyeball_im::VectorDiff::Append {
+                                values: values.into_iter().map(|v| ConstellationsItem::new(v, self.user_id.as_deref())).collect(),
+                            },
+                            eyeball_im::VectorDiff::Reset { values } => eyeball_im::VectorDiff::Reset {
+                                values: values.into_iter().map(|v| ConstellationsItem::new(v, self.user_id.as_deref())).collect(),
+                            },
+                            eyeball_im::VectorDiff::Remove { index } => eyeball_im::VectorDiff::Remove { index },
+                            eyeball_im::VectorDiff::PopBack => eyeball_im::VectorDiff::PopBack,
+                            eyeball_im::VectorDiff::PopFront => eyeball_im::VectorDiff::PopFront,
+                            eyeball_im::VectorDiff::Clear => eyeball_im::VectorDiff::Clear,
+                            eyeball_im::VectorDiff::Truncate { length } => eyeball_im::VectorDiff::Truncate { length },
+                        };
+
+                        self.timeline_items.apply_diff(mapped_diff);
 
                         if !tasks.is_empty() {
                             return cosmic::iced::Task::batch(tasks);
