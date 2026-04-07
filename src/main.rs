@@ -164,7 +164,11 @@ impl ConstellationsItem {
             sender = event.sender().to_string();
             let (name, url) = match event.sender_profile() {
                 matrix_sdk_ui::timeline::TimelineDetails::Ready(profile) => (
-                    profile.display_name.as_deref().unwrap_or(&sender).to_string(),
+                    profile
+                        .display_name
+                        .as_deref()
+                        .unwrap_or(&sender)
+                        .to_string(),
                     profile.avatar_url.as_ref().map(|uri| uri.to_string()),
                 ),
                 _ => (sender.clone(), None),
@@ -173,8 +177,8 @@ impl ConstellationsItem {
             avatar_url = url;
 
             let ts_millis = u64::from(event.timestamp().0);
-            let datetime = chrono::DateTime::from_timestamp_millis(ts_millis as i64)
-                .unwrap_or_default();
+            let datetime =
+                chrono::DateTime::from_timestamp_millis(ts_millis as i64).unwrap_or_default();
             timestamp = datetime
                 .with_timezone(&chrono::Local)
                 .format("%Y-%m-%d %H:%M:%S")

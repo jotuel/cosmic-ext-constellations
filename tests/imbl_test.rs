@@ -17,4 +17,3 @@ fn test_imbl_set() {
     v.set(0, 10);
     assert_eq!(v[0], 10);
 }
-
