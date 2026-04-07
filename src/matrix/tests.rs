@@ -390,3 +390,40 @@ async fn test_start_sync_task_management() {
 
     assert_ne!(handle1_debug, handle2_debug, "Sync handle should be replaced");
 }
+
+#[tokio::test]
+async fn test_create_room() {
+    use wiremock::{MockServer, Mock, matchers::{method, path}, ResponseTemplate};
+
+    let server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/_matrix/client/v3/createRoom"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "room_id": "!new_room:example.com"
+        })))
+        .mount(&server)
+        .await;
+
+    let tmp_dir = tempdir().unwrap();
+    let engine = MatrixEngine::new(tmp_dir.path().to_path_buf()).await.unwrap();
+
+    let store_config = StoreConfig::new("test_create_room".to_owned());
+    let client = Client::builder()
+        .homeserver_url(server.uri())
+        .store_config(store_config)
+        .build()
+        .await
+        .unwrap();
+
+    let session = create_test_session();
+    client.restore_session(session).await.unwrap();
+
+    {
+        let mut inner = engine.inner.write().await;
+        inner.client = client;
+    }
+
+    let room_id = engine.create_room("Test Room").await.unwrap();
+    assert_eq!(room_id.as_str(), "!new_room:example.com");
+}
