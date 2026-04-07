@@ -13,7 +13,7 @@ use matrix_sdk::{
     Client, Room, SessionChange, SessionTokens,
 };
 use matrix_sdk_sqlite::SqliteStateStore;
-use matrix_sdk_ui::room_list_service::{RoomListDynamicEntriesController, RoomListService};
+pub use matrix_sdk_ui::room_list_service::{RoomListDynamicEntriesController, RoomListService};
 use matrix_sdk_ui::sync_service::SyncService;
 pub use matrix_sdk_ui::timeline::{RoomExt, Timeline, TimelineItem, VirtualTimelineItem};
 use oo7::Keyring;
@@ -165,6 +165,7 @@ impl SpaceHierarchy {
 #[derive(Debug, Clone)]
 pub enum MatrixEvent {
     SyncStatusChanged(SyncStatus),
+    SyncIndicatorChanged(bool),
     RoomDiff(RoomListDiff),
     TimelineDiff(TimelineDiff<TimelineItem>),
     TimelineReset,
