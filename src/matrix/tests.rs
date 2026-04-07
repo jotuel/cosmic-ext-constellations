@@ -390,3 +390,133 @@ async fn test_start_sync_task_management() {
 
     assert_ne!(handle1_debug, handle2_debug, "Sync handle should be replaced");
 }
+
+#[tokio::test]
+async fn test_paginate_backwards_invalid_room_id() {
+    let tmp_dir = tempdir().unwrap();
+    let engine = MatrixEngine::new(tmp_dir.path().to_path_buf()).await.unwrap();
+
+    let result = engine.paginate_backwards("invalid_room_id", 20).await;
+    assert!(result.is_err());
+    let err_msg = result.unwrap_err().to_string();
+    assert!(err_msg.contains("Invalid room ID"), "Expected invalid room ID error, got: {}", err_msg);
+}
+
+#[tokio::test]
+async fn test_paginate_backwards_rls_not_initialized() {
+    let tmp_dir = tempdir().unwrap();
+    let engine = MatrixEngine::new(tmp_dir.path().to_path_buf()).await.unwrap();
+
+    // RLS is not initialized when just creating the engine without syncing
+    let result = engine.paginate_backwards("!room:example.com", 20).await;
+    assert!(result.is_err());
+    let err_msg = result.unwrap_err().to_string();
+    assert_eq!(err_msg, "RoomListService not initialized");
+}
+
+#[tokio::test]
+async fn test_paginate_backwards_success() {
+    use wiremock::{MockServer, Mock, ResponseTemplate, matchers::{method, path, path_regex}};
+
+    let mock_server = MockServer::start().await;
+
+    // Mock the sliding sync endpoint to inject a room
+    Mock::given(method("GET"))
+        .and(path_regex(r"^/_matrix/client/unstable/org.matrix.msc3575/sync$"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "pos": "mock_pos",
+            "lists": {
+                "RoomList": {
+                    "count": 1,
+                    "ops": [
+                        {
+                            "op": "SYNC",
+                            "range": [0, 0],
+                            "room_ids": ["!mockroom:example.com"]
+                        }
+                    ]
+                }
+            },
+            "rooms": {
+                "!mockroom:example.com": {
+                    "name": "Mock Room",
+                    "initial": true,
+                    "timeline": [
+                        {
+                            "type": "m.room.message",
+                            "content": {
+                                "msgtype": "m.text",
+                                "body": "Hello mock!"
+                            },
+                            "event_id": "$mock1",
+                            "sender": "@mock:example.com",
+                            "origin_server_ts": 123456
+                        }
+                    ],
+                    "prev_batch": "mock_prev_batch"
+                }
+            }
+        })))
+        .mount(&mock_server)
+        .await;
+
+    // Mock the backward pagination endpoint
+    Mock::given(method("GET"))
+        .and(path_regex(r"^/_matrix/client/r0/rooms/!mockroom:example.com/messages$|^/_matrix/client/v3/rooms/!mockroom:example.com/messages$"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "chunk": [],
+            "start": "mock_prev_batch",
+            "end": "mock_end"
+        })))
+        .mount(&mock_server)
+        .await;
+
+    // Discovery endpoint
+    Mock::given(method("GET"))
+        .and(path_regex(r"^/_matrix/client/versions$"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "versions": ["v1.11"],
+            "unstable_features": {
+                "org.matrix.msc4186": true,
+                "org.matrix.msc3575": true
+            }
+        })))
+        .mount(&mock_server)
+        .await;
+
+    let tmp_dir = tempdir().unwrap();
+    let engine = MatrixEngine::new(tmp_dir.path().to_path_buf()).await.unwrap();
+
+    let store_config = StoreConfig::new("test".to_owned());
+    let client = Client::builder()
+        .homeserver_url(mock_server.uri())
+        .store_config(store_config)
+        .build()
+        .await
+        .unwrap();
+
+    let session = create_test_session();
+    client.restore_session(session).await.unwrap();
+
+    let sync_service = Arc::new(SyncService::builder(client.clone()).build().await.unwrap());
+
+    // Set the sync service so engine can get the room list
+    {
+        let mut inner = engine.inner.write().await;
+        inner.client = client.clone();
+        inner.sync_service = Some(sync_service.clone());
+        inner.room_list_service = Some(sync_service.room_list_service());
+    }
+
+    // Start sync so it connects to wiremock and populates the room
+    engine.start_sync().await.unwrap();
+
+    // Yield to let the background task process the sync response
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+    // Verify pagination works and doesn't fail
+    let result = engine.paginate_backwards("!mockroom:example.com", 20).await;
+
+    // Assert that the result is Ok, verifying that the timeline could be fetched and paginated
+    assert!(result.is_ok(), "Expected pagination to succeed, but got error: {:?}", result.err());
+}
