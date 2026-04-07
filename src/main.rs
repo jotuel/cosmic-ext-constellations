@@ -164,7 +164,11 @@ impl ConstellationsItem {
             sender = event.sender().to_string();
             let (name, url) = match event.sender_profile() {
                 matrix_sdk_ui::timeline::TimelineDetails::Ready(profile) => (
-                    profile.display_name.as_deref().unwrap_or(&sender).to_string(),
+                    profile
+                        .display_name
+                        .as_deref()
+                        .unwrap_or(&sender)
+                        .to_string(),
                     profile.avatar_url.as_ref().map(|uri| uri.to_string()),
                 ),
                 _ => (sender.clone(), None),
@@ -173,8 +177,8 @@ impl ConstellationsItem {
             avatar_url = url;
 
             let ts_millis = u64::from(event.timestamp().0);
-            let datetime = chrono::DateTime::from_timestamp_millis(ts_millis as i64)
-                .unwrap_or_default();
+            let datetime =
+                chrono::DateTime::from_timestamp_millis(ts_millis as i64).unwrap_or_default();
             timestamp = datetime
                 .with_timezone(&chrono::Local)
                 .format("%Y-%m-%d %H:%M:%S")
@@ -740,31 +744,57 @@ impl Application for Constellations {
                         }
 
                         let mapped_diff = match diff {
-                            eyeball_im::VectorDiff::Insert { index, value } => eyeball_im::VectorDiff::Insert {
-                                index,
-                                value: ConstellationsItem::new(value, self.user_id.as_deref()),
-                            },
-                            eyeball_im::VectorDiff::Set { index, value } => eyeball_im::VectorDiff::Set {
-                                index,
-                                value: ConstellationsItem::new(value, self.user_id.as_deref()),
-                            },
-                            eyeball_im::VectorDiff::PushBack { value } => eyeball_im::VectorDiff::PushBack {
-                                value: ConstellationsItem::new(value, self.user_id.as_deref()),
-                            },
-                            eyeball_im::VectorDiff::PushFront { value } => eyeball_im::VectorDiff::PushFront {
-                                value: ConstellationsItem::new(value, self.user_id.as_deref()),
-                            },
-                            eyeball_im::VectorDiff::Append { values } => eyeball_im::VectorDiff::Append {
-                                values: values.into_iter().map(|v| ConstellationsItem::new(v, self.user_id.as_deref())).collect(),
-                            },
-                            eyeball_im::VectorDiff::Reset { values } => eyeball_im::VectorDiff::Reset {
-                                values: values.into_iter().map(|v| ConstellationsItem::new(v, self.user_id.as_deref())).collect(),
-                            },
-                            eyeball_im::VectorDiff::Remove { index } => eyeball_im::VectorDiff::Remove { index },
+                            eyeball_im::VectorDiff::Insert { index, value } => {
+                                eyeball_im::VectorDiff::Insert {
+                                    index,
+                                    value: ConstellationsItem::new(value, self.user_id.as_deref()),
+                                }
+                            }
+                            eyeball_im::VectorDiff::Set { index, value } => {
+                                eyeball_im::VectorDiff::Set {
+                                    index,
+                                    value: ConstellationsItem::new(value, self.user_id.as_deref()),
+                                }
+                            }
+                            eyeball_im::VectorDiff::PushBack { value } => {
+                                eyeball_im::VectorDiff::PushBack {
+                                    value: ConstellationsItem::new(value, self.user_id.as_deref()),
+                                }
+                            }
+                            eyeball_im::VectorDiff::PushFront { value } => {
+                                eyeball_im::VectorDiff::PushFront {
+                                    value: ConstellationsItem::new(value, self.user_id.as_deref()),
+                                }
+                            }
+                            eyeball_im::VectorDiff::Append { values } => {
+                                eyeball_im::VectorDiff::Append {
+                                    values: values
+                                        .into_iter()
+                                        .map(|v| {
+                                            ConstellationsItem::new(v, self.user_id.as_deref())
+                                        })
+                                        .collect(),
+                                }
+                            }
+                            eyeball_im::VectorDiff::Reset { values } => {
+                                eyeball_im::VectorDiff::Reset {
+                                    values: values
+                                        .into_iter()
+                                        .map(|v| {
+                                            ConstellationsItem::new(v, self.user_id.as_deref())
+                                        })
+                                        .collect(),
+                                }
+                            }
+                            eyeball_im::VectorDiff::Remove { index } => {
+                                eyeball_im::VectorDiff::Remove { index }
+                            }
                             eyeball_im::VectorDiff::PopBack => eyeball_im::VectorDiff::PopBack,
                             eyeball_im::VectorDiff::PopFront => eyeball_im::VectorDiff::PopFront,
                             eyeball_im::VectorDiff::Clear => eyeball_im::VectorDiff::Clear,
-                            eyeball_im::VectorDiff::Truncate { length } => eyeball_im::VectorDiff::Truncate { length },
+                            eyeball_im::VectorDiff::Truncate { length } => {
+                                eyeball_im::VectorDiff::Truncate { length }
+                            }
                         };
 
                         self.timeline_items.apply_diff(mapped_diff);

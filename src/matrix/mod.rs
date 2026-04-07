@@ -577,7 +577,13 @@ impl MatrixEngine {
                         refresh_token: session_data.refresh_token,
                     },
                 };
-                client.matrix_auth().restore_session(matrix_session, matrix_sdk::store::RoomLoadSettings::default()).await?;
+                client
+                    .matrix_auth()
+                    .restore_session(
+                        matrix_session,
+                        matrix_sdk::store::RoomLoadSettings::default(),
+                    )
+                    .await?;
             }
 
             let sync_service: Arc<SyncService> =
