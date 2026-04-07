@@ -266,6 +266,7 @@ fn test_session_data_serialization() {
         refresh_token: Some("refresh_token".to_string()),
         id_token: Some("id_token".to_string()),
         device_id: "DEVICEID".to_string(),
+        is_oidc: false,
     };
     let serialized = serde_json::to_string(&session_data).unwrap();
     let deserialized: SessionData = serde_json::from_str(&serialized).unwrap();

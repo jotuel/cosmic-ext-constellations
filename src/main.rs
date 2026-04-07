@@ -37,6 +37,7 @@ struct Constellations {
     is_oidc_logging_in: bool,
     is_initializing: bool,
     selected_space: Option<OwnedRoomId>,
+    show_sync_indicator: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -636,6 +637,7 @@ impl Application for Constellations {
             is_oidc_logging_in: false,
             is_initializing: true,
             selected_space: None,
+            show_sync_indicator: false,
         };
 
         let title_task = app.update_title();
@@ -682,6 +684,9 @@ impl Application for Constellations {
                 match event {
                     matrix::MatrixEvent::SyncStatusChanged(status) => {
                         self.sync_status = status;
+                    }
+                    matrix::MatrixEvent::SyncIndicatorChanged(show) => {
+                        self.show_sync_indicator = show;
                     }
                     matrix::MatrixEvent::RoomDiff(diff) => {
                         self.room_list.apply_diff(diff);
@@ -1132,8 +1137,6 @@ impl Application for Constellations {
             matrix::SyncStatus::Error(_) | matrix::SyncStatus::MissingSlidingSyncSupport
         ) {
             content = content.push(text::body(status_text).size(14));
-        } else {
-            content = content.push(text::body(format!("Status: {}", status_text)));
         }
 
         if self.selected_room.is_some() {
@@ -1180,11 +1183,22 @@ impl Application for Constellations {
             content = content.push(error_bar);
         }
 
-        row()
+        let mut main_row = row()
             .push(self.view_space_switcher())
             .push(sidebar)
-            .push(content)
-            .into()
+            .push(content);
+
+        if self.show_sync_indicator {
+            main_row = main_row.push(
+                container(cosmic::widget::icon::from_name("process-working-symbolic").size(24))
+                    .padding(20)
+                    .height(cosmic::iced::Length::Fill)
+                    .align_y(Alignment::End)
+                    .align_x(Alignment::End),
+            );
+        }
+
+        main_row.into()
     }
 
     fn subscription(&self) -> Subscription<Self::Message> {
@@ -1247,6 +1261,29 @@ impl Application for Constellations {
                         };
                     let _ = tx_status.send(Message::Matrix(
                         matrix::MatrixEvent::SyncStatusChanged(sync_status),
+                    ));
+                }
+            });
+
+            let tx_indicator = tx.clone();
+            let engine_indicator = engine.clone();
+            tokio::spawn(async move {
+                let room_list_service = loop {
+                    if let Some(rls) = engine_indicator.room_list_service().await {
+                        break rls;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                };
+
+                let mut indicator_stream = Box::pin(room_list_service.sync_indicator(
+                    std::time::Duration::from_millis(500),
+                    std::time::Duration::from_millis(500),
+                ));
+                use cosmic::iced::futures::StreamExt;
+                while let Some(indicator) = indicator_stream.next().await {
+                    let show = indicator == matrix_sdk_ui::room_list_service::SyncIndicator::Show;
+                    let _ = tx_indicator.send(Message::Matrix(
+                        matrix::MatrixEvent::SyncIndicatorChanged(show),
                     ));
                 }
             });
