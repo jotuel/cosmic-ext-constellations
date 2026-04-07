@@ -1,19 +1,23 @@
 use super::*;
-use tempfile::tempdir;
 use matrix_sdk_base::store::RoomLoadSettings;
 use matrix_sdk::test_utils::logged_in_client;
 use wiremock::{MockServer, Mock, ResponseTemplate};
 use wiremock::matchers::{method, path_regex};
 use matrix_sdk_test::EventBuilder;
+use tempfile::tempdir;
 
 #[tokio::test]
 async fn test_matrix_engine_init() {
     let tmp_dir = tempdir().unwrap();
     let engine = MatrixEngine::new(tmp_dir.path().to_path_buf()).await;
-    
-    // MatrixEngine::new should succeed even if not logged in, 
+
+    // MatrixEngine::new should succeed even if not logged in,
     // but we need to handle the RoomListService initialization carefully.
-    assert!(engine.is_ok(), "Failed to initialize Matrix engine: {:?}", engine.err());
+    assert!(
+        engine.is_ok(),
+        "Failed to initialize Matrix engine: {:?}",
+        engine.err()
+    );
 }
 
 #[test]
@@ -88,10 +92,10 @@ fn test_space_hierarchy_circular() {
     // Should not stack overflow
     assert!(hierarchy.is_in_space(&space_a, &space_b));
     assert!(hierarchy.is_in_space(&space_b, &space_a));
-    
+
     let room = RoomId::parse("!room:example.com").unwrap();
     hierarchy.add_child(space_a.clone(), room.clone());
-    
+
     assert!(hierarchy.is_in_space(&room, &space_a));
     assert!(hierarchy.is_in_space(&room, &space_b));
 }
@@ -157,7 +161,10 @@ fn test_matrix_event_variants() {
         is_space: false,
         parent_space_id: None,
     };
-    let event = MatrixEvent::RoomDiff(VectorDiff::Insert { index: 0, value: room_data.clone() });
+    let event = MatrixEvent::RoomDiff(VectorDiff::Insert {
+        index: 0,
+        value: room_data.clone(),
+    });
     if let MatrixEvent::RoomDiff(VectorDiff::Insert { index, value }) = event {
         assert_eq!(index, 0);
         assert_eq!(value.id, "1");
@@ -170,7 +177,7 @@ fn test_matrix_event_variants() {
 fn test_sync_status_error_propagation() {
     let error_msg = "Sync error encountered. This may be due to missing server support for Sliding Sync (MSC4186) or network issues.";
     let status = SyncStatus::Error(error_msg.to_string());
-    
+
     // Verify SyncStatus variant and payload
     if let SyncStatus::Error(msg) = &status {
         assert_eq!(msg, error_msg);
@@ -201,14 +208,20 @@ fn test_sync_status_equality() {
         SyncStatus::Error("error 2".to_string())
     );
     assert_ne!(SyncStatus::Connected, SyncStatus::Syncing);
-    assert_eq!(SyncStatus::MissingSlidingSyncSupport, SyncStatus::MissingSlidingSyncSupport);
+    assert_eq!(
+        SyncStatus::MissingSlidingSyncSupport,
+        SyncStatus::MissingSlidingSyncSupport
+    );
     assert_ne!(SyncStatus::MissingSlidingSyncSupport, SyncStatus::Connected);
 }
 
 #[test]
 fn test_sync_error_display() {
     let err = SyncError::MissingSlidingSyncSupport;
-    assert_eq!(err.to_string(), "Sliding Sync (MSC4186) is not supported by the homeserver");
+    assert_eq!(
+        err.to_string(),
+        "Sliding Sync (MSC4186) is not supported by the homeserver"
+    );
 }
 
 #[test]
@@ -236,7 +249,10 @@ fn test_sync_error_to_status_mapping() {
         SyncError::MissingSlidingSyncSupport => SyncStatus::MissingSlidingSyncSupport,
         _ => SyncStatus::Error(err.to_string()),
     };
-    assert_eq!(status, SyncStatus::Error("Matrix error: some error".to_string()));
+    assert_eq!(
+        status,
+        SyncStatus::Error("Matrix error: some error".to_string())
+    );
 }
 
 #[test]
@@ -285,22 +301,26 @@ fn test_session_data_serialization() {
 #[tokio::test]
 async fn test_login_oidc_initiation_no_server() {
     let tmp_dir = tempdir().unwrap();
-    let engine = MatrixEngine::new(tmp_dir.path().to_path_buf()).await.unwrap();
-    
+    let engine = MatrixEngine::new(tmp_dir.path().to_path_buf())
+        .await
+        .unwrap();
+
     let homeserver = "http://localhost:12345";
     let result = engine.login_oidc(homeserver).await;
-    
+
     assert!(result.is_err());
 }
 
 #[tokio::test]
 async fn test_complete_oidc_login_no_client() {
     let tmp_dir = tempdir().unwrap();
-    let engine = MatrixEngine::new(tmp_dir.path().to_path_buf()).await.unwrap();
-    
+    let engine = MatrixEngine::new(tmp_dir.path().to_path_buf())
+        .await
+        .unwrap();
+
     let callback_url = Url::parse("com.system76.Claw://callback?code=test").unwrap();
     let result = engine.complete_oidc_login(callback_url).await;
-    
+
     assert!(result.is_err());
     assert_eq!(result.unwrap_err().to_string(), "No OIDC login in progress");
 }
@@ -309,7 +329,7 @@ async fn test_complete_oidc_login_no_client() {
 async fn test_ipc_callback_trigger_failure() {
     let test_uri = "com.system76.Claw://callback?code=test_code".to_string();
     let result = crate::ipc::call_handle_callback(test_uri).await;
-    
+
     // If no instance is running, it should fail to find the proxy.
     assert!(result.is_err());
 }
@@ -356,8 +376,10 @@ fn create_test_session() -> matrix_sdk::authentication::matrix::MatrixSession {
 #[tokio::test]
 async fn test_start_sync_task_management() {
     let tmp_dir = tempdir().unwrap();
-    let engine = MatrixEngine::new(tmp_dir.path().to_path_buf()).await.unwrap();
-    
+    let engine = MatrixEngine::new(tmp_dir.path().to_path_buf())
+        .await
+        .unwrap();
+
     // We need a real-ish client to build a SyncService
     let store_config = StoreConfig::new("test".to_owned());
     let client = Client::builder()
@@ -366,13 +388,13 @@ async fn test_start_sync_task_management() {
         .build()
         .await
         .unwrap();
-    
+
     // Set a dummy session so SyncService::builder doesn't fail
     let session = create_test_session();
     client.restore_session(session).await.unwrap();
 
     let sync_service = Arc::new(SyncService::builder(client).build().await.unwrap());
-    
+
     {
         let mut inner = engine.inner.write().await;
         inner.sync_service = Some(sync_service);
@@ -392,7 +414,140 @@ async fn test_start_sync_task_management() {
         format!("{:?}", inner.sync_handle)
     };
 
-    assert_ne!(handle1_debug, handle2_debug, "Sync handle should be replaced");
+    assert_ne!(
+        handle1_debug, handle2_debug,
+        "Sync handle should be replaced"
+    );
+}
+
+#[tokio::test]
+async fn test_paginate_backwards_invalid_room_id() {
+    let tmp_dir = tempdir().unwrap();
+    let engine = MatrixEngine::new(tmp_dir.path().to_path_buf()).await.unwrap();
+
+    let result = engine.paginate_backwards("invalid_room_id", 20).await;
+    assert!(result.is_err());
+    let err_msg = result.unwrap_err().to_string();
+    assert!(err_msg.contains("Invalid room ID"), "Expected invalid room ID error, got: {}", err_msg);
+}
+
+#[tokio::test]
+async fn test_paginate_backwards_rls_not_initialized() {
+    let tmp_dir = tempdir().unwrap();
+    let engine = MatrixEngine::new(tmp_dir.path().to_path_buf()).await.unwrap();
+
+    // RLS is not initialized when just creating the engine without syncing
+    let result = engine.paginate_backwards("!room:example.com", 20).await;
+    assert!(result.is_err());
+    let err_msg = result.unwrap_err().to_string();
+    assert_eq!(err_msg, "RoomListService not initialized");
+}
+
+#[tokio::test]
+async fn test_paginate_backwards_success() {
+    use wiremock::{MockServer, Mock, ResponseTemplate, matchers::{method, path, path_regex}};
+
+    let mock_server = MockServer::start().await;
+
+    // Mock the sliding sync endpoint to inject a room
+    Mock::given(method("GET"))
+        .and(path_regex(r"^/_matrix/client/unstable/org.matrix.msc3575/sync$"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "pos": "mock_pos",
+            "lists": {
+                "RoomList": {
+                    "count": 1,
+                    "ops": [
+                        {
+                            "op": "SYNC",
+                            "range": [0, 0],
+                            "room_ids": ["!mockroom:example.com"]
+                        }
+                    ]
+                }
+            },
+            "rooms": {
+                "!mockroom:example.com": {
+                    "name": "Mock Room",
+                    "initial": true,
+                    "timeline": [
+                        {
+                            "type": "m.room.message",
+                            "content": {
+                                "msgtype": "m.text",
+                                "body": "Hello mock!"
+                            },
+                            "event_id": "$mock1",
+                            "sender": "@mock:example.com",
+                            "origin_server_ts": 123456
+                        }
+                    ],
+                    "prev_batch": "mock_prev_batch"
+                }
+            }
+        })))
+        .mount(&mock_server)
+        .await;
+
+    // Mock the backward pagination endpoint
+    Mock::given(method("GET"))
+        .and(path_regex(r"^/_matrix/client/r0/rooms/!mockroom:example.com/messages$|^/_matrix/client/v3/rooms/!mockroom:example.com/messages$"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "chunk": [],
+            "start": "mock_prev_batch",
+            "end": "mock_end"
+        })))
+        .mount(&mock_server)
+        .await;
+
+    // Discovery endpoint
+    Mock::given(method("GET"))
+        .and(path_regex(r"^/_matrix/client/versions$"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "versions": ["v1.11"],
+            "unstable_features": {
+                "org.matrix.msc4186": true,
+                "org.matrix.msc3575": true
+            }
+        })))
+        .mount(&mock_server)
+        .await;
+
+    let tmp_dir = tempdir().unwrap();
+    let engine = MatrixEngine::new(tmp_dir.path().to_path_buf()).await.unwrap();
+
+    let store_config = StoreConfig::new("test".to_owned());
+    let client = Client::builder()
+        .homeserver_url(mock_server.uri())
+        .store_config(store_config)
+        .build()
+        .await
+        .unwrap();
+
+    let session = create_test_session();
+    client.restore_session(session).await.unwrap();
+
+    let sync_service = Arc::new(SyncService::builder(client.clone()).build().await.unwrap());
+
+    // Set the sync service so engine can get the room list
+    {
+        let mut inner = engine.inner.write().await;
+        inner.client = client.clone();
+        inner.sync_service = Some(sync_service.clone());
+        inner.room_list_service = Some(sync_service.room_list_service());
+    }
+
+    // Start sync so it connects to wiremock and populates the room
+    engine.start_sync().await.unwrap();
+
+    // Yield to let the background task process the sync response
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+    // Verify pagination works and doesn't fail
+    let result = engine.paginate_backwards("!mockroom:example.com", 20).await;
+
+    // Assert that the result is Ok, verifying that the timeline could be fetched and paginated
+    assert!(result.is_ok(), "Expected pagination to succeed, but got error: {:?}", result.err());
 }
 
 #[tokio::test]
