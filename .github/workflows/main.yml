@@ -1,0 +1,35 @@
+name: PR Conflict Detection
+on:
+  schedule:
+    - cron: "0 9 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  detect-conflicts:
+    name: Detect PR conflicts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Restore conflict state
+        uses: actions/cache/restore@v4
+        with:
+          path: .pr-conflict-state.json
+          key: pr-conflict-state-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: pr-conflict-state-
+
+      - name: Detect PR Conflicts
+        id: detect
+        uses: github-community-projects/pr-conflict-detector@v1
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          REPOSITORY: owner/repo-name
+
+      - name: Save conflict state
+        if: steps.detect.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: .pr-conflict-state.json
+          key: pr-conflict-state-${{ github.run_id }}-${{ github.run_attempt }}
