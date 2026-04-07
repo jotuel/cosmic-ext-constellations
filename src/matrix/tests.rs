@@ -1,6 +1,10 @@
 use super::*;
 use tempfile::tempdir;
 use matrix_sdk_base::store::RoomLoadSettings;
+use matrix_sdk::test_utils::logged_in_client;
+use wiremock::{MockServer, Mock, ResponseTemplate};
+use wiremock::matchers::{method, path_regex};
+use matrix_sdk_test::EventBuilder;
 
 #[tokio::test]
 async fn test_matrix_engine_init() {
@@ -389,4 +393,67 @@ async fn test_start_sync_task_management() {
     };
 
     assert_ne!(handle1_debug, handle2_debug, "Sync handle should be replaced");
+}
+
+#[tokio::test]
+async fn test_send_message_room_not_found() {
+    let tmp_dir = tempdir().unwrap();
+    let engine = MatrixEngine::new(tmp_dir.path().to_path_buf()).await.unwrap();
+
+    let result = engine.send_message("!nonexistent:localhost", "Hello".to_string(), None).await;
+    assert!(result.is_err());
+    assert_eq!(result.unwrap_err().to_string(), "Room not found");
+}
+
+
+#[tokio::test]
+async fn test_send_message_success() {
+    let mock_server = MockServer::start().await;
+
+    // We need to mock the send message endpoint. It matches a regex because of the transaction ID.
+    Mock::given(method("PUT"))
+        .and(path_regex(r"^/_matrix/client/r0/rooms/[^/]+/send/m.room.message/[^/]+$"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "event_id": "$eventid12345"
+        })))
+        .mount(&mock_server)
+        .await;
+
+    // Also matching v3
+    Mock::given(method("PUT"))
+        .and(path_regex(r"^/_matrix/client/v3/rooms/[^/]+/send/m.room.message/[^/]+$"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "event_id": "$eventid12345"
+        })))
+        .mount(&mock_server)
+        .await;
+
+    let tmp_dir = tempdir().unwrap();
+    let engine = MatrixEngine::new(tmp_dir.path().to_path_buf()).await.unwrap();
+
+    let client = logged_in_client(Some(mock_server.uri())).await;
+
+    // Create a mock room
+    let room_id = RoomId::parse("!test_room:localhost").unwrap();
+
+    let response = EventBuilder::default()
+        .add_joined_room(
+            matrix_sdk_test::JoinedRoomBuilder::new(&room_id)
+        )
+        .build_sync_response();
+
+    client.process_sync_response(response).await.unwrap();
+
+    {
+        let mut inner = engine.inner.write().await;
+        inner.client = client.clone();
+    }
+
+    // Now test successful plain text send
+    let result = engine.send_message("!test_room:localhost", "Hello world".to_string(), None).await;
+    assert!(result.is_ok(), "Expected success, got {:?}", result);
+
+    // Test successful HTML text send
+    let html_result = engine.send_message("!test_room:localhost", "Hello".to_string(), Some("<b>Hello</b>".to_string())).await;
+    assert!(html_result.is_ok(), "Expected success for HTML, got {:?}", html_result);
 }
