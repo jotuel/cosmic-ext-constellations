@@ -390,3 +390,45 @@ async fn test_start_sync_task_management() {
 
     assert_ne!(handle1_debug, handle2_debug, "Sync handle should be replaced");
 }
+
+#[tokio::test]
+async fn test_fetch_media() {
+    use matrix_sdk::media::{MediaFormat, MediaRequestParameters};
+    use matrix_sdk::ruma::events::room::MediaSource;
+    use matrix_sdk::ruma::OwnedMxcUri;
+    use url::Url;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+
+    // Create a dummy body
+    let body = b"hello media".to_vec();
+
+    Mock::given(method("GET"))
+        .and(path("/_matrix/media/v3/download/mockserver/mockmediaid"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(body.clone()))
+        .mount(&server)
+        .await;
+
+    let tmp_dir = tempdir().unwrap();
+    let engine = MatrixEngine::new(tmp_dir.path().to_path_buf()).await.unwrap();
+
+    let client = Client::builder()
+        .homeserver_url(server.uri())
+        .server_versions([matrix_sdk::ruma::api::MatrixVersion::V1_1])
+        .build()
+        .await
+        .unwrap();
+
+    {
+        let mut inner = engine.inner.write().await;
+        inner.client = client;
+    }
+
+    let url: OwnedMxcUri = "mxc://mockserver/mockmediaid".try_into().unwrap();
+    let source = MediaSource::Plain(url);
+    let fetched_body = engine.fetch_media(source).await.unwrap();
+
+    assert_eq!(fetched_body, body);
+}
