@@ -261,36 +261,6 @@ impl Backoff {
 }
 
 impl MatrixEngine {
-    async fn get_or_create_store_passphrase() -> Result<String> {
-        let keyring = Keyring::new().await?;
-        let mut attributes = HashMap::new();
-        attributes.insert("app_id", "fi.joonastuomi.Constellation");
-        attributes.insert("type", "store-passphrase");
-
-        let items = keyring.search_items(&attributes).await?;
-        if let Some(item) = items.first() {
-            let secret = item.secret().await?;
-            return Ok(String::from_utf8(secret.to_vec())?);
-        }
-
-        // Generate a random passphrase using /dev/urandom
-        use std::io::Read;
-        let mut f = std::fs::File::open("/dev/urandom")?;
-        let mut buf = [0u8; 32];
-        f.read_exact(&mut buf)?;
-        let passphrase: String = buf.iter().map(|b| format!("{:02x}", b)).collect();
-
-        keyring
-            .create_item(
-                "Constellation Store Passphrase",
-                &attributes,
-                passphrase.as_bytes(),
-                true,
-            )
-            .await?;
-        Ok(passphrase)
-    }
-
     pub async fn new(data_dir: PathBuf) -> Result<Self> {
         let client = Self::setup_client(data_dir.clone(), "https://matrix.org").await?;
 
@@ -606,7 +576,7 @@ impl MatrixEngine {
                         refresh_token: session_data.refresh_token,
                     },
                 };
-                client.restore_session(matrix_session).await?;
+                client.matrix_auth().restore_session(matrix_session, matrix_sdk::store::RoomLoadSettings::default()).await?;
             }
 
             let sync_service: Arc<SyncService> =
@@ -893,17 +863,7 @@ impl MatrixEngine {
         };
 
         let data_dir = self.inner.read().await.data_dir.clone();
-        let store_path = data_dir.join("matrix-store.db");
-        let passphrase = Self::get_or_create_store_passphrase().await?;
-        let sqlite_store = SqliteStateStore::open(&store_path, Some(passphrase.as_str())).await?;
-        let store_config = StoreConfig::new("constellations".to_owned()).state_store(sqlite_store);
-
-        let client = Client::builder()
-            .homeserver_url(&homeserver_url)
-            .store_config(store_config)
-            .handle_refresh_tokens()
-            .build()
-            .await?;
+        let client = Self::setup_client(data_dir, &homeserver_url).await?;
 
         client
             .oauth()
@@ -979,13 +939,13 @@ impl MatrixEngine {
             std::fs::create_dir_all(&data_dir)?;
         }
 
-        let passphrase = Self::get_or_create_store_passphrase().await?;
-        let sqlite_store = SqliteStateStore::open(&store_path, Some(passphrase.as_str())).await?;
+        let sqlite_store = SqliteStateStore::open(&store_path, None).await?;
         let store_config = StoreConfig::new("constellations".to_owned()).state_store(sqlite_store);
 
         let client = Client::builder()
             .homeserver_url(homeserver_url)
             .store_config(store_config)
+            .handle_refresh_tokens()
             .build()
             .await?;
 
