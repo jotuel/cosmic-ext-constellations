@@ -23,9 +23,9 @@ impl IpcInterface {
 }
 
 #[proxy(
-    interface = "com.system76.Claw.Ipc",
-    default_service = "com.system76.Claw",
-    default_path = "/com/system76/Claw"
+    interface = "fi.joonastuomi.Constellations.Ipc",
+    default_service = "fi.joonastuomi.Constellations",
+    default_path = "/fi/joonastuomi/Constellations"
 )]
 pub trait Ipc {
     fn handle_callback(&self, uri: String) -> zbus::Result<()>;
