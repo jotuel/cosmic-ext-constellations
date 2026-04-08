@@ -939,6 +939,51 @@ impl MatrixEngine {
         Ok(())
     }
 
+    async fn get_or_create_store_passphrase() -> Result<String> {
+        let keyring = Keyring::new().await?;
+        let mut attributes = HashMap::new();
+        attributes.insert("app_id", "fi.joonastuomi.CosmicExtConstellations");
+        attributes.insert("type", "store-passphrase");
+
+        let items = keyring.search_items(&attributes).await?;
+
+        if let Some(item) = items.first() {
+            let secret = item.secret().await?;
+            if let Ok(passphrase) = String::from_utf8(secret) {
+                return Ok(passphrase);
+            }
+        }
+
+        // Generate passphrase using standard library functionality (URandom) to avoid adding dependencies
+        let mut buf = [0u8; 32];
+        if let Ok(mut f) = std::fs::File::open("/dev/urandom") {
+            use std::io::Read;
+            let _ = f.read_exact(&mut buf);
+        } else {
+            // Fallback if /dev/urandom is unavailable, generate a pseudo-random using time
+            use std::time::{SystemTime, UNIX_EPOCH};
+            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+            let random_str = format!("{}-fallback", now);
+            let bytes = random_str.as_bytes();
+            for (i, &b) in bytes.iter().enumerate().take(32) {
+                buf[i] = b;
+            }
+        }
+
+        let passphrase: String = buf.iter().map(|b| format!("{:02x}", b)).collect();
+
+        keyring
+            .create_item(
+                "Constellations Store Passphrase",
+                &attributes,
+                passphrase.as_bytes(),
+                true,
+            )
+            .await?;
+
+        Ok(passphrase)
+    }
+
     async fn setup_client(data_dir: PathBuf, homeserver_url: &str) -> Result<Client> {
         let store_path = data_dir.join("matrix-store.db");
 
@@ -946,7 +991,8 @@ impl MatrixEngine {
             std::fs::create_dir_all(&data_dir)?;
         }
 
-        let sqlite_store = SqliteStateStore::open(&store_path, None).await?;
+        let passphrase = Self::get_or_create_store_passphrase().await?;
+        let sqlite_store = SqliteStateStore::open(&store_path, Some(passphrase.as_str())).await?;
         let store_config = StoreConfig::new("constellations".to_owned()).state_store(sqlite_store);
 
         let client = Client::builder()
