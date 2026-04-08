@@ -1,39 +1,9 @@
 [package]
-name = "cosmic-ext-constellations"
+name = "test_rekey"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-libcosmic = { git = "https://github.com/pop-os/libcosmic", branch = "master", features = ["tokio"] }
-matrix-sdk = { version = "0.16.0", features = ["sqlite", "e2e-encryption", "sso-login"] }
-matrix-sdk-ui = { version = "0.16.0" }
 matrix-sdk-sqlite = "0.16.0"
-matrix-sdk-base = "0.16.0"
-tokio = { version = "1", features = ["full"] }
-oo7 = "0.3"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-anyhow = "1"
-thiserror = "1"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-zbus = "4"
-imbl = "6"
-eyeball-im = "0.8"
-url = "2"
-dirs = "6.0.0"
-tempfile = "3"
 rusqlite = { version = "0.37", features = ["bundled"] }
-chrono = "0.4"
-cosmic-text = "0.12"
-pulldown-cmark = "0.10"
-open = "5.3.3"
-
-[dev-dependencies]
-matrix-sdk-test = "0.16.0"
-tempfile = "3"
-wiremock = "0.6.5"
-
-[patch.crates-io]
-# Many COSMIC apps need to patch iced or other dependencies to match what libcosmic uses.
-# However, for a basic shell, let's start without patches and see if it compiles.
+tokio = { version = "1", features = ["full"] }
