@@ -529,7 +529,7 @@ impl MatrixEngine {
     pub async fn restore_session(&self) -> Result<bool> {
         let keyring = Keyring::new().await?;
         let mut attributes = HashMap::new();
-        attributes.insert("app_id", "fi.joonastuomi.CosmicExtConstellations");
+        attributes.insert("app_id", "fi.joonastuomi.Constellations");
         attributes.insert("type", "matrix-session");
 
         let items = keyring.search_items(&attributes).await?;
@@ -609,15 +609,15 @@ impl MatrixEngine {
     pub async fn logout(&self) -> Result<()> {
         let keyring = Keyring::new().await?;
         let mut attributes = HashMap::new();
-        attributes.insert("app_id", "fi.joonastuomi.CosmicExtConstellations");
+        attributes.insert("app_id", "fi.joonastuomi.Constellations");
         attributes.insert("type", "matrix-session");
-        
+
         if let Ok(items) = keyring.search_items(&attributes).await {
             for item in items {
                 let _ = item.delete().await;
             }
         }
-        
+
         let mut inner = self.inner.write().await;
         if let Some(handle) = inner.sync_handle.take() {
             handle.abort();
@@ -629,12 +629,13 @@ impl MatrixEngine {
         inner.room_list_controller = None;
         inner.timelines.clear();
         inner.space_hierarchy = SpaceHierarchy::new();
-        
+
         // Try logging out properly from Matrix
         let _ = inner.client.matrix_auth().logout().await;
-        
+
         let store_path = inner.data_dir.join("matrix-store.db");
-        let _ = std::fs::remove_dir_all(store_path);
+        let _ = std::fs::remove_dir_all(&store_path);
+        let _ = std::fs::remove_file(&store_path);
 
         Ok(())
     }
@@ -975,14 +976,14 @@ impl MatrixEngine {
     async fn get_or_create_store_passphrase() -> Result<String> {
         let keyring = Keyring::new().await?;
         let mut attributes = HashMap::new();
-        attributes.insert("app_id", "fi.joonastuomi.CosmicExtConstellations");
+        attributes.insert("app_id", "fi.joonastuomi.Constellations");
         attributes.insert("type", "store-passphrase");
 
         let items = keyring.search_items(&attributes).await?;
 
         if let Some(item) = items.first() {
             let secret = item.secret().await?;
-            if let Ok(passphrase) = String::from_utf8(secret) {
+            if let Ok(passphrase) = String::from_utf8(secret.to_vec()) {
                 return Ok(passphrase);
             }
         }
@@ -1025,7 +1026,15 @@ impl MatrixEngine {
         }
 
         let passphrase = Self::get_or_create_store_passphrase().await?;
-        let sqlite_store = SqliteStateStore::open(&store_path, Some(passphrase.as_str())).await?;
+        let sqlite_store = match SqliteStateStore::open(&store_path, Some(passphrase.as_str())).await {
+            Ok(store) => store,
+            Err(e) => {
+                tracing::warn!("Failed to open SqliteStateStore (possibly corrupted cipher): {}. Recreating store.", e);
+                let _ = std::fs::remove_dir_all(&store_path);
+                let _ = std::fs::remove_file(&store_path);
+                SqliteStateStore::open(&store_path, Some(passphrase.as_str())).await?
+            }
+        };
         let store_config = StoreConfig::new("constellations".to_owned()).state_store(sqlite_store);
 
         let client = Client::builder()
