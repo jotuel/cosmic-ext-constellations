@@ -10,10 +10,10 @@ pub struct IpcInterface {
     tx: mpsc::UnboundedSender<String>,
 }
 
-#[interface(name = "com.system76.Claw.Ipc")]
+#[interface(name = "fi.joonastuomi.Constellations.Ipc")]
 impl IpcInterface {
     async fn handle_callback(&self, uri: String) {
-        if !uri.starts_with("com.system76.Claw://callback") {
+        if !uri.starts_with("fi.joonastuomi.Constellations://callback") {
             tracing::warn!("Received invalid OIDC callback URI: {}", uri);
             return;
         }
