@@ -606,6 +606,39 @@ impl MatrixEngine {
         Ok(false)
     }
 
+    pub async fn logout(&self) -> Result<()> {
+        let keyring = Keyring::new().await?;
+        let mut attributes = HashMap::new();
+        attributes.insert("app_id", "fi.joonastuomi.CosmicExtConstellations");
+        attributes.insert("type", "matrix-session");
+        
+        if let Ok(items) = keyring.search_items(&attributes).await {
+            for item in items {
+                let _ = item.delete().await;
+            }
+        }
+        
+        let mut inner = self.inner.write().await;
+        if let Some(handle) = inner.sync_handle.take() {
+            handle.abort();
+        }
+        if let Some(sync_service) = inner.sync_service.take() {
+            let _ = sync_service.stop().await;
+        }
+        inner.room_list_service = None;
+        inner.room_list_controller = None;
+        inner.timelines.clear();
+        inner.space_hierarchy = SpaceHierarchy::new();
+        
+        // Try logging out properly from Matrix
+        let _ = inner.client.matrix_auth().logout().await;
+        
+        let store_path = inner.data_dir.join("matrix-store.db");
+        let _ = std::fs::remove_dir_all(store_path);
+
+        Ok(())
+    }
+
     pub async fn client(&self) -> Client {
         self.inner.read().await.client.clone()
     }
