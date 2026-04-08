@@ -650,7 +650,10 @@ impl Application for Constellations {
         (app, Task::batch(tasks))
     }
 
-    fn handle_engine_ready(&mut self, res: Result<matrix::MatrixEngine, matrix::SyncError>) -> Task<Action<Self::Message>> {
+    fn handle_engine_ready(
+        &mut self,
+        res: Result<matrix::MatrixEngine, matrix::SyncError>,
+    ) -> Task<Action<Self::Message>> {
         match res {
             Ok(engine) => {
                 self.matrix = Some(engine.clone());
@@ -672,7 +675,11 @@ impl Application for Constellations {
         }
     }
 
-    fn handle_user_ready(&mut self, user_id: Option<String>, sync_res: Result<(), matrix::SyncError>) -> Task<Action<Self::Message>> {
+    fn handle_user_ready(
+        &mut self,
+        user_id: Option<String>,
+        sync_res: Result<(), matrix::SyncError>,
+    ) -> Task<Action<Self::Message>> {
         self.user_id = user_id;
         self.is_initializing = false;
         let title_task = self.update_title();
@@ -688,7 +695,10 @@ impl Application for Constellations {
         title_task
     }
 
-    fn handle_timeline_diff(&mut self, diff: eyeball_im::VectorDiff<std::sync::Arc<matrix::TimelineItem>>) -> Task<Action<Self::Message>> {
+    fn handle_timeline_diff(
+        &mut self,
+        diff: eyeball_im::VectorDiff<std::sync::Arc<matrix::TimelineItem>>,
+    ) -> Task<Action<Self::Message>> {
         let mut tasks = Vec::new();
         let mut check_item = |item: &std::sync::Arc<matrix::TimelineItem>| {
             if let Some(event) = item.as_event() {
@@ -701,7 +711,9 @@ impl Application for Constellations {
                             if let Some(matrix) = &self.matrix {
                                 let matrix_clone = matrix.clone();
                                 let mxc_url = url_str.clone();
-                                let source = matrix_sdk::ruma::events::room::MediaSource::Plain(avatar_url.clone());
+                                let source = matrix_sdk::ruma::events::room::MediaSource::Plain(
+                                    avatar_url.clone(),
+                                );
                                 tasks.push(cosmic::iced::Task::perform(
                                     async move {
                                         matrix_clone
@@ -709,10 +721,7 @@ impl Application for Constellations {
                                             .await
                                             .map_err(|e| e.to_string())
                                     },
-                                    move |res| {
-                                        Message::MediaFetched(mxc_url.clone(), res)
-                                            .into()
-                                    },
+                                    move |res| Message::MediaFetched(mxc_url.clone(), res).into(),
                                 ));
                             }
                         }
@@ -726,12 +735,8 @@ impl Application for Constellations {
             eyeball_im::VectorDiff::Set { value, .. } => check_item(value),
             eyeball_im::VectorDiff::PushBack { value } => check_item(value),
             eyeball_im::VectorDiff::PushFront { value } => check_item(value),
-            eyeball_im::VectorDiff::Append { values } => {
-                values.iter().for_each(&mut check_item)
-            }
-            eyeball_im::VectorDiff::Reset { values } => {
-                values.iter().for_each(&mut check_item)
-            }
+            eyeball_im::VectorDiff::Append { values } => values.iter().for_each(&mut check_item),
+            eyeball_im::VectorDiff::Reset { values } => values.iter().for_each(&mut check_item),
             _ => {}
         }
 
@@ -751,16 +756,24 @@ impl Application for Constellations {
                 value: ConstellationsItem::new(value, self.user_id.as_deref()),
             },
             eyeball_im::VectorDiff::Append { values } => eyeball_im::VectorDiff::Append {
-                values: values.into_iter().map(|v| ConstellationsItem::new(v, self.user_id.as_deref())).collect(),
+                values: values
+                    .into_iter()
+                    .map(|v| ConstellationsItem::new(v, self.user_id.as_deref()))
+                    .collect(),
             },
             eyeball_im::VectorDiff::Reset { values } => eyeball_im::VectorDiff::Reset {
-                values: values.into_iter().map(|v| ConstellationsItem::new(v, self.user_id.as_deref())).collect(),
+                values: values
+                    .into_iter()
+                    .map(|v| ConstellationsItem::new(v, self.user_id.as_deref()))
+                    .collect(),
             },
             eyeball_im::VectorDiff::Remove { index } => eyeball_im::VectorDiff::Remove { index },
             eyeball_im::VectorDiff::PopBack => eyeball_im::VectorDiff::PopBack,
             eyeball_im::VectorDiff::PopFront => eyeball_im::VectorDiff::PopFront,
             eyeball_im::VectorDiff::Clear => eyeball_im::VectorDiff::Clear,
-            eyeball_im::VectorDiff::Truncate { length } => eyeball_im::VectorDiff::Truncate { length },
+            eyeball_im::VectorDiff::Truncate { length } => {
+                eyeball_im::VectorDiff::Truncate { length }
+            }
         };
 
         self.timeline_items.apply_diff(mapped_diff);
@@ -786,9 +799,7 @@ impl Application for Constellations {
                 self.room_list.apply_diff(diff);
                 self.update_title()
             }
-            matrix::MatrixEvent::TimelineDiff(diff) => {
-                self.handle_timeline_diff(diff)
-            }
+            matrix::MatrixEvent::TimelineDiff(diff) => self.handle_timeline_diff(diff),
             matrix::MatrixEvent::TimelineReset => {
                 self.timeline_items.clear();
                 Task::none()
@@ -862,7 +873,10 @@ impl Application for Constellations {
         }
     }
 
-    fn handle_select_space(&mut self, space_id: Option<OwnedRoomId>) -> Task<Action<Self::Message>> {
+    fn handle_select_space(
+        &mut self,
+        space_id: Option<OwnedRoomId>,
+    ) -> Task<Action<Self::Message>> {
         self.selected_space = space_id.clone();
         if let Some(matrix) = &self.matrix {
             let matrix = matrix.clone();
@@ -893,7 +907,11 @@ impl Application for Constellations {
         }
     }
 
-    fn handle_media_fetched(&mut self, mxc_url: String, res: Result<Vec<u8>, String>) -> Task<Action<Self::Message>> {
+    fn handle_media_fetched(
+        &mut self,
+        mxc_url: String,
+        res: Result<Vec<u8>, String>,
+    ) -> Task<Action<Self::Message>> {
         match res {
             Ok(data) => {
                 self.media_cache.insert(
@@ -927,16 +945,12 @@ impl Application for Constellations {
                         .await
                         .user_id()
                         .map(|u| u.to_string())
-                        .ok_or_else(|| {
-                            anyhow::anyhow!("Failed to get user ID after login")
-                        })?;
+                        .ok_or_else(|| anyhow::anyhow!("Failed to get user ID after login"))?;
                     matrix.start_sync().await?;
                     Ok(user_id)
                 },
                 |res: Result<String, anyhow::Error>| {
-                    Action::from(Message::LoginFinished(
-                        res.map_err(matrix::SyncError::from),
-                    ))
+                    Action::from(Message::LoginFinished(res.map_err(matrix::SyncError::from)))
                 },
             )
         } else {
@@ -944,7 +958,10 @@ impl Application for Constellations {
         }
     }
 
-    fn handle_login_finished(&mut self, res: Result<String, matrix::SyncError>) -> Task<Action<Self::Message>> {
+    fn handle_login_finished(
+        &mut self,
+        res: Result<String, matrix::SyncError>,
+    ) -> Task<Action<Self::Message>> {
         self.is_logging_in = false;
         self.is_oidc_logging_in = false;
         match res {
@@ -981,7 +998,10 @@ impl Application for Constellations {
         }
     }
 
-    fn handle_oidc_login_started(&mut self, res: Result<Url, String>) -> Task<Action<Self::Message>> {
+    fn handle_oidc_login_started(
+        &mut self,
+        res: Result<Url, String>,
+    ) -> Task<Action<Self::Message>> {
         match res {
             Ok(url) => {
                 tracing::info!("Opening URL: {}", redact_url(&url));
@@ -1008,16 +1028,12 @@ impl Application for Constellations {
                         .await
                         .user_id()
                         .map(|u| u.to_string())
-                        .ok_or_else(|| {
-                            anyhow::anyhow!("Failed to get user ID after OIDC login")
-                        })?;
+                        .ok_or_else(|| anyhow::anyhow!("Failed to get user ID after OIDC login"))?;
                     matrix.start_sync().await?;
                     Ok(user_id)
                 },
                 |res: Result<String, anyhow::Error>| {
-                    Action::from(Message::LoginFinished(
-                        res.map_err(matrix::SyncError::from),
-                    ))
+                    Action::from(Message::LoginFinished(res.map_err(matrix::SyncError::from)))
                 },
             )
         } else {
@@ -1028,7 +1044,9 @@ impl Application for Constellations {
     fn update(&mut self, message: Message) -> Task<Action<Self::Message>> {
         match message {
             Message::EngineReady(res) => return self.handle_engine_ready(res),
-            Message::UserReady(user_id, sync_res) => return self.handle_user_ready(user_id, sync_res),
+            Message::UserReady(user_id, sync_res) => {
+                return self.handle_user_ready(user_id, sync_res)
+            }
             Message::Matrix(event) => return self.handle_matrix_event(event),
             Message::LoadMore => return self.handle_load_more(),
             Message::LoadMoreFinished(res) => {
@@ -1250,7 +1268,21 @@ impl Application for Constellations {
 
             content = content.push(column().spacing(10).push(composer).push(controls));
         } else {
-            content = content.align_x(Alignment::Center);
+            let empty_state = container(
+                column()
+                    .spacing(10)
+                    .align_x(Alignment::Center)
+                    .push(text::title1("No room selected"))
+                    .push(text::body(
+                        "Select a room from the sidebar to start chatting.",
+                    )),
+            )
+            .width(cosmic::iced::Length::Fill)
+            .height(cosmic::iced::Length::Fill)
+            .align_x(Alignment::Center)
+            .align_y(Alignment::Center);
+
+            content = content.push(empty_state);
         }
 
         if let Some(error) = &self.error {
@@ -1398,9 +1430,12 @@ impl Application for Constellations {
                     for diff in diffs {
                         let room_diff = match diff {
                             eyeball_im::VectorDiff::Insert { index, value } => {
-                                get_room_data(&engine_rooms, value.room_id()).await.map(|data| {
-                                    eyeball_im::VectorDiff::Insert { index, value: data }
-                                })
+                                get_room_data(&engine_rooms, value.room_id())
+                                    .await
+                                    .map(|data| eyeball_im::VectorDiff::Insert {
+                                        index,
+                                        value: data,
+                                    })
                             }
                             eyeball_im::VectorDiff::Remove { index } => {
                                 Some(eyeball_im::VectorDiff::Remove { index })
@@ -1597,7 +1632,9 @@ mod tests {
     #[tokio::test]
     async fn test_get_room_data_not_found() {
         let tmp_dir = tempfile::tempdir().unwrap();
-        let engine = matrix::MatrixEngine::new(tmp_dir.path().to_path_buf()).await.unwrap();
+        let engine = matrix::MatrixEngine::new(tmp_dir.path().to_path_buf())
+            .await
+            .unwrap();
 
         let room_id = matrix_sdk::ruma::RoomId::parse("!nonexistent:example.com").unwrap();
 
