@@ -16,6 +16,49 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use url::Url;
 
+// ⚡ Bolt Optimization:
+// We cache the parsed Markdown structure in `PreviewEvent`s to avoid running
+// `pulldown_cmark::Parser` on every single render frame inside `view_preview()`.
+#[derive(Clone, Debug, PartialEq)]
+enum PreviewEvent {
+    StartHeading,
+    EndBlock,
+    Text(String),
+    Code(String),
+    Break,
+}
+
+fn parse_markdown(text: &str) -> Vec<PreviewEvent> {
+    let mut events = Vec::new();
+    let parser = pulldown_cmark::Parser::new(text);
+    for event in parser {
+        match event {
+            pulldown_cmark::Event::Start(tag) => {
+                if let pulldown_cmark::Tag::Heading { .. } = tag {
+                    events.push(PreviewEvent::StartHeading);
+                }
+            }
+            pulldown_cmark::Event::End(tag) => match tag {
+                pulldown_cmark::TagEnd::Paragraph | pulldown_cmark::TagEnd::Heading(_) => {
+                    events.push(PreviewEvent::EndBlock);
+                }
+                _ => {}
+            },
+            pulldown_cmark::Event::Text(t) => {
+                events.push(PreviewEvent::Text(t.to_string()));
+            }
+            pulldown_cmark::Event::Code(c) => {
+                events.push(PreviewEvent::Code(c.to_string()));
+            }
+            pulldown_cmark::Event::SoftBreak | pulldown_cmark::Event::HardBreak => {
+                events.push(PreviewEvent::Break);
+            }
+            _ => {}
+        }
+    }
+    events
+}
+
 struct Constellations {
     core: Core,
     matrix: Option<matrix::MatrixEngine>,
@@ -24,6 +67,7 @@ struct Constellations {
     selected_room: Option<String>,
     timeline_items: Vector<ConstellationsItem>,
     composer_text: String,
+    composer_preview_events: Vec<PreviewEvent>,
     composer_is_preview: bool,
     user_id: Option<String>,
     media_cache: std::collections::HashMap<String, cosmic::iced::widget::image::Handle>,
@@ -373,46 +417,39 @@ impl Constellations {
 
     fn view_preview(&self) -> Element<'_, Message> {
         let mut preview_col = column().spacing(10);
-        let parser = pulldown_cmark::Parser::new(&self.composer_text);
 
         let mut current_row = row().spacing(0).align_y(Alignment::Center);
         let mut row_has_content = false;
 
-        for event in parser {
+        for event in &self.composer_preview_events {
             match event {
-                pulldown_cmark::Event::Start(tag) => {
-                    if let pulldown_cmark::Tag::Heading { .. } = tag {
-                        if row_has_content {
-                            preview_col = preview_col.push(current_row);
-                            current_row = row().spacing(0).align_y(Alignment::Center);
-                            row_has_content = false;
-                        }
+                PreviewEvent::StartHeading => {
+                    if row_has_content {
+                        preview_col = preview_col.push(current_row);
+                        current_row = row().spacing(0).align_y(Alignment::Center);
+                        row_has_content = false;
                     }
                 }
-                pulldown_cmark::Event::End(tag) => match tag {
-                    pulldown_cmark::TagEnd::Paragraph | pulldown_cmark::TagEnd::Heading(_) => {
-                        if row_has_content {
-                            preview_col = preview_col.push(current_row);
-                            current_row = row().spacing(0).align_y(Alignment::Center);
-                            row_has_content = false;
-                        }
+                PreviewEvent::EndBlock => {
+                    if row_has_content {
+                        preview_col = preview_col.push(current_row);
+                        current_row = row().spacing(0).align_y(Alignment::Center);
+                        row_has_content = false;
                     }
-                    _ => {}
-                },
-                pulldown_cmark::Event::Text(t) => {
-                    let txt = text::body(t.to_string());
+                }
+                PreviewEvent::Text(t) => {
+                    let txt = text::body(t.as_str());
                     current_row = current_row.push(txt);
                     row_has_content = true;
                 }
-                pulldown_cmark::Event::Code(c) => {
-                    current_row = current_row.push(container(text::body(c.to_string())).padding(2));
+                PreviewEvent::Code(c) => {
+                    current_row = current_row.push(container(text::body(c.as_str())).padding(2));
                     row_has_content = true;
                 }
-                pulldown_cmark::Event::SoftBreak | pulldown_cmark::Event::HardBreak => {
+                PreviewEvent::Break => {
                     current_row = current_row.push(text::body(" "));
                     row_has_content = true;
                 }
-                _ => {}
             }
         }
 
@@ -628,6 +665,7 @@ impl Application for Constellations {
             selected_room: None,
             timeline_items: Vector::new(),
             composer_text: String::new(),
+            composer_preview_events: Vec::new(),
             composer_is_preview: false,
             user_id: None,
             media_cache: std::collections::HashMap::new(),
@@ -1043,6 +1081,7 @@ impl Application for Constellations {
                 return self.update_title();
             }
             Message::ComposerChanged(text) => {
+                self.composer_preview_events = parse_markdown(&text);
                 self.composer_text = text;
                 Task::none()
             }
@@ -1055,6 +1094,7 @@ impl Application for Constellations {
                 match res {
                     Ok(_) => {
                         self.composer_text.clear();
+                        self.composer_preview_events.clear();
                         self.composer_is_preview = false;
                     }
                     Err(e) => {
