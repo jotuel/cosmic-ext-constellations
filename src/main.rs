@@ -11,7 +11,7 @@ use cosmic::widget::menu::action::MenuAction;
 use cosmic::widget::tooltip::Position;
 use cosmic::widget::RcElementWrapper;
 use cosmic::widget::{
-    button, column, container, menu, row, scrollable, text, text_input, tooltip, Column, Row,
+    button, container, menu, scrollable, text, text_input, tooltip, Column, Row,
 };
 use cosmic::{Action, Application, Core, Element, Task};
 use eyeball_im::Vector;
@@ -19,7 +19,6 @@ use matrix_sdk::ruma::events::room::message::MessageType;
 use matrix_sdk::ruma::events::room::MediaSource;
 use matrix_sdk::ruma::OwnedRoomId;
 use matrix_sdk_ui::sync_service::State as SyncServiceState;
-use std::path::PathBuf;
 use std::sync::Arc;
 use url::Url;
 
@@ -790,7 +789,7 @@ impl Constellations {
         for item in &self.timeline_items {
             if let Some(event) = item.item.as_event() {
                 if let Some(message) = event.content().as_message() {
-                    let sender = &item.sender;
+                    let _sender = &item.sender;
                     let sender_name = &item.sender_name;
                     let avatar_url = &item.avatar_url;
                     let timestamp = &item.timestamp;
