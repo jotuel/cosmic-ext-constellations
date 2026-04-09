@@ -1,15 +1,18 @@
 #![recursion_limit = "512"]
 
-mod ipc;
 mod handlers;
+mod ipc;
 mod matrix;
+pub mod settings;
 
 use anyhow::Result;
 use cosmic::iced::{Alignment, Subscription};
-use cosmic::widget::{Column, Row, button, column, container, row, scrollable, text, text_input, menu, tooltip};
+use cosmic::widget::menu::action::MenuAction;
 use cosmic::widget::tooltip::Position;
 use cosmic::widget::RcElementWrapper;
-use cosmic::widget::menu::action::MenuAction;
+use cosmic::widget::{
+    button, column, container, menu, row, scrollable, text, text_input, tooltip, Column, Row,
+};
 use cosmic::{Action, Application, Core, Element, Task};
 use eyeball_im::Vector;
 use matrix_sdk::ruma::events::room::message::MessageType;
@@ -86,6 +89,8 @@ struct Constellations {
     is_initializing: bool,
     selected_space: Option<OwnedRoomId>,
     show_sync_indicator: bool,
+    current_settings_panel: Option<SettingsPanel>,
+    user_settings: settings::user::State,
 }
 
 impl Constellations {
@@ -224,7 +229,10 @@ impl Constellations {
         }
     }
 
-    fn handle_matrix_event(&mut self, event: matrix::MatrixEvent) -> Task<Action<<Constellations as cosmic::Application>::Message>> {
+    fn handle_matrix_event(
+        &mut self,
+        event: matrix::MatrixEvent,
+    ) -> Task<Action<<Constellations as cosmic::Application>::Message>> {
         match event {
             matrix::MatrixEvent::SyncStatusChanged(status) => {
                 self.sync_status = status;
@@ -250,7 +258,9 @@ impl Constellations {
         }
     }
 
-    fn handle_load_more(&mut self) -> Task<Action<<Constellations as cosmic::Application>::Message>> {
+    fn handle_load_more(
+        &mut self,
+    ) -> Task<Action<<Constellations as cosmic::Application>::Message>> {
         if let (Some(matrix), Some(room_id)) = (&self.matrix, &self.selected_room) {
             let matrix = matrix.clone();
             let room_id = room_id.clone();
@@ -268,7 +278,9 @@ impl Constellations {
         }
     }
 
-    fn handle_send_message(&mut self) -> Task<Action<<Constellations as cosmic::Application>::Message>> {
+    fn handle_send_message(
+        &mut self,
+    ) -> Task<Action<<Constellations as cosmic::Application>::Message>> {
         if let (Some(matrix), Some(room_id)) = (&self.matrix, &self.selected_room) {
             let body = self.composer_text.clone();
             if body.is_empty() {
@@ -294,7 +306,10 @@ impl Constellations {
         }
     }
 
-    fn handle_create_room(&mut self, name: String) -> Task<Action<<Constellations as cosmic::Application>::Message>> {
+    fn handle_create_room(
+        &mut self,
+        name: String,
+    ) -> Task<Action<<Constellations as cosmic::Application>::Message>> {
         if let Some(matrix) = &self.matrix {
             let matrix = matrix.clone();
             Task::perform(
@@ -330,7 +345,10 @@ impl Constellations {
         }
     }
 
-    fn handle_fetch_media(&mut self, source: MediaSource) -> Task<Action<<Constellations as cosmic::Application>::Message>> {
+    fn handle_fetch_media(
+        &mut self,
+        source: MediaSource,
+    ) -> Task<Action<<Constellations as cosmic::Application>::Message>> {
         if let Some(matrix) = &self.matrix {
             let matrix = matrix.clone();
             let mxc_url = match &source {
@@ -365,7 +383,9 @@ impl Constellations {
         Task::none()
     }
 
-    fn handle_submit_login(&mut self) -> Task<Action<<Constellations as cosmic::Application>::Message>> {
+    fn handle_submit_login(
+        &mut self,
+    ) -> Task<Action<<Constellations as cosmic::Application>::Message>> {
         if let Some(matrix) = &self.matrix {
             self.is_logging_in = true;
             self.error = None;
@@ -417,7 +437,9 @@ impl Constellations {
         Task::none()
     }
 
-    fn handle_submit_oidc_login(&mut self) -> Task<Action<<Constellations as cosmic::Application>::Message>> {
+    fn handle_submit_oidc_login(
+        &mut self,
+    ) -> Task<Action<<Constellations as cosmic::Application>::Message>> {
         if let Some(matrix) = &self.matrix {
             self.is_oidc_logging_in = true;
             self.error = None;
@@ -454,7 +476,10 @@ impl Constellations {
         Task::none()
     }
 
-    fn handle_oidc_callback(&mut self, url: Url) -> Task<Action<<Constellations as cosmic::Application>::Message>> {
+    fn handle_oidc_callback(
+        &mut self,
+        url: Url,
+    ) -> Task<Action<<Constellations as cosmic::Application>::Message>> {
         if let Some(matrix) = &self.matrix {
             self.is_oidc_logging_in = true;
             self.error = None;
@@ -493,7 +518,9 @@ impl Constellations {
         Task::none()
     }
 
-    fn handle_logout_finished(&mut self) -> Task<Action<<Constellations as cosmic::Application>::Message>> {
+    fn handle_logout_finished(
+        &mut self,
+    ) -> Task<Action<<Constellations as cosmic::Application>::Message>> {
         self.user_id = None;
         self.matrix = None;
         self.sync_status = matrix::SyncStatus::Disconnected;
@@ -541,10 +568,23 @@ pub enum Message {
     OidcCallback(Url),
     Logout,
     LogoutFinished,
+    OpenSettings(SettingsPanel),
+    CloseSettings,
+    UserSettings(settings::user::Message),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum SettingsPanel {
+    App,
+    User,
+    Room,
+    Space,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum MenuAct {
+    AppSettings,
+    UserSettings,
     Logout,
 }
 
@@ -552,6 +592,8 @@ impl MenuAction for MenuAct {
     type Message = Message;
     fn message(&self) -> Self::Message {
         match self {
+            MenuAct::AppSettings => Message::OpenSettings(SettingsPanel::App),
+            MenuAct::UserSettings => Message::OpenSettings(SettingsPanel::User),
             MenuAct::Logout => Message::Logout,
         }
     }
@@ -1006,11 +1048,7 @@ impl Constellations {
             button::custom(global_container).on_press(Message::SelectSpace(None))
         };
 
-        let global_tooltip = tooltip(
-            global_btn,
-            text::body("All Rooms"),
-            Position::Right,
-        );
+        let global_tooltip = tooltip(global_btn, text::body("All Rooms"), Position::Right);
 
         content = content.push(global_tooltip);
 
@@ -1066,22 +1104,24 @@ impl Constellations {
             };
 
             let space_name = space.name.as_deref().unwrap_or("Unknown Space");
-            let space_tooltip = tooltip(
-                btn,
-                text::body(space_name),
-                Position::Right,
-            );
+            let space_tooltip = tooltip(btn, text::body(space_name), Position::Right);
 
             content = content.push(space_tooltip);
         }
 
         let scrollable_spaces = scrollable(content).height(cosmic::iced::Length::Fill);
 
-        let user_initial = self.user_id.as_deref().and_then(|u| u.chars().nth(1)).unwrap_or('U').to_ascii_uppercase().to_string();
+        let user_initial = self
+            .user_id
+            .as_deref()
+            .and_then(|u| u.chars().nth(1))
+            .unwrap_or('U')
+            .to_ascii_uppercase()
+            .to_string();
         let avatar = container(text::body(user_initial).size(24))
             .padding(8)
             .align_x(Alignment::Center);
-            
+
         let user_btn = button::custom(avatar);
         let key_binds = std::collections::HashMap::new();
 
@@ -1090,11 +1130,9 @@ impl Constellations {
             menu::items(
                 &key_binds,
                 vec![
-                    menu::Item::Button(
-                        "Logout",
-                        None,
-                        MenuAct::Logout,
-                    ),
+                    menu::Item::Button("App Settings", None, MenuAct::AppSettings),
+                    menu::Item::Button("User Settings", None, MenuAct::UserSettings),
+                    menu::Item::Button("Logout", None, MenuAct::Logout),
                 ],
             ),
         );
@@ -1169,6 +1207,8 @@ impl Application for Constellations {
             is_initializing: true,
             selected_space: None,
             show_sync_indicator: false,
+            current_settings_panel: None,
+            user_settings: Default::default(),
         };
 
         let title_task = app.update_title();
@@ -1177,7 +1217,31 @@ impl Application for Constellations {
         (app, Task::batch(tasks))
     }
 
+    fn context_drawer(&self) -> Option<cosmic::app::context_drawer::ContextDrawer<'_, Self::Message>> {
+        if let Some(panel) = &self.current_settings_panel {
+            let title = match panel {
+                SettingsPanel::App => "App Settings",
+                SettingsPanel::User => "User Settings",
+                SettingsPanel::Room => "Room Settings",
+                SettingsPanel::Space => "Space Settings",
+            };
+            
+            let panel_content = match panel {
+                SettingsPanel::User => self.user_settings.view().map(Message::UserSettings),
+                _ => cosmic::widget::Column::new()
+                    .spacing(20)
+                    .push(cosmic::widget::text::body("Settings options will go here..."))
+                    .into(),
+            };
 
+            Some(
+                cosmic::app::context_drawer::context_drawer(panel_content, Message::CloseSettings)
+                    .title(title)
+            )
+        } else {
+            None
+        }
+    }
 
     fn update(&mut self, message: Message) -> Task<Action<Self::Message>> {
         match message {
@@ -1271,6 +1335,22 @@ impl Application for Constellations {
             Message::OidcCallback(url) => return self.handle_oidc_callback(url),
             Message::Logout => return self.handle_logout(),
             Message::LogoutFinished => return self.handle_logout_finished(),
+            Message::OpenSettings(panel) => {
+                self.current_settings_panel = Some(panel.clone());
+                self.core.set_show_context(true);
+                if panel == SettingsPanel::User {
+                    return self.user_settings.update(settings::user::Message::LoadProfile, &self.matrix);
+                }
+                Task::none()
+            }
+            Message::CloseSettings => {
+                self.current_settings_panel = None;
+                self.core.set_show_context(false);
+                Task::none()
+            }
+            Message::UserSettings(msg) => {
+                return self.user_settings.update(msg, &self.matrix);
+            }
         }
     }
 
@@ -1332,6 +1412,23 @@ impl Application for Constellations {
                     }
                 }
             }
+
+            let space_name = self
+                .room_list
+                .iter()
+                .find(|r| &r.id == selected_space.as_str())
+                .and_then(|r| r.name.as_deref())
+                .unwrap_or("Space");
+            let space_header = Row::new()
+                .align_y(Alignment::Center)
+                .push(text::title3(space_name))
+                .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
+                .push(
+                    button::text("⚙ Settings")
+                        .on_press(Message::OpenSettings(SettingsPanel::Space)),
+                );
+            room_list = room_list.push(container(space_header).padding(5));
+
             rooms
         } else {
             self.room_list.iter().filter(|r| !r.is_space).collect()
@@ -1382,6 +1479,22 @@ impl Application for Constellations {
         }
 
         if self.selected_room.is_some() {
+            let room_id = self.selected_room.as_ref().unwrap();
+            let room_name = self
+                .room_list
+                .iter()
+                .find(|r| &r.id == room_id)
+                .and_then(|r| r.name.as_deref())
+                .unwrap_or("Room");
+            let room_header = Row::new()
+                .align_y(Alignment::Center)
+                .push(text::title3(room_name))
+                .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
+                .push(
+                    button::text("⚙ Settings").on_press(Message::OpenSettings(SettingsPanel::Room)),
+                );
+            content = content.push(room_header);
+
             content = content.push(self.view_timeline());
 
             let composer = if self.composer_is_preview {

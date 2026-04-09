@@ -28,6 +28,9 @@ chrono = "0.4"
 cosmic-text = "0.12"
 pulldown-cmark = "0.10"
 open = "5.3.3"
+rfd = "0.17.2"
+mime = "0.3.17"
+mime_guess = "2.0.5"
 
 [dev-dependencies]
 matrix-sdk-test = "0.16.0"

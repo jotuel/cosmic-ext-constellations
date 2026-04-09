@@ -1019,7 +1019,9 @@ impl MatrixEngine {
         }
 
         let passphrase = Self::get_or_create_store_passphrase().await?;
-        let sqlite_store = match SqliteStateStore::open(&store_path, Some(passphrase.as_str())).await {
+        let sqlite_store = match SqliteStateStore::open(&store_path, Some(passphrase.as_str()))
+            .await
+        {
             Ok(store) => store,
             Err(e) => {
                 tracing::warn!("Failed to open SqliteStateStore (possibly corrupted cipher): {}. Recreating store.", e);
