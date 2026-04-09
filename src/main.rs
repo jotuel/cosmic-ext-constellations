@@ -424,9 +424,9 @@ impl Application for Constellations {
     fn update(&mut self, message: Message) -> Task<Action<Self::Message>> {
         match message {
             Message::EngineReady(res) => self.handle_engine_ready(res),
-            Message::UserReady(user_id, sync_res) => {
-                self.handle_user_ready(user_id, sync_res)
-            }
+            Message::UserReady(user_id, sync_res) =>
+                self.handle_user_ready(user_id, sync_res),
+
             Message::Matrix(event) => self.handle_matrix_event(event),
             Message::LoadMore => self.handle_load_more(),
             Message::LoadMoreFinished(res) => {

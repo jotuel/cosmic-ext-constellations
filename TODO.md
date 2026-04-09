@@ -1,3 +1,9 @@
+# Bugs
+
+[ ] Regression session not persisting between runs
+
+[ ] After Logout can't Login again
+
 # Messaging
 
 [ ] Rich Media Support: Sending images etc.
