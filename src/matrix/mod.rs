@@ -988,21 +988,14 @@ impl MatrixEngine {
             }
         }
 
-        // Generate passphrase using standard library functionality (URandom) to avoid adding dependencies
+        // Securely generate passphrase using standard library functionality (URandom) to avoid adding dependencies
         let mut buf = [0u8; 32];
-        if let Ok(mut f) = std::fs::File::open("/dev/urandom") {
-            use std::io::Read;
-            let _ = f.read_exact(&mut buf);
-        } else {
-            // Fallback if /dev/urandom is unavailable, generate a pseudo-random using time
-            use std::time::{SystemTime, UNIX_EPOCH};
-            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-            let random_str = format!("{}-fallback", now);
-            let bytes = random_str.as_bytes();
-            for (i, &b) in bytes.iter().enumerate().take(32) {
-                buf[i] = b;
-            }
-        }
+        let mut f = std::fs::File::open("/dev/urandom")
+            .context("Failed to open /dev/urandom for secure random generation")?;
+
+        use std::io::Read;
+        f.read_exact(&mut buf)
+            .context("Failed to securely read bytes from /dev/urandom")?;
 
         let passphrase: String = buf.iter().map(|b| format!("{:02x}", b)).collect();
 
