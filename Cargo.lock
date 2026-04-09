@@ -341,6 +341,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "assert_matches"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9b34d609dfbaf33d6889b2b7106d3ca345eacad44200913df5ba02bfd31d2ba9"
+
+[[package]]
+name = "assert_matches2"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "15832d94c458da98cac0ffa6eca52cc19c2a3c6c951058500a5ae8f01f0fdf56"
+
+[[package]]
 name = "assign"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4142,6 +4154,7 @@ dependencies = [
  "anymap2",
  "aquamarine",
  "as_variant",
+ "assert_matches2",
  "async-channel",
  "async-stream",
  "async-trait",
@@ -4166,6 +4179,7 @@ dependencies = [
  "matrix-sdk-common",
  "matrix-sdk-indexeddb",
  "matrix-sdk-sqlite",
+ "matrix-sdk-test",
  "mime 0.3.17",
  "mime2ext",
  "oauth2",
@@ -4189,6 +4203,7 @@ dependencies = [
  "url",
  "urlencoding",
  "vodozemac",
+ "wiremock",
  "zeroize",
 ]
 
@@ -4199,6 +4214,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "70f404a390ff98a73c426b1496b169be60ce6a93723a9a664e579d978a84c5e4"
 dependencies = [
  "as_variant",
+ "assert_matches",
+ "assert_matches2",
  "async-trait",
  "bitflags 2.11.0",
  "decancer",
@@ -4206,9 +4223,11 @@ dependencies = [
  "eyeball-im",
  "futures-util",
  "growable-bloom-filter",
+ "http",
  "matrix-sdk-common",
  "matrix-sdk-crypto",
  "matrix-sdk-store-encryption",
+ "matrix-sdk-test",
  "once_cell",
  "regex",
  "ruma",
@@ -4266,6 +4285,7 @@ dependencies = [
  "itertools 0.14.0",
  "js_option",
  "matrix-sdk-common",
+ "matrix-sdk-test",
  "pbkdf2",
  "rand 0.8.5",
  "rmp-serde",
