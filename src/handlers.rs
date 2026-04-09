@@ -12,12 +12,22 @@ impl Constellations {
                 self.matrix = Some(engine.clone());
                 Task::perform(
                     async move {
-                        let _ = engine.restore_session().await;
-                        let user_id = engine.client().await.user_id().map(|u| u.to_string());
-                        let sync_res = engine.start_sync().await;
-                        (user_id, sync_res)
+                        let did_restore = engine.restore_session().await.unwrap_or(false);
+                        if did_restore {
+                            let user_id = engine.client().await.user_id().map(|u| u.to_string());
+                            let sync_res = engine.start_sync().await;
+                            (user_id, sync_res)
+                        } else {
+                            (None, Err(matrix::SyncError::Generic("No session to restore".to_string())))
+                        }
                     },
-                    |(user_id, sync_res)| Action::from(Message::UserReady(user_id, sync_res)),
+                    |(user_id, sync_res)| {
+                        if let Some(uid) = user_id {
+                            Action::from(Message::UserReady(Some(uid), sync_res))
+                        } else {
+                            Action::from(Message::UserReady(None, sync_res))
+                        }
+                    },
                 )
             }
             Err(e) => {
@@ -36,6 +46,10 @@ impl Constellations {
         self.user_id = user_id;
         self.is_initializing = false;
         let title_task = self.update_title();
+        if self.user_id.is_none() {
+            return title_task;
+        }
+        
         match sync_res {
             Ok(_) => {}
             Err(matrix::SyncError::MissingSlidingSyncSupport) => {
