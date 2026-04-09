@@ -6,7 +6,8 @@ mod matrix;
 
 use anyhow::Result;
 use cosmic::iced::{Alignment, Subscription};
-use cosmic::widget::{Column, Row, button, column, container, row, scrollable, text, text_input, menu};
+use cosmic::widget::{Column, Row, button, column, container, row, scrollable, text, text_input, menu, tooltip};
+use cosmic::widget::tooltip::Position;
 use cosmic::widget::RcElementWrapper;
 use cosmic::widget::menu::action::MenuAction;
 use cosmic::{Action, Application, Core, Element, Task};
@@ -1005,7 +1006,13 @@ impl Constellations {
             button::custom(global_container).on_press(Message::SelectSpace(None))
         };
 
-        content = content.push(global_btn);
+        let global_tooltip = tooltip(
+            global_btn,
+            text::body("All Rooms"),
+            Position::Right,
+        );
+
+        content = content.push(global_tooltip);
 
         for space in self.room_list.iter().filter(|r| r.is_space) {
             let space_id_str = space.id.clone();
@@ -1058,7 +1065,14 @@ impl Constellations {
                 button::custom(space_container).on_press(Message::SelectSpace(Some(space_id)))
             };
 
-            content = content.push(btn);
+            let space_name = space.name.as_deref().unwrap_or("Unknown Space");
+            let space_tooltip = tooltip(
+                btn,
+                text::body(space_name),
+                Position::Right,
+            );
+
+            content = content.push(space_tooltip);
         }
 
         let scrollable_spaces = scrollable(content).height(cosmic::iced::Length::Fill);
