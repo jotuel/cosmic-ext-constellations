@@ -1,8 +1,8 @@
-use cosmic::app::{Core, Settings};
+use cosmic::app::Core;
 use cosmic::iced::Alignment;
 use cosmic::widget::menu::action::MenuAction;
-use cosmic::widget::RcElementWrapper;
-use cosmic::widget::{button, column, container, menu, text};
+use cosmic::widget::{Column, RcElementWrapper};
+use cosmic::widget::{button, container, menu, text};
 use cosmic::{Action, Application, Element, Task};
 use std::collections::HashMap;
 
@@ -46,7 +46,7 @@ impl Application for App {
     fn init(core: Core, _flags: ()) -> (Self, Task<Action<Self::Message>>) {
         (Self { core }, Task::none())
     }
-    fn update(&mut self, message: Message) -> Task<Action<Self::Message>> {
+    fn update(&mut self, _message: Message) -> Task<Action<Self::Message>> {
         Task::none()
     }
     fn view(&self) -> Element<'_, Message> {
@@ -70,6 +70,6 @@ impl Application for App {
             .item_width(menu::ItemWidth::Uniform(120))
             .spacing(4.0);
 
-        column().push(user_menu).into()
+        Column::new().push(user_menu).into()
     }
 }

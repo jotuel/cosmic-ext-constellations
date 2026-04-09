@@ -15,6 +15,7 @@ pub struct DeviceInfo {
 }
 
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct State {
     pub display_name: String,
     pub original_display_name: String,
@@ -36,30 +37,6 @@ pub struct State {
     pub device_delete_password: String,
 }
 
-impl Default for State {
-    fn default() -> Self {
-        Self {
-            display_name: String::new(),
-            original_display_name: String::new(),
-            is_loading: false,
-            is_saving: false,
-            error: None,
-            avatar_url: None,
-            avatar_handle: None,
-            is_uploading_avatar: false,
-            is_loading_avatar: false,
-            current_password: String::new(),
-            new_password: String::new(),
-            confirm_new_password: String::new(),
-            is_changing_password: false,
-            password_success: None,
-            devices: Vec::new(),
-            is_loading_devices: false,
-            verification_request_id: None,
-            device_delete_password: String::new(),
-        }
-    }
-}
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -344,7 +321,7 @@ impl State {
                                     device_id: device.device_id().to_string(),
                                     display_name: device.display_name().map(|n| n.to_string()),
                                     is_verified: device.is_verified(),
-                                    is_current: device.device_id().to_string() == current_device_id,
+                                    is_current: *device.device_id() == current_device_id,
                                     is_renaming: false,
                                     edit_name: String::new(),
                                     is_deleting: false,

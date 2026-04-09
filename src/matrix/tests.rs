@@ -1,7 +1,5 @@
 use super::*;
 use matrix_sdk::test_utils::logged_in_client;
-use matrix_sdk_base::store::RoomLoadSettings;
-use matrix_sdk_test::EventBuilder;
 use tempfile::tempdir;
 use wiremock::matchers::{method, path_regex};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -454,7 +452,7 @@ async fn test_paginate_backwards_rls_not_initialized() {
 #[tokio::test]
 async fn test_paginate_backwards_success() {
     use wiremock::{
-        matchers::{method, path, path_regex},
+        matchers::{method, path_regex},
         Mock, MockServer, ResponseTemplate,
     };
 
@@ -616,15 +614,6 @@ async fn test_send_message_success() {
 
     let client = logged_in_client(Some(mock_server.uri())).await;
 
-    // Create a mock room
-    let room_id = RoomId::parse("!test_room:localhost").unwrap();
-
-    let response = EventBuilder::default()
-        .add_joined_room(matrix_sdk_test::JoinedRoomBuilder::new(&room_id))
-        .build_sync_response();
-
-    client.process_sync_response(response).await.unwrap();
-
     {
         let mut inner = engine.inner.write().await;
         inner.client = client.clone();
@@ -653,10 +642,8 @@ async fn test_send_message_success() {
 
 #[tokio::test]
 async fn test_fetch_media() {
-    use matrix_sdk::media::{MediaFormat, MediaRequestParameters};
     use matrix_sdk::ruma::events::room::MediaSource;
     use matrix_sdk::ruma::OwnedMxcUri;
-    use url::Url;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
