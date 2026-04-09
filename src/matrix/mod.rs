@@ -8,11 +8,9 @@ use matrix_sdk::ruma::events::space::child::SpaceChildEventContent;
 use matrix_sdk::ruma::events::space::parent::SpaceParentEventContent;
 use matrix_sdk::ruma::events::{AnySyncMessageLikeEvent, AnySyncTimelineEvent, SyncStateEvent};
 use matrix_sdk::{
-    config::StoreConfig,
     ruma::{room::RoomType, OwnedDeviceId, OwnedRoomId, RoomId, UserId},
     Client, Room, SessionChange, SessionTokens,
 };
-use matrix_sdk_sqlite::SqliteStateStore;
 pub use matrix_sdk_ui::room_list_service::{RoomListDynamicEntriesController, RoomListService};
 use matrix_sdk_ui::sync_service::SyncService;
 pub use matrix_sdk_ui::timeline::{RoomExt, Timeline, TimelineItem, VirtualTimelineItem};
@@ -51,6 +49,8 @@ pub enum SyncError {
     Http(String),
     #[error("Error: {0}")]
     Anyhow(String),
+    #[error("{0}")]
+    Generic(String),
 }
 
 impl From<matrix_sdk::Error> for SyncError {
@@ -483,8 +483,19 @@ impl MatrixEngine {
             format!("https://{}", stripped)
         };
 
-        let data_dir = self.inner.read().await.data_dir.clone();
-        let client = Self::setup_client(data_dir, &homeserver_url).await?;
+        let client = {
+            let mut inner = self.inner.write().await;
+            if let Some(handle) = inner.sync_handle.take() {
+                handle.abort();
+            }
+            if let Some(handle) = inner.session_change_handle.take() {
+                handle.abort();
+            }
+            let data_dir = inner.data_dir.clone();
+            let new_client = Self::setup_client(data_dir, &homeserver_url).await?;
+            inner.client = new_client.clone();
+            new_client
+        };
 
         client
             .matrix_auth()
@@ -529,7 +540,7 @@ impl MatrixEngine {
     pub async fn restore_session(&self) -> Result<bool> {
         let keyring = Keyring::new().await?;
         let mut attributes = HashMap::new();
-        attributes.insert("app_id", "fi.joonastuomi.Constellations");
+        attributes.insert("app_id", "fi.joonastuomi.CosmicExtConstellations");
         attributes.insert("type", "matrix-session");
 
         let items = keyring.search_items(&attributes).await?;
@@ -608,11 +619,22 @@ impl MatrixEngine {
 
     pub async fn logout(&self) -> Result<()> {
         let keyring = Keyring::new().await?;
-        let mut attributes = HashMap::new();
-        attributes.insert("app_id", "fi.joonastuomi.Constellations");
-        attributes.insert("type", "matrix-session");
+        
+        let mut session_attributes = HashMap::new();
+        session_attributes.insert("app_id", "fi.joonastuomi.CosmicExtConstellations");
+        session_attributes.insert("type", "matrix-session");
 
-        if let Ok(items) = keyring.search_items(&attributes).await {
+        if let Ok(items) = keyring.search_items(&session_attributes).await {
+            for item in items {
+                let _ = item.delete().await;
+            }
+        }
+        
+        let mut pass_attributes = HashMap::new();
+        pass_attributes.insert("app_id", "fi.joonastuomi.CosmicExtConstellations");
+        pass_attributes.insert("type", "store-passphrase");
+
+        if let Ok(items) = keyring.search_items(&pass_attributes).await {
             for item in items {
                 let _ = item.delete().await;
             }
@@ -633,9 +655,8 @@ impl MatrixEngine {
         // Try logging out properly from Matrix
         let _ = inner.client.matrix_auth().logout().await;
 
-        let store_path = inner.data_dir.join("matrix-store.db");
+        let store_path = inner.data_dir.join("matrix-store");
         let _ = std::fs::remove_dir_all(&store_path);
-        let _ = std::fs::remove_file(&store_path);
 
         Ok(())
     }
@@ -903,8 +924,19 @@ impl MatrixEngine {
             format!("https://{}", stripped)
         };
 
-        let data_dir = self.inner.read().await.data_dir.clone();
-        let client = Self::setup_client(data_dir, &homeserver_url).await?;
+        let client = {
+            let mut inner = self.inner.write().await;
+            if let Some(handle) = inner.sync_handle.take() {
+                handle.abort();
+            }
+            if let Some(handle) = inner.session_change_handle.take() {
+                handle.abort();
+            }
+            let data_dir = inner.data_dir.clone();
+            let new_client = Self::setup_client(data_dir, &homeserver_url).await?;
+            inner.client = new_client.clone();
+            new_client
+        };
 
         client
             .oauth()
@@ -976,7 +1008,7 @@ impl MatrixEngine {
     async fn get_or_create_store_passphrase() -> Result<String> {
         let keyring = Keyring::new().await?;
         let mut attributes = HashMap::new();
-        attributes.insert("app_id", "fi.joonastuomi.Constellations");
+        attributes.insert("app_id", "fi.joonastuomi.CosmicExtConstellations");
         attributes.insert("type", "store-passphrase");
 
         let items = keyring.search_items(&attributes).await?;
@@ -1012,32 +1044,29 @@ impl MatrixEngine {
     }
 
     async fn setup_client(data_dir: PathBuf, homeserver_url: &str) -> Result<Client> {
-        let store_path = data_dir.join("matrix-store.db");
+        let store_path = data_dir.join("matrix-store");
 
         if !data_dir.exists() {
             std::fs::create_dir_all(&data_dir)?;
         }
 
         let passphrase = Self::get_or_create_store_passphrase().await?;
-        let sqlite_store = match SqliteStateStore::open(&store_path, Some(passphrase.as_str()))
-            .await
-        {
-            Ok(store) => store,
+
+        let build_client = |path: &PathBuf, pass: &str| {
+            Client::builder()
+                .homeserver_url(homeserver_url)
+                .sqlite_store(path, Some(pass))
+                .handle_refresh_tokens()
+        };
+
+        let client = match build_client(&store_path, &passphrase).build().await {
+            Ok(c) => c,
             Err(e) => {
-                tracing::warn!("Failed to open SqliteStateStore (possibly corrupted cipher): {}. Recreating store.", e);
+                tracing::warn!("Failed to initialize stores (possibly corrupted cipher): {}. Recreating store.", e);
                 let _ = std::fs::remove_dir_all(&store_path);
-                let _ = std::fs::remove_file(&store_path);
-                SqliteStateStore::open(&store_path, Some(passphrase.as_str())).await?
+                build_client(&store_path, &passphrase).build().await?
             }
         };
-        let store_config = StoreConfig::new("constellations".to_owned()).state_store(sqlite_store);
-
-        let client = Client::builder()
-            .homeserver_url(homeserver_url)
-            .store_config(store_config)
-            .handle_refresh_tokens()
-            .build()
-            .await?;
 
         Ok(client)
     }
