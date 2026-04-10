@@ -24,7 +24,6 @@ pub struct State {
     pub power_levels: Option<(i64, HashMap<matrix_sdk::ruma::OwnedUserId, i64>)>,
     pub is_loading_power_levels: bool,
     pub updating_power_level_for: Option<String>,
-    pub promote_user_id: String,
     pub ban_level: i64,
     pub original_ban_level: i64,
     pub invite_level: i64,
@@ -37,6 +36,12 @@ pub struct State {
     pub kick_level_str: String,
     pub ban_level_str: String,
     pub redact_level_str: String,
+    pub invite_user_id: String,
+    pub kick_user_id: String,
+    pub ban_user_id: String,
+    pub action_reason: String,
+    pub current_user_id: Option<String>,
+    pub my_power_level: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -57,14 +62,28 @@ pub enum Message {
     ForgetRoom,
     RoomForgotten(Result<(), String>),
     LoadPowerLevels,
-    PowerLevelsLoaded(Result<(i64, HashMap<matrix_sdk::ruma::OwnedUserId, i64>), String>),
+    PowerLevelsLoaded(Result<PowerLevelInfo, String>),
     UpdatePowerLevel(String, i64),
     PowerLevelUpdated(String, Result<(), String>),
-    PromoteUserIdChanged(String),
     BanLevelChanged(String),
     InviteLevelChanged(String),
     KickLevelChanged(String),
     RedactLevelChanged(String),
+    InviteUser,
+    UserInvited(Result<(), String>),
+    KickUser(String),
+    UserKicked(String, Result<(), String>),
+    BanUser(String),
+    UserBanned(String, Result<(), String>),
+    InviteUserIdChanged(String),
+    ActionReasonChanged(String),
+}
+
+#[derive(Debug, Clone)]
+pub struct PowerLevelInfo {
+    pub default_level: i64,
+    pub users: HashMap<matrix_sdk::ruma::OwnedUserId, i64>,
+    pub my_level: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -77,6 +96,7 @@ pub struct RoomInfo {
     pub invite_level: i64,
     pub kick_level: i64,
     pub redact_level: i64,
+    pub current_user_id: Option<String>,
 }
 
 impl State {
@@ -101,6 +121,7 @@ impl State {
                                 .ok_or_else(|| "Room not found".to_string())?;
 
                             let pl = room.power_levels().await.map_err(|e| e.to_string())?;
+                            let current_user_id = client.user_id().map(|id| id.to_string());
                             Ok(RoomInfo {
                                 name: room.name().unwrap_or_default(),
                                 topic: room.topic().unwrap_or_default(),
@@ -110,6 +131,7 @@ impl State {
                                 invite_level: pl.invite.into(),
                                 kick_level: pl.kick.into(),
                                 redact_level: pl.redact.into(),
+                                current_user_id,
                             })
                         },
                         |res| Action::from(crate::Message::RoomSettings(Message::RoomLoaded(res)))
@@ -140,6 +162,7 @@ impl State {
                         self.invite_level = info.invite_level;
                         self.original_invite_level = info.invite_level;
                         self.invite_level_str = info.invite_level.to_string();
+                        self.current_user_id = info.current_user_id;
                         self.error = None;
 
                         let mut tasks = Vec::new();
@@ -177,7 +200,21 @@ impl State {
                         let room_id_clone = room_id.clone();
                         return Task::perform(
                             async move {
-                                engine.get_room_power_levels(&room_id_clone).await.map_err(|e| e.to_string())
+                                let (default, users) = engine.get_room_power_levels(&room_id_clone).await.map_err(|e| e.to_string())?;
+                                let client = engine.client().await;
+                                let user_id = client.user_id().ok_or("No user ID")?;
+                                let room = client.get_room(&RoomId::parse(&room_id_clone).unwrap()).ok_or("Room not found")?;
+                                let my_level = match room.get_user_power_level(user_id).await {
+                                    Ok(matrix_sdk::ruma::events::room::power_levels::UserPowerLevel::Int(l)) => l.into(),
+                                    Ok(matrix_sdk::ruma::events::room::power_levels::UserPowerLevel::Infinite) => 100, // Room creators are basically 100+
+                                    Ok(_) => 100, // Handle future versions gracefully
+                                    Err(_) => default,
+                                };
+                                Ok(PowerLevelInfo {
+                                    default_level: default,
+                                    users,
+                                    my_level,
+                                })
                             },
                             |res| Action::from(crate::Message::RoomSettings(Message::PowerLevelsLoaded(res)))
                         );
@@ -188,13 +225,113 @@ impl State {
             Message::PowerLevelsLoaded(res) => {
                 self.is_loading_power_levels = false;
                 match res {
-                    Ok(pl) => {
-                        self.power_levels = Some(pl);
+                    Ok(info) => {
+                        self.power_levels = Some((info.default_level, info.users));
+                        self.my_power_level = info.my_level;
                     }
                     Err(e) => {
                         self.error = Some(format!("Failed to load power levels: {}", e));
                     }
                 }
+                Task::none()
+            }
+            Message::InviteUser => {
+                if let Some(matrix) = matrix {
+                    if let Some(room_id) = &self.room_id {
+                        let engine = matrix.clone();
+                        let room_id_clone = room_id.clone();
+                        let user_id_clone = self.invite_user_id.clone();
+                        return Task::perform(
+                            async move {
+                                engine.invite_user(&room_id_clone, &user_id_clone).await.map_err(|e| e.to_string())
+                            },
+                            |res| Action::from(crate::Message::RoomSettings(Message::UserInvited(res)))
+                        );
+                    }
+                }
+                Task::none()
+            }
+            Message::UserInvited(res) => {
+                match res {
+                    Ok(_) => {
+                        self.invite_user_id = String::new();
+                        self.error = None;
+                        return Task::done(Action::from(crate::Message::RoomSettings(Message::LoadPowerLevels)));
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to invite user: {}", e));
+                    }
+                }
+                Task::none()
+            }
+            Message::KickUser(user_id) => {
+                if let Some(matrix) = matrix {
+                    if let Some(room_id) = &self.room_id {
+                        let engine = matrix.clone();
+                        let room_id_clone = room_id.clone();
+                        let user_id_clone = user_id.clone();
+                        let user_id_for_task = user_id.clone();
+                        let reason = if self.action_reason.is_empty() { None } else { Some(self.action_reason.clone()) };
+                        return Task::perform(
+                            async move {
+                                engine.kick_user(&room_id_clone, &user_id_for_task, reason).await.map_err(|e| e.to_string())
+                            },
+                            move |res| Action::from(crate::Message::RoomSettings(Message::UserKicked(user_id_clone, res)))
+                        );
+                    }
+                }
+                Task::none()
+            }
+            Message::UserKicked(user_id, res) => {
+                match res {
+                    Ok(_) => {
+                        self.action_reason = String::new();
+                        self.error = None;
+                        return Task::done(Action::from(crate::Message::RoomSettings(Message::LoadPowerLevels)));
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to kick {}: {}", user_id, e));
+                    }
+                }
+                Task::none()
+            }
+            Message::BanUser(user_id) => {
+                if let Some(matrix) = matrix {
+                    if let Some(room_id) = &self.room_id {
+                        let engine = matrix.clone();
+                        let room_id_clone = room_id.clone();
+                        let user_id_clone = user_id.clone();
+                        let user_id_for_task = user_id.clone();
+                        let reason = if self.action_reason.is_empty() { None } else { Some(self.action_reason.clone()) };
+                        return Task::perform(
+                            async move {
+                                engine.ban_user(&room_id_clone, &user_id_for_task, reason).await.map_err(|e| e.to_string())
+                            },
+                            move |res| Action::from(crate::Message::RoomSettings(Message::UserBanned(user_id_clone, res)))
+                        );
+                    }
+                }
+                Task::none()
+            }
+            Message::UserBanned(user_id, res) => {
+                match res {
+                    Ok(_) => {
+                        self.action_reason = String::new();
+                        self.error = None;
+                        return Task::done(Action::from(crate::Message::RoomSettings(Message::LoadPowerLevels)));
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to ban {}: {}", user_id, e));
+                    }
+                }
+                Task::none()
+            }
+            Message::InviteUserIdChanged(id) => {
+                self.invite_user_id = id;
+                Task::none()
+            }
+            Message::ActionReasonChanged(r) => {
+                self.action_reason = r;
                 Task::none()
             }
             Message::UpdatePowerLevel(user_id, level) => {
@@ -219,17 +356,13 @@ impl State {
                 self.updating_power_level_for = None;
                 match res {
                     Ok(_) => {
-                        self.promote_user_id = String::new();
+                        self.invite_user_id = String::new();
                         return Task::done(Action::from(crate::Message::RoomSettings(Message::LoadPowerLevels)));
                     }
                     Err(e) => {
                         self.error = Some(format!("Failed to update power level for {}: {}", user_id, e));
                     }
                 }
-                Task::none()
-            }
-            Message::PromoteUserIdChanged(id) => {
-                self.promote_user_id = id;
                 Task::none()
             }
             Message::BanLevelChanged(l) => {
@@ -539,10 +672,21 @@ impl State {
             pl_col = pl_col.push(text::title3("Manage Members"));
             pl_col = pl_col.push(text::body(format!("Default level: {}", default_level)).size(12));
 
+            // Reason for actions (Kick/Ban)
+            pl_col = pl_col.push(
+                Column::new().spacing(5)
+                    .push(text::body("Reason for action").size(12))
+                    .push(text_input::text_input("Reason...", &self.action_reason)
+                        .on_input(Message::ActionReasonChanged))
+            );
+
             for (user_id, level) in users {
                 let is_updating = self.updating_power_level_for.as_ref() == Some(&user_id.to_string());
+                let user_id_str = user_id.to_string();
+                let is_me = Some(user_id_str.clone()) == self.current_user_id;
+
                 let user_row = Row::new().spacing(10).align_y(Alignment::Center)
-                    .push(text::body(user_id.to_string()).size(14))
+                    .push(text::body(user_id_str.clone()).size(14))
                     .push(text::body(level.to_string()).size(14))
                     .push(cosmic::widget::space().width(cosmic::iced::Length::Fill));
                 
@@ -555,12 +699,23 @@ impl State {
                         _ => "??",
                     });
                     if !is_updating && *level != l {
-                        btn = btn.on_press(Message::UpdatePowerLevel(user_id.to_string(), l));
+                        btn = btn.on_press(Message::UpdatePowerLevel(user_id_str.clone(), l));
                     }
                     level_row = level_row.push(btn);
                 }
 
                 pl_col = pl_col.push(user_row).push(level_row);
+
+                if !is_me {
+                    let mut action_row = Row::new().spacing(5);
+                    if self.my_power_level >= self.kick_level {
+                        action_row = action_row.push(button::text("Kick").on_press(Message::KickUser(user_id_str.clone())));
+                    }
+                    if self.my_power_level >= self.ban_level {
+                        action_row = action_row.push(button::text("Ban").on_press(Message::BanUser(user_id_str.clone())));
+                    }
+                    pl_col = pl_col.push(action_row);
+                }
             }
             col = col.push(pl_col);
         } else if self.is_loading_power_levels {
@@ -569,14 +724,20 @@ impl State {
 
         // Add user to power levels by ID
         let mut add_pl_col = Column::new().spacing(5);
-        add_pl_col = add_pl_col.push(text::body("Promote user by ID").size(12));
+        add_pl_col = add_pl_col.push(text::title3("Invite & Promote"));
+        add_pl_col = add_pl_col.push(text::body("User ID").size(12));
         add_pl_col = add_pl_col.push(
-            Row::new().spacing(10)
-                .push(text_input::text_input("@user:example.com", &self.promote_user_id)
-                    .on_input(Message::PromoteUserIdChanged))
-                .push(button::text("Mod").on_press(Message::UpdatePowerLevel(self.promote_user_id.clone(), 50)))
-                .push(button::text("Admin").on_press(Message::UpdatePowerLevel(self.promote_user_id.clone(), 100)))
+            text_input::text_input("@user:example.com", &self.invite_user_id)
+                .on_input(Message::InviteUserIdChanged)
         );
+
+        let mut promote_row = Row::new().spacing(10);
+        if self.my_power_level >= self.invite_level {
+            promote_row = promote_row.push(button::text("Invite").on_press(Message::InviteUser));
+        }
+        promote_row = promote_row.push(button::text("Mod").on_press(Message::UpdatePowerLevel(self.invite_user_id.clone(), 50)))
+                .push(button::text("Admin").on_press(Message::UpdatePowerLevel(self.invite_user_id.clone(), 100)));
+        add_pl_col = add_pl_col.push(promote_row);
         col = col.push(add_pl_col);
 
         // Membership Actions
