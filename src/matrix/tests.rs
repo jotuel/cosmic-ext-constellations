@@ -1,4 +1,5 @@
 use super::*;
+use matrix_sdk::store::StoreConfig;
 use matrix_sdk::test_utils::logged_in_client;
 use tempfile::tempdir;
 use wiremock::matchers::{method, path_regex};

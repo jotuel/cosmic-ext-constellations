@@ -42,6 +42,7 @@ pub struct State {
     pub action_reason: String,
     pub current_user_id: Option<String>,
     pub my_power_level: i64,
+    pub member_filter: String,
 }
 
 #[derive(Debug, Clone)]
@@ -77,6 +78,7 @@ pub enum Message {
     UserBanned(String, Result<(), String>),
     InviteUserIdChanged(String),
     ActionReasonChanged(String),
+    MemberFilterChanged(String),
 }
 
 #[derive(Debug, Clone)]
@@ -332,6 +334,10 @@ impl State {
             }
             Message::ActionReasonChanged(r) => {
                 self.action_reason = r;
+                Task::none()
+            }
+            Message::MemberFilterChanged(f) => {
+                self.member_filter = f;
                 Task::none()
             }
             Message::UpdatePowerLevel(user_id, level) => {
@@ -670,6 +676,13 @@ impl State {
         if let Some((default_level, users)) = &self.power_levels {
             let mut pl_col = Column::new().spacing(10);
             pl_col = pl_col.push(text::title3("Manage Members"));
+            
+            // Member Filter
+            pl_col = pl_col.push(
+                text_input::text_input("Filter members...", &self.member_filter)
+                    .on_input(Message::MemberFilterChanged)
+            );
+
             pl_col = pl_col.push(text::body(format!("Default level: {}", default_level)).size(12));
 
             // Reason for actions (Kick/Ban)
@@ -680,9 +693,14 @@ impl State {
                         .on_input(Message::ActionReasonChanged))
             );
 
+            let filter = self.member_filter.to_lowercase();
             for (user_id, level) in users {
-                let is_updating = self.updating_power_level_for.as_ref() == Some(&user_id.to_string());
                 let user_id_str = user_id.to_string();
+                if !filter.is_empty() && !user_id_str.to_lowercase().contains(&filter) {
+                    continue;
+                }
+                
+                let is_updating = self.updating_power_level_for.as_ref() == Some(&user_id_str);
                 let is_me = Some(user_id_str.clone()) == self.current_user_id;
 
                 let user_row = Row::new().spacing(10).align_y(Alignment::Center)
