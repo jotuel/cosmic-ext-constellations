@@ -36,9 +36,9 @@
 
 ### *1. General Profile & Appearance*
 
-[ ] Room Name & Topic: Read and update via room.name() / room.topic() and their respective state setters (room.set_name(), room.set_room_topic()).
+[x] Room Name & Topic: Read and update via room.name() / room.topic() and their respective state setters (room.set_name(), room.set_room_topic()).
 
-[ ] Room Avatar: Fetch the avatar using room.avatar_url() and upload a new one by sending an m.room.avatar state event.
+[x] Room Avatar: Fetch the avatar using room.avatar_url() and upload a new one by sending an m.room.avatar state event.
 
 ### *2. Notification Settings*
 
@@ -49,9 +49,9 @@
 
 ### *3. Membership & Access Control*
 
-[ ] Leave / Forget: Add buttons for room.leave() and room.forget() (once left).
+[x] Leave / Forget: Add buttons for room.leave() and room.forget() (once left).
 
-[ ] Manage Members: List participants (room.members()) and provide actions to:
+[x] Manage Members: List participants (room.members()) and provide actions to:
     - Invite (room.invite_user_by_id())
     - Kick (room.kick_user())
     - Ban / Unban (room.ban_user(), room.unban_user())
@@ -68,7 +68,7 @@ cannot be undone).
 
 ### *5. Role & Permission Management*
 
-[ ] Power Levels: You can fetch the m.room.power_levels event and build a UI to promote/demote users (e.g., Default (0), Moderator (50), Admin (100)).
+[x] Power Levels: You can fetch the m.room.power_levels event and build a UI to promote/demote users (e.g., Default (0), Moderator (50), Admin (100)).
 
 [ ] Action Permissions: Use the power levels payload to let Admins restrict who can change the room name, invite new people, or send certain types of messages.
 
