@@ -11,7 +11,7 @@ use cosmic::iced::{Alignment, Subscription};
 use cosmic::widget::icon::Named;
 use cosmic::widget::menu::action::MenuAction;
 use cosmic::widget::{
-    Column, Icon, Row, button, container, scrollable, text, text_input
+    Column, Row, button, container, scrollable, text, text_input
 };
 use cosmic::{Action, Application, Core, Element, Task};
 use eyeball_im::Vector;
@@ -38,26 +38,16 @@ fn parse_markdown(text: &str) -> Vec<PreviewEvent> {
     let parser = pulldown_cmark::Parser::new(text);
     for event in parser {
         match event {
-            pulldown_cmark::Event::Start(tag) => {
-                if let pulldown_cmark::Tag::Heading { .. } = tag {
-                    events.push(PreviewEvent::StartHeading);
-                }
-            }
-            pulldown_cmark::Event::End(tag) => match tag {
-                pulldown_cmark::TagEnd::Paragraph | pulldown_cmark::TagEnd::Heading(_) => {
-                    events.push(PreviewEvent::EndBlock);
-                }
-                _ => {}
-            },
-            pulldown_cmark::Event::Text(t) => {
-                events.push(PreviewEvent::Text(t.to_string()));
-            }
-            pulldown_cmark::Event::Code(c) => {
-                events.push(PreviewEvent::Code(c.to_string()));
-            }
-            pulldown_cmark::Event::SoftBreak | pulldown_cmark::Event::HardBreak => {
-                events.push(PreviewEvent::Break);
-            }
+            pulldown_cmark::Event::Start(pulldown_cmark::Tag::Heading { .. }) =>
+                events.push(PreviewEvent::StartHeading),
+            pulldown_cmark::Event::End(pulldown_cmark::TagEnd::Paragraph | pulldown_cmark::TagEnd::Heading(_)) =>
+                events.push(PreviewEvent::EndBlock),
+            pulldown_cmark::Event::Text(t) =>
+                events.push(PreviewEvent::Text(t.to_string())),
+            pulldown_cmark::Event::Code(c) =>
+                events.push(PreviewEvent::Code(c.to_string())),
+            pulldown_cmark::Event::SoftBreak | pulldown_cmark::Event::HardBreak =>
+                events.push(PreviewEvent::Break),
             _ => {}
         }
     }
@@ -668,8 +658,7 @@ impl Application for Constellations {
             content = content.push(text::body(status_text).size(14));
         }
 
-        if self.selected_room.is_some() {
-            let room_id = self.selected_room.as_ref().unwrap();
+        if let Some(room_id) = &self.selected_room {
             let room_name = self
                 .room_list
                 .iter()
