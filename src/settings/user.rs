@@ -1,4 +1,4 @@
-use cosmic::widget::{button, text, text_input, Column, Row};
+use cosmic::widget::{button, text, text_input, tooltip, tooltip::Position, Column, Row};
 use cosmic::iced::Alignment;
 use cosmic::{Element, Task, Action};
 use crate::matrix::MatrixEngine;
@@ -751,7 +751,11 @@ impl State {
                     row = row
                         .push(text::body(name).size(14))
                         .push(text::body(format!("({})", device.device_id)).size(12))
-                        .push(button::text("✏️").on_press(Message::StartRenameDevice(device.device_id.clone())));
+                        .push(tooltip(
+                            button::text("✏️").on_press(Message::StartRenameDevice(device.device_id.clone())),
+                            text::body("Rename Device"),
+                            Position::Top
+                        ));
                 }
                     
                 if device.is_current {
