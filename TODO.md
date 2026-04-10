@@ -2,6 +2,8 @@
 
 [x] Regression session not persisting between runs
 
+[ ] Regression Spaces no longer list even joined Rooms
+
 [ ] After Logout can't Login again
 
 # ***Messaging***
