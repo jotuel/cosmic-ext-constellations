@@ -6,7 +6,19 @@
 
 [ ] After Logout can't Login again
 
+# ***Search***
+
+[ ] Implement application wide search
+
+[ ] Implement Setting search
+
+[ ] Filter out Rooms in Space settings
+
+[x] Filter out Users in Room settings
+
 # ***Messaging***
+
+[ ] Frostmark for message rendering
 
 [ ] Rich Media Support: Sending images etc.
 
@@ -80,6 +92,33 @@ cannot be undone).
 
 [ ] Pinned Messages: Interface with the m.room.pinned_events state event to manage important messages.
 ## **Space**
+### *1. Hierarchy & Children Management*
+
+ [x] Add/Remove Rooms: Manage the m.space.child state events to link rooms to the Space.
+
+ [ ] Set Suggestions: Mark certain children as "suggested" so they are highlighted to new Space members.
+
+ [ ] Ordering: Define the order string in the child event to control how rooms appear in the Space sidebar.
+
+ ### *2. Space-Restricted Join Rules*
+
+[ ] Restricted Access: You can update a room's join rules to m.room.join_rules: restricted, allowing anyone who is a member of the Space to join the room without an explicit
+ invite.
+
+[ ] Space-wide Bans: While the SDK doesn't have a singular "ban from Space and all rooms" button, you can iterate through the Space hierarchy to apply moderation actions
+ across children.
+
+ ### *3. Basic Profile (Same as Rooms)*
+
+[x] Space Name & Topic: Updating the "Title" and "Description" of the Space.
+
+[x] Space Avatar: Changing the icon that represents the Space in the switcher.
+
+ ### *4. Visibility & Discovery*
+
+[ ] Canonical Alias: Manage the #space_name:server.com alias so the Space can be easily found and shared.
+
+[ ] Public vs. Private: Toggle whether the Space is discoverable in the server's directory or requires an invitation.
 ## **User**
 ### *1. Profile Management (client.account())*
 

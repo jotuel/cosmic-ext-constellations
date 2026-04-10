@@ -979,6 +979,77 @@ impl MatrixEngine {
         Ok(())
     }
 
+    pub async fn get_space_children(&self, space_id: &str) -> Result<Vec<RoomData>> {
+        let space_id_parsed = RoomId::parse(space_id)?;
+        let client = self.client().await;
+        let space = client.get_room(&space_id_parsed).context("Space not found")?;
+        
+        use matrix_sdk::ruma::events::space::child::SpaceChildEventContent;
+        use matrix_sdk_base::deserialized_responses::SyncOrStrippedState;
+        use matrix_sdk::ruma::events::SyncStateEvent;
+        let children_events = space.get_state_events_static::<SpaceChildEventContent>().await?;
+        
+        let mut children = Vec::new();
+        for event in children_events {
+            if let Ok(event) = event.deserialize() {
+                let (child_id, via_empty) = match event {
+                    SyncOrStrippedState::Sync(SyncStateEvent::Original(ev)) => (ev.state_key.to_owned(), ev.content.via.is_empty()),
+                    SyncOrStrippedState::Stripped(ev) => (ev.state_key.to_owned(), ev.content.via.map(|v| v.is_empty()).unwrap_or(true)),
+                    _ => continue,
+                };
+
+                if !via_empty {
+                    if let Some(child_room) = client.get_room(&child_id) {
+                        children.push(self.fetch_room_data(&child_room).await?);
+                    } else {
+                        // Minimal RoomData if we don't have the room joined
+                        children.push(RoomData {
+                            id: child_id.to_string(),
+                            name: None,
+                            last_message: None,
+                            unread_count: 0,
+                            avatar_url: None,
+                            room_type: None,
+                            is_space: false,
+                            parent_space_id: Some(space_id.to_string()),
+                        });
+                    }
+                }
+            }
+        }
+        Ok(children)
+    }
+
+    pub async fn add_space_child(&self, space_id: &str, child_id: &str) -> Result<()> {
+        let space_id_parsed = RoomId::parse(space_id)?;
+        let child_id_parsed = RoomId::parse(child_id)?;
+        let client = self.client().await;
+        let space = client.get_room(&space_id_parsed).context("Space not found")?;
+        
+        use matrix_sdk::ruma::events::space::child::SpaceChildEventContent;
+        let mut via = Vec::new();
+        if let Some(server) = client.user_id().and_then(|id| id.server_name().to_owned().into()) {
+            via.push(server);
+        }
+        
+        let content = SpaceChildEventContent::new(via);
+        space.send_state_event_for_key(&child_id_parsed, content).await?;
+        Ok(())
+    }
+
+    pub async fn remove_space_child(&self, space_id: &str, child_id: &str) -> Result<()> {
+        let space_id_parsed = RoomId::parse(space_id)?;
+        let child_id_parsed = RoomId::parse(child_id)?;
+        let client = self.client().await;
+        let space = client.get_room(&space_id_parsed).context("Space not found")?;
+        
+        // To remove, send an empty via list
+        use matrix_sdk::ruma::events::space::child::SpaceChildEventContent;
+        let content = SpaceChildEventContent::new(Vec::new());
+        space.send_state_event_for_key(&child_id_parsed, content).await?;
+        Ok(())
+    }
+
     pub async fn send_message(
         &self,
         room_id: &str,
