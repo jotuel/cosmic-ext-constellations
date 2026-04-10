@@ -8,9 +8,10 @@ pub mod settings;
 
 use anyhow::Result;
 use cosmic::iced::{Alignment, Subscription};
+use cosmic::widget::icon::Named;
 use cosmic::widget::menu::action::MenuAction;
 use cosmic::widget::{
-    button, container, scrollable, text, text_input, Column, Row,
+    Column, Icon, Row, button, container, scrollable, text, text_input
 };
 use cosmic::{Action, Application, Core, Element, Task};
 use eyeball_im::Vector;
@@ -613,7 +614,7 @@ impl Application for Constellations {
                 .push(text::title3(space_name))
                 .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
                 .push(
-                    button::text("⚙ Settings")
+                    button::icon(Named::new("emblem-system")).tooltip("Space Settings")
                         .on_press(Message::OpenSettings(SettingsPanel::Space)),
                 );
             room_list = room_list.push(container(space_header).padding(5));
@@ -680,7 +681,7 @@ impl Application for Constellations {
                 .push(text::title3(room_name))
                 .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
                 .push(
-                    button::text("⚙ Settings").on_press(Message::OpenSettings(SettingsPanel::Room)),
+                    button::icon(Named::new("emblem-system")).tooltip("Room Settings").on_press(Message::OpenSettings(SettingsPanel::Room)),
                 );
             content = content.push(room_header);
 
