@@ -51,8 +51,9 @@ impl Constellations {
                             sender_info.push(container(text::body("👤").size(12)).padding(2));
                     }
 
-                    sender_info = sender_info.push(text::body(sender_name.to_string()).size(10));
-                    sender_info = sender_info.push(text::body(timestamp.clone()).size(10));
+                    // Optimization: Avoid allocating a new String on every render frame by using a reference
+                    sender_info = sender_info.push(text::body(sender_name.as_str()).size(10));
+                    sender_info = sender_info.push(text::body(timestamp.as_str()).size(10));
 
                     let mut bubble_col = Column::new().spacing(2).push(sender_info);
 
@@ -91,7 +92,8 @@ impl Constellations {
                             }
                         }
                         _ => {
-                            bubble_col = bubble_col.push(text::body(message.body().to_string()));
+                            // Optimization: Avoid .to_string() allocation on the message body during render loop
+                            bubble_col = bubble_col.push(text::body(message.body()));
                         }
                     }
 
