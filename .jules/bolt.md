@@ -7,3 +7,6 @@
 ## 2025-02-23 - [Recursive Traversal Allocation]
 **Learning:** Checking for cycles in local state hierarchies (like Matrix Spaces) using `HashSet<OwnedRoomId>` forces a string `.to_owned()` allocation on every single traversal node check inside the `is_in_space_recursive` loop, which can add up quickly.
 **Action:** Use `HashSet<&'a RoomId>` tied to the `&self` borrowed references inside the cycle-detection traversal instead.
+## 2025-02-23 - [Immediate Mode GUI String Allocation]
+**Learning:** Immediate-mode GUIs like `iced`/`libcosmic` evaluate the rendering tree every frame. Using `.clone()` or `.to_string()` on text fields to satisfy `text::body(...)` triggers an unnecessary heap allocation on *every single frame render* for *every single text element*.
+**Action:** `libcosmic` UI text widgets accept `impl Into<Cow<'_, str>>`. Always pass cheap string references (e.g. `sender_name.as_str()` or `message.body()`) to `text::body()` and similar methods rather than `.to_string()` or `.clone()` to eliminate per-frame text allocations.

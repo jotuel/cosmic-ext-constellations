@@ -8,11 +8,9 @@ use matrix_sdk::ruma::events::space::child::SpaceChildEventContent;
 use matrix_sdk::ruma::events::space::parent::SpaceParentEventContent;
 use matrix_sdk::ruma::events::{AnySyncMessageLikeEvent, AnySyncTimelineEvent, SyncStateEvent};
 use matrix_sdk::{
-    config::StoreConfig,
     ruma::{room::RoomType, OwnedDeviceId, OwnedRoomId, RoomId, UserId},
     Client, Room, SessionChange, SessionTokens,
 };
-use matrix_sdk_sqlite::SqliteStateStore;
 pub use matrix_sdk_ui::room_list_service::{RoomListDynamicEntriesController, RoomListService};
 use matrix_sdk_ui::sync_service::SyncService;
 pub use matrix_sdk_ui::timeline::{RoomExt, Timeline, TimelineItem, VirtualTimelineItem};
@@ -51,6 +49,8 @@ pub enum SyncError {
     Http(String),
     #[error("Error: {0}")]
     Anyhow(String),
+    #[error("{0}")]
+    Generic(String),
 }
 
 impl From<matrix_sdk::Error> for SyncError {
@@ -485,8 +485,19 @@ impl MatrixEngine {
             format!("https://{}", stripped)
         };
 
-        let data_dir = self.inner.read().await.data_dir.clone();
-        let client = Self::setup_client(data_dir, &homeserver_url).await?;
+        let client = {
+            let mut inner = self.inner.write().await;
+            if let Some(handle) = inner.sync_handle.take() {
+                handle.abort();
+            }
+            if let Some(handle) = inner.session_change_handle.take() {
+                handle.abort();
+            }
+            let data_dir = inner.data_dir.clone();
+            let new_client = Self::setup_client(data_dir, &homeserver_url).await?;
+            inner.client = new_client.clone();
+            new_client
+        };
 
         client
             .matrix_auth()
@@ -531,7 +542,7 @@ impl MatrixEngine {
     pub async fn restore_session(&self) -> Result<bool> {
         let keyring = Keyring::new().await?;
         let mut attributes = HashMap::new();
-        attributes.insert("app_id", "fi.joonastuomi.Constellations");
+        attributes.insert("app_id", "fi.joonastuomi.CosmicExtConstellations");
         attributes.insert("type", "matrix-session");
 
         let items = keyring.search_items(&attributes).await?;
@@ -610,11 +621,22 @@ impl MatrixEngine {
 
     pub async fn logout(&self) -> Result<()> {
         let keyring = Keyring::new().await?;
-        let mut attributes = HashMap::new();
-        attributes.insert("app_id", "fi.joonastuomi.Constellations");
-        attributes.insert("type", "matrix-session");
+        
+        let mut session_attributes = HashMap::new();
+        session_attributes.insert("app_id", "fi.joonastuomi.CosmicExtConstellations");
+        session_attributes.insert("type", "matrix-session");
 
-        if let Ok(items) = keyring.search_items(&attributes).await {
+        if let Ok(items) = keyring.search_items(&session_attributes).await {
+            for item in items {
+                let _ = item.delete().await;
+            }
+        }
+        
+        let mut pass_attributes = HashMap::new();
+        pass_attributes.insert("app_id", "fi.joonastuomi.CosmicExtConstellations");
+        pass_attributes.insert("type", "store-passphrase");
+
+        if let Ok(items) = keyring.search_items(&pass_attributes).await {
             for item in items {
                 let _ = item.delete().await;
             }
@@ -635,9 +657,8 @@ impl MatrixEngine {
         // Try logging out properly from Matrix
         let _ = inner.client.matrix_auth().logout().await;
 
-        let store_path = inner.data_dir.join("matrix-store.db");
+        let store_path = inner.data_dir.join("matrix-store");
         let _ = std::fs::remove_dir_all(&store_path);
-        let _ = std::fs::remove_file(&store_path);
 
         Ok(())
     }
@@ -842,6 +863,122 @@ impl MatrixEngine {
         Ok(())
     }
 
+    pub async fn set_room_name(&self, room_id: &str, name: String) -> Result<()> {
+        let room_id_parsed = RoomId::parse(room_id)?;
+        let client = self.client().await;
+        let room = client.get_room(&room_id_parsed).context("Room not found")?;
+        room.set_name(name).await?;
+        Ok(())
+    }
+
+    pub async fn set_room_topic(&self, room_id: &str, topic: String) -> Result<()> {
+        let room_id_parsed = RoomId::parse(room_id)?;
+        let client = self.client().await;
+        let room = client.get_room(&room_id_parsed).context("Room not found")?;
+        room.set_room_topic(&topic).await?;
+        Ok(())
+    }
+
+    pub async fn upload_room_avatar(&self, room_id: &str, data: Vec<u8>, mime: &str) -> Result<()> {
+        let room_id_parsed = RoomId::parse(room_id)?;
+        let client = self.client().await;
+        let room = client.get_room(&room_id_parsed).context("Room not found")?;
+        
+        let content_type = mime.parse::<mime::Mime>()?;
+        room.upload_avatar(&content_type, data, None).await?;
+        Ok(())
+    }
+
+    pub async fn leave_room(&self, room_id: &str) -> Result<()> {
+        let room_id_parsed = RoomId::parse(room_id)?;
+        let client = self.client().await;
+        let room = client.get_room(&room_id_parsed).context("Room not found")?;
+        room.leave().await?;
+        Ok(())
+    }
+
+    pub async fn forget_room(&self, room_id: &str) -> Result<()> {
+        let room_id_parsed = RoomId::parse(room_id)?;
+        let client = self.client().await;
+        let room = client.get_room(&room_id_parsed).context("Room not found")?;
+        room.forget().await?;
+        Ok(())
+    }
+
+    pub async fn get_room_power_levels(&self, room_id: &str) -> Result<(i64, HashMap<matrix_sdk::ruma::OwnedUserId, i64>)> {
+        let room_id_parsed = RoomId::parse(room_id)?;
+        let client = self.client().await;
+        let room = client.get_room(&room_id_parsed).context("Room not found")?;
+        let power_levels = room.power_levels().await?;
+        
+        let users = room.users_with_power_levels().await;
+        // Also add users who have the default power level but are members
+        // To avoid listing thousands of users in large rooms, maybe we only list members if the room is small?
+        // Actually, let's just use what's in the power levels event first.
+        // If the user wants to promote someone else, they can search for them.
+        Ok((power_levels.users_default.into(), users))
+    }
+
+    pub async fn update_user_power_level(&self, room_id: &str, user_id: &str, level: i64) -> Result<()> {
+        let room_id_parsed = RoomId::parse(room_id)?;
+        let user_id_parsed = matrix_sdk::ruma::UserId::parse(user_id)?;
+        let client = self.client().await;
+        let room = client.get_room(&room_id_parsed).context("Room not found")?;
+        
+        let int_level = matrix_sdk::ruma::Int::new(level).ok_or_else(|| anyhow::anyhow!("Invalid power level"))?;
+        room.update_power_levels(vec![(&user_id_parsed, int_level)]).await?;
+        Ok(())
+    }
+
+    pub async fn update_room_power_level_settings(
+        &self, 
+        room_id: &str, 
+        ban: Option<i64>,
+        invite: Option<i64>,
+        kick: Option<i64>,
+        redact: Option<i64>,
+    ) -> Result<()> {
+        let room_id_parsed = RoomId::parse(room_id)?;
+        let client = self.client().await;
+        let room = client.get_room(&room_id_parsed).context("Room not found")?;
+
+        let mut changes = matrix_sdk::room::power_levels::RoomPowerLevelChanges::new();
+        changes.ban = ban;
+        changes.invite = invite;
+        changes.kick = kick;
+        changes.redact = redact;
+
+        room.apply_power_level_changes(changes).await?;
+        Ok(())
+    }
+
+    pub async fn invite_user(&self, room_id: &str, user_id: &str) -> Result<()> {
+        let room_id_parsed = RoomId::parse(room_id)?;
+        let user_id_parsed = matrix_sdk::ruma::UserId::parse(user_id)?;
+        let client = self.client().await;
+        let room = client.get_room(&room_id_parsed).context("Room not found")?;
+        room.invite_user_by_id(&user_id_parsed).await?;
+        Ok(())
+    }
+
+    pub async fn kick_user(&self, room_id: &str, user_id: &str, reason: Option<String>) -> Result<()> {
+        let room_id_parsed = RoomId::parse(room_id)?;
+        let user_id_parsed = matrix_sdk::ruma::UserId::parse(user_id)?;
+        let client = self.client().await;
+        let room = client.get_room(&room_id_parsed).context("Room not found")?;
+        room.kick_user(&user_id_parsed, reason.as_deref()).await?;
+        Ok(())
+    }
+
+    pub async fn ban_user(&self, room_id: &str, user_id: &str, reason: Option<String>) -> Result<()> {
+        let room_id_parsed = RoomId::parse(room_id)?;
+        let user_id_parsed = matrix_sdk::ruma::UserId::parse(user_id)?;
+        let client = self.client().await;
+        let room = client.get_room(&room_id_parsed).context("Room not found")?;
+        room.ban_user(&user_id_parsed, reason.as_deref()).await?;
+        Ok(())
+    }
+
     pub async fn send_message(
         &self,
         room_id: &str,
@@ -905,8 +1042,19 @@ impl MatrixEngine {
             format!("https://{}", stripped)
         };
 
-        let data_dir = self.inner.read().await.data_dir.clone();
-        let client = Self::setup_client(data_dir, &homeserver_url).await?;
+        let client = {
+            let mut inner = self.inner.write().await;
+            if let Some(handle) = inner.sync_handle.take() {
+                handle.abort();
+            }
+            if let Some(handle) = inner.session_change_handle.take() {
+                handle.abort();
+            }
+            let data_dir = inner.data_dir.clone();
+            let new_client = Self::setup_client(data_dir, &homeserver_url).await?;
+            inner.client = new_client.clone();
+            new_client
+        };
 
         client
             .oauth()
@@ -978,7 +1126,7 @@ impl MatrixEngine {
     async fn get_or_create_store_passphrase() -> Result<String> {
         let keyring = Keyring::new().await?;
         let mut attributes = HashMap::new();
-        attributes.insert("app_id", "fi.joonastuomi.Constellations");
+        attributes.insert("app_id", "fi.joonastuomi.CosmicExtConstellations");
         attributes.insert("type", "store-passphrase");
 
         let items = keyring.search_items(&attributes).await?;
@@ -990,21 +1138,14 @@ impl MatrixEngine {
             }
         }
 
-        // Generate passphrase using standard library functionality (URandom) to avoid adding dependencies
+        // Securely generate passphrase using standard library functionality (URandom) to avoid adding dependencies
         let mut buf = [0u8; 32];
-        if let Ok(mut f) = std::fs::File::open("/dev/urandom") {
-            use std::io::Read;
-            let _ = f.read_exact(&mut buf);
-        } else {
-            // Fallback if /dev/urandom is unavailable, generate a pseudo-random using time
-            use std::time::{SystemTime, UNIX_EPOCH};
-            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-            let random_str = format!("{}-fallback", now);
-            let bytes = random_str.as_bytes();
-            for (i, &b) in bytes.iter().enumerate().take(32) {
-                buf[i] = b;
-            }
-        }
+        let mut f = std::fs::File::open("/dev/urandom")
+            .context("Failed to open /dev/urandom for secure random generation")?;
+
+        use std::io::Read;
+        f.read_exact(&mut buf)
+            .context("Failed to securely read bytes from /dev/urandom")?;
 
         let passphrase: String = buf.iter().map(|b| format!("{:02x}", b)).collect();
 
@@ -1021,30 +1162,29 @@ impl MatrixEngine {
     }
 
     async fn setup_client(data_dir: PathBuf, homeserver_url: &str) -> Result<Client> {
-        let store_path = data_dir.join("matrix-store.db");
+        let store_path = data_dir.join("matrix-store");
 
         if !data_dir.exists() {
             std::fs::create_dir_all(&data_dir)?;
         }
 
         let passphrase = Self::get_or_create_store_passphrase().await?;
-        let sqlite_store = match SqliteStateStore::open(&store_path, Some(passphrase.as_str())).await {
-            Ok(store) => store,
+
+        let build_client = |path: &PathBuf, pass: &str| {
+            Client::builder()
+                .homeserver_url(homeserver_url)
+                .sqlite_store(path, Some(pass))
+                .handle_refresh_tokens()
+        };
+
+        let client = match build_client(&store_path, &passphrase).build().await {
+            Ok(c) => c,
             Err(e) => {
-                tracing::warn!("Failed to open SqliteStateStore (possibly corrupted cipher): {}. Recreating store.", e);
+                tracing::warn!("Failed to initialize stores (possibly corrupted cipher): {}. Recreating store.", e);
                 let _ = std::fs::remove_dir_all(&store_path);
-                let _ = std::fs::remove_file(&store_path);
-                SqliteStateStore::open(&store_path, Some(passphrase.as_str())).await?
+                build_client(&store_path, &passphrase).build().await?
             }
         };
-        let store_config = StoreConfig::new("constellations".to_owned()).state_store(sqlite_store);
-
-        let client = Client::builder()
-            .homeserver_url(homeserver_url)
-            .store_config(store_config)
-            .handle_refresh_tokens()
-            .build()
-            .await?;
 
         Ok(client)
     }

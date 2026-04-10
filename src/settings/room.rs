@@ -1,0 +1,787 @@
+use cosmic::widget::{button, text, text_input, Column, Row};
+use cosmic::iced::Alignment;
+use cosmic::{Element, Task, Action};
+use crate::matrix::MatrixEngine;
+use matrix_sdk::ruma::RoomId;
+use matrix_sdk::ruma::events::room::MediaSource;
+use std::collections::HashMap;
+
+#[derive(Debug, Clone, Default)]
+pub struct State {
+    pub room_id: Option<String>,
+    pub name: String,
+    pub original_name: String,
+    pub topic: String,
+    pub original_topic: String,
+    pub is_loading: bool,
+    pub is_saving: bool,
+    pub error: Option<String>,
+    pub avatar_url: Option<String>,
+    pub avatar_handle: Option<cosmic::iced::widget::image::Handle>,
+    pub is_uploading_avatar: bool,
+    pub is_loading_avatar: bool,
+    pub membership: Option<matrix_sdk::RoomState>,
+    pub power_levels: Option<(i64, HashMap<matrix_sdk::ruma::OwnedUserId, i64>)>,
+    pub is_loading_power_levels: bool,
+    pub updating_power_level_for: Option<String>,
+    pub ban_level: i64,
+    pub original_ban_level: i64,
+    pub invite_level: i64,
+    pub original_invite_level: i64,
+    pub kick_level: i64,
+    pub original_kick_level: i64,
+    pub redact_level: i64,
+    pub original_redact_level: i64,
+    pub invite_level_str: String,
+    pub kick_level_str: String,
+    pub ban_level_str: String,
+    pub redact_level_str: String,
+    pub invite_user_id: String,
+    pub kick_user_id: String,
+    pub ban_user_id: String,
+    pub action_reason: String,
+    pub current_user_id: Option<String>,
+    pub my_power_level: i64,
+    pub member_filter: String,
+}
+
+#[derive(Debug, Clone)]
+pub enum Message {
+    LoadRoom(String),
+    RoomLoaded(Result<RoomInfo, String>),
+    NameChanged(String),
+    TopicChanged(String),
+    SaveRoom,
+    RoomSaved(Result<(), String>),
+    DismissError,
+    AvatarMediaFetched(Result<Vec<u8>, String>),
+    SelectAvatar,
+    AvatarFileSelected(Option<std::path::PathBuf>),
+    AvatarUploaded(Result<(), String>),
+    LeaveRoom,
+    RoomLeft(Result<(), String>),
+    ForgetRoom,
+    RoomForgotten(Result<(), String>),
+    LoadPowerLevels,
+    PowerLevelsLoaded(Result<PowerLevelInfo, String>),
+    UpdatePowerLevel(String, i64),
+    PowerLevelUpdated(String, Result<(), String>),
+    BanLevelChanged(String),
+    InviteLevelChanged(String),
+    KickLevelChanged(String),
+    RedactLevelChanged(String),
+    InviteUser,
+    UserInvited(Result<(), String>),
+    KickUser(String),
+    UserKicked(String, Result<(), String>),
+    BanUser(String),
+    UserBanned(String, Result<(), String>),
+    InviteUserIdChanged(String),
+    ActionReasonChanged(String),
+    MemberFilterChanged(String),
+}
+
+#[derive(Debug, Clone)]
+pub struct PowerLevelInfo {
+    pub default_level: i64,
+    pub users: HashMap<matrix_sdk::ruma::OwnedUserId, i64>,
+    pub my_level: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct RoomInfo {
+    pub name: String,
+    pub topic: String,
+    pub avatar_url: Option<String>,
+    pub membership: matrix_sdk::RoomState,
+    pub ban_level: i64,
+    pub invite_level: i64,
+    pub kick_level: i64,
+    pub redact_level: i64,
+    pub current_user_id: Option<String>,
+}
+
+impl State {
+    pub fn update(
+        &mut self,
+        message: Message,
+        matrix: &Option<MatrixEngine>,
+    ) -> Task<Action<crate::Message>> {
+        match message {
+            Message::LoadRoom(room_id) => {
+                if let Some(matrix) = matrix {
+                    self.room_id = Some(room_id.clone());
+                    self.is_loading = true;
+                    self.error = None;
+
+                    let engine = matrix.clone();
+                    Task::perform(
+                        async move {
+                            let room_id_parsed = RoomId::parse(&room_id).map_err(|e| e.to_string())?;
+                            let client = engine.client().await;
+                            let room = client.get_room(&room_id_parsed)
+                                .ok_or_else(|| "Room not found".to_string())?;
+
+                            let pl = room.power_levels().await.map_err(|e| e.to_string())?;
+                            let current_user_id = client.user_id().map(|id| id.to_string());
+                            Ok(RoomInfo {
+                                name: room.name().unwrap_or_default(),
+                                topic: room.topic().unwrap_or_default(),
+                                avatar_url: room.avatar_url().map(|u| u.to_string()),
+                                membership: room.state(),
+                                ban_level: pl.ban.into(),
+                                invite_level: pl.invite.into(),
+                                kick_level: pl.kick.into(),
+                                redact_level: pl.redact.into(),
+                                current_user_id,
+                            })
+                        },
+                        |res| Action::from(crate::Message::RoomSettings(Message::RoomLoaded(res)))
+                    )
+                } else {
+                    Task::none()
+                }
+            }
+            Message::RoomLoaded(res) => {
+                self.is_loading = false;
+                match res {
+                    Ok(info) => {
+                        self.name = info.name.clone();
+                        self.original_name = info.name;
+                        self.topic = info.topic.clone();
+                        self.original_topic = info.topic;
+                        self.avatar_url = info.avatar_url;
+                        self.membership = Some(info.membership);
+                        self.kick_level = info.kick_level;
+                        self.original_kick_level = info.kick_level;
+                        self.kick_level_str = info.kick_level.to_string();
+                        self.redact_level = info.redact_level;
+                        self.original_redact_level = info.redact_level;
+                        self.redact_level_str = info.redact_level.to_string();
+                        self.ban_level = info.ban_level;
+                        self.original_ban_level = info.ban_level;
+                        self.ban_level_str = info.ban_level.to_string();
+                        self.invite_level = info.invite_level;
+                        self.original_invite_level = info.invite_level;
+                        self.invite_level_str = info.invite_level.to_string();
+                        self.current_user_id = info.current_user_id;
+                        self.error = None;
+
+                        let mut tasks = Vec::new();
+
+                        if let Some(url) = &self.avatar_url {
+                            if let Some(matrix) = matrix {
+                                let engine = matrix.clone();
+                                let mxc = url.clone();
+                                self.is_loading_avatar = true;
+                                tasks.push(Task::perform(
+                                    async move {
+                                        let mxc_uri = <&matrix_sdk::ruma::MxcUri>::try_from(mxc.as_str()).map_err(|e| e.to_string())?;
+                                        let source = MediaSource::Plain(mxc_uri.to_owned());
+                                        engine.fetch_media(source).await.map_err(|e| e.to_string())
+                                    },
+                                    |res| Action::from(crate::Message::RoomSettings(Message::AvatarMediaFetched(res)))
+                                ));
+                            }
+                        }
+
+                        tasks.push(Task::done(Action::from(crate::Message::RoomSettings(Message::LoadPowerLevels))));
+                        return Task::batch(tasks);
+                    }
+                    Err(e) => {
+                        self.error = Some(e);
+                    }
+                }
+                Task::none()
+            }
+            Message::LoadPowerLevels => {
+                if let Some(matrix) = matrix {
+                    if let Some(room_id) = &self.room_id {
+                        self.is_loading_power_levels = true;
+                        let engine = matrix.clone();
+                        let room_id_clone = room_id.clone();
+                        return Task::perform(
+                            async move {
+                                let (default, users) = engine.get_room_power_levels(&room_id_clone).await.map_err(|e| e.to_string())?;
+                                let client = engine.client().await;
+                                let user_id = client.user_id().ok_or("No user ID")?;
+                                let room = client.get_room(&RoomId::parse(&room_id_clone).unwrap()).ok_or("Room not found")?;
+                                let my_level = match room.get_user_power_level(user_id).await {
+                                    Ok(matrix_sdk::ruma::events::room::power_levels::UserPowerLevel::Int(l)) => l.into(),
+                                    Ok(matrix_sdk::ruma::events::room::power_levels::UserPowerLevel::Infinite) => 100, // Room creators are basically 100+
+                                    Ok(_) => 100, // Handle future versions gracefully
+                                    Err(_) => default,
+                                };
+                                Ok(PowerLevelInfo {
+                                    default_level: default,
+                                    users,
+                                    my_level,
+                                })
+                            },
+                            |res| Action::from(crate::Message::RoomSettings(Message::PowerLevelsLoaded(res)))
+                        );
+                    }
+                }
+                Task::none()
+            }
+            Message::PowerLevelsLoaded(res) => {
+                self.is_loading_power_levels = false;
+                match res {
+                    Ok(info) => {
+                        self.power_levels = Some((info.default_level, info.users));
+                        self.my_power_level = info.my_level;
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to load power levels: {}", e));
+                    }
+                }
+                Task::none()
+            }
+            Message::InviteUser => {
+                if let Some(matrix) = matrix {
+                    if let Some(room_id) = &self.room_id {
+                        let engine = matrix.clone();
+                        let room_id_clone = room_id.clone();
+                        let user_id_clone = self.invite_user_id.clone();
+                        return Task::perform(
+                            async move {
+                                engine.invite_user(&room_id_clone, &user_id_clone).await.map_err(|e| e.to_string())
+                            },
+                            |res| Action::from(crate::Message::RoomSettings(Message::UserInvited(res)))
+                        );
+                    }
+                }
+                Task::none()
+            }
+            Message::UserInvited(res) => {
+                match res {
+                    Ok(_) => {
+                        self.invite_user_id = String::new();
+                        self.error = None;
+                        return Task::done(Action::from(crate::Message::RoomSettings(Message::LoadPowerLevels)));
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to invite user: {}", e));
+                    }
+                }
+                Task::none()
+            }
+            Message::KickUser(user_id) => {
+                if let Some(matrix) = matrix {
+                    if let Some(room_id) = &self.room_id {
+                        let engine = matrix.clone();
+                        let room_id_clone = room_id.clone();
+                        let user_id_clone = user_id.clone();
+                        let user_id_for_task = user_id.clone();
+                        let reason = if self.action_reason.is_empty() { None } else { Some(self.action_reason.clone()) };
+                        return Task::perform(
+                            async move {
+                                engine.kick_user(&room_id_clone, &user_id_for_task, reason).await.map_err(|e| e.to_string())
+                            },
+                            move |res| Action::from(crate::Message::RoomSettings(Message::UserKicked(user_id_clone, res)))
+                        );
+                    }
+                }
+                Task::none()
+            }
+            Message::UserKicked(user_id, res) => {
+                match res {
+                    Ok(_) => {
+                        self.action_reason = String::new();
+                        self.error = None;
+                        return Task::done(Action::from(crate::Message::RoomSettings(Message::LoadPowerLevels)));
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to kick {}: {}", user_id, e));
+                    }
+                }
+                Task::none()
+            }
+            Message::BanUser(user_id) => {
+                if let Some(matrix) = matrix {
+                    if let Some(room_id) = &self.room_id {
+                        let engine = matrix.clone();
+                        let room_id_clone = room_id.clone();
+                        let user_id_clone = user_id.clone();
+                        let user_id_for_task = user_id.clone();
+                        let reason = if self.action_reason.is_empty() { None } else { Some(self.action_reason.clone()) };
+                        return Task::perform(
+                            async move {
+                                engine.ban_user(&room_id_clone, &user_id_for_task, reason).await.map_err(|e| e.to_string())
+                            },
+                            move |res| Action::from(crate::Message::RoomSettings(Message::UserBanned(user_id_clone, res)))
+                        );
+                    }
+                }
+                Task::none()
+            }
+            Message::UserBanned(user_id, res) => {
+                match res {
+                    Ok(_) => {
+                        self.action_reason = String::new();
+                        self.error = None;
+                        return Task::done(Action::from(crate::Message::RoomSettings(Message::LoadPowerLevels)));
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to ban {}: {}", user_id, e));
+                    }
+                }
+                Task::none()
+            }
+            Message::InviteUserIdChanged(id) => {
+                self.invite_user_id = id;
+                Task::none()
+            }
+            Message::ActionReasonChanged(r) => {
+                self.action_reason = r;
+                Task::none()
+            }
+            Message::MemberFilterChanged(f) => {
+                self.member_filter = f;
+                Task::none()
+            }
+            Message::UpdatePowerLevel(user_id, level) => {
+                if let Some(matrix) = matrix {
+                    if let Some(room_id) = &self.room_id {
+                        self.updating_power_level_for = Some(user_id.clone());
+                        let engine = matrix.clone();
+                        let room_id_clone = room_id.clone();
+                        let user_id_clone = user_id.clone();
+                        let user_id_for_task = user_id.clone();
+                        return Task::perform(
+                            async move {
+                                engine.update_user_power_level(&room_id_clone, &user_id_for_task, level).await.map_err(|e| e.to_string())
+                            },
+                            move |res| Action::from(crate::Message::RoomSettings(Message::PowerLevelUpdated(user_id_clone, res)))
+                        );
+                    }
+                }
+                Task::none()
+            }
+            Message::PowerLevelUpdated(user_id, res) => {
+                self.updating_power_level_for = None;
+                match res {
+                    Ok(_) => {
+                        self.invite_user_id = String::new();
+                        return Task::done(Action::from(crate::Message::RoomSettings(Message::LoadPowerLevels)));
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to update power level for {}: {}", user_id, e));
+                    }
+                }
+                Task::none()
+            }
+            Message::BanLevelChanged(l) => {
+                self.ban_level_str = l.clone();
+                if let Ok(l) = l.parse() { self.ban_level = l; }
+                Task::none()
+            }
+            Message::InviteLevelChanged(l) => {
+                self.invite_level_str = l.clone();
+                if let Ok(l) = l.parse() { self.invite_level = l; }
+                Task::none()
+            }
+            Message::KickLevelChanged(l) => {
+                self.kick_level_str = l.clone();
+                if let Ok(l) = l.parse() { self.kick_level = l; }
+                Task::none()
+            }
+            Message::RedactLevelChanged(l) => {
+                self.redact_level_str = l.clone();
+                if let Ok(l) = l.parse() { self.redact_level = l; }
+                Task::none()
+            }
+            Message::AvatarMediaFetched(res) => {
+                self.is_loading_avatar = false;
+                match res {
+                    Ok(data) => {
+                        self.avatar_handle = Some(cosmic::iced::widget::image::Handle::from_bytes(data));
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to fetch avatar: {}", e));
+                    }
+                }
+                Task::none()
+            }
+            Message::NameChanged(name) => {
+                self.name = name;
+                Task::none()
+            }
+            Message::TopicChanged(topic) => {
+                self.topic = topic;
+                Task::none()
+            }
+            Message::SaveRoom => {
+                if let Some(matrix) = matrix {
+                    if let Some(room_id) = &self.room_id {
+                        self.is_saving = true;
+                        self.error = None;
+
+                        let engine = matrix.clone();
+                        let new_name = self.name.clone();
+                        let new_topic = self.topic.clone();
+                        let room_id_clone = room_id.clone();
+                        let original_name = self.original_name.clone();
+                        let original_topic = self.original_topic.clone();
+                        let original_ban = self.original_ban_level;
+                        let original_invite = self.original_invite_level;
+                        let original_kick = self.original_kick_level;
+                        let original_redact = self.original_redact_level;
+                        let new_ban = self.ban_level;
+                        let new_invite = self.invite_level;
+                        let new_kick = self.kick_level;
+                        let new_redact = self.redact_level;
+
+                        Task::perform(
+                            async move {
+                                if new_name != original_name {
+                                    engine.set_room_name(&room_id_clone, new_name).await.map_err(|e| e.to_string())?;
+                                }
+                                if new_topic != original_topic {
+                                    engine.set_room_topic(&room_id_clone, new_topic).await.map_err(|e| e.to_string())?;
+                                }
+                                if new_ban != original_ban || new_invite != original_invite || new_kick != original_kick || new_redact != original_redact {
+                                    engine.update_room_power_level_settings(
+                                        &room_id_clone, 
+                                        if new_ban != original_ban { Some(new_ban) } else { None },
+                                        if new_invite != original_invite { Some(new_invite) } else { None },
+                                        if new_kick != original_kick { Some(new_kick) } else { None },
+                                        if new_redact != original_redact { Some(new_redact) } else { None },
+                                    ).await.map_err(|e| e.to_string())?;
+                                }
+                                Ok(())
+                            },
+                            |res| Action::from(crate::Message::RoomSettings(Message::RoomSaved(res)))
+                        )
+                    } else {
+                        Task::none()
+                    }
+                } else {
+                    Task::none()
+                }
+            }
+            Message::RoomSaved(res) => {
+                self.is_saving = false;
+                match res {
+                    Ok(_) => {
+                        self.original_name = self.name.clone();
+                        self.original_topic = self.topic.clone();
+                        self.original_ban_level = self.ban_level;
+                        self.original_invite_level = self.invite_level;
+                        self.original_kick_level = self.kick_level;
+                        self.original_redact_level = self.redact_level;
+                        self.error = None;
+                    }
+                    Err(e) => {
+                        self.error = Some(e);
+                    }
+                }
+                Task::none()
+            }
+            Message::SelectAvatar => {
+                Task::perform(
+                    async {
+                        rfd::AsyncFileDialog::new()
+                            .add_filter("Images", &["png", "jpg", "jpeg", "webp", "gif"])
+                            .set_title("Select Room Avatar")
+                            .pick_file()
+                            .await
+                            .map(|handle| handle.path().to_owned())
+                    },
+                    |res| Action::from(crate::Message::RoomSettings(Message::AvatarFileSelected(res)))
+                )
+            }
+            Message::AvatarFileSelected(path_opt) => {
+                if let Some(path) = path_opt {
+                    if let Some(matrix) = matrix {
+                        self.is_uploading_avatar = true;
+                        let engine = matrix.clone();
+                        let room_id = self.room_id.clone().unwrap_or_default();
+                        
+                        return Task::perform(
+                            async move {
+                                let data = std::fs::read(&path).map_err(|e| e.to_string())?;
+                                let mime = mime_guess::from_path(&path).first_raw().unwrap_or("image/jpeg");
+                                engine.upload_room_avatar(&room_id, data, mime).await.map_err(|e| e.to_string())
+                            },
+                            |res| Action::from(crate::Message::RoomSettings(Message::AvatarUploaded(res)))
+                        );
+                    }
+                }
+                Task::none()
+            }
+            Message::AvatarUploaded(res) => {
+                self.is_uploading_avatar = false;
+                match res {
+                    Ok(_) => {
+                        // Reload room data to get new avatar URL
+                        if let Some(room_id) = &self.room_id {
+                            return self.update(Message::LoadRoom(room_id.clone()), matrix);
+                        }
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to upload avatar: {}", e));
+                    }
+                }
+                Task::none()
+            }
+            Message::LeaveRoom => {
+                if let Some(matrix) = matrix {
+                    if let Some(room_id) = &self.room_id {
+                        self.is_saving = true;
+                        let engine = matrix.clone();
+                        let room_id_clone = room_id.clone();
+                        return Task::perform(
+                            async move {
+                                engine.leave_room(&room_id_clone).await.map_err(|e| e.to_string())
+                            },
+                            |res| Action::from(crate::Message::RoomSettings(Message::RoomLeft(res)))
+                        );
+                    }
+                }
+                Task::none()
+            }
+            Message::RoomLeft(res) => {
+                self.is_saving = false;
+                match res {
+                    Ok(_) => {
+                        // Reload to update membership state UI
+                        if let Some(room_id) = &self.room_id {
+                            return self.update(Message::LoadRoom(room_id.clone()), matrix);
+                        }
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to leave room: {}", e));
+                    }
+                }
+                Task::none()
+            }
+            Message::ForgetRoom => {
+                if let Some(matrix) = matrix {
+                    if let Some(room_id) = &self.room_id {
+                        self.is_saving = true;
+                        let engine = matrix.clone();
+                        let room_id_clone = room_id.clone();
+                        return Task::perform(
+                            async move {
+                                engine.forget_room(&room_id_clone).await.map_err(|e| e.to_string())
+                            },
+                            |res| Action::from(crate::Message::RoomSettings(Message::RoomForgotten(res)))
+                        );
+                    }
+                }
+                Task::none()
+            }
+            Message::RoomForgotten(res) => {
+                self.is_saving = false;
+                match res {
+                    Ok(_) => {
+                        // Close settings panel as the room is gone
+                        return Task::done(Action::from(crate::Message::CloseSettings));
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to forget room: {}", e));
+                    }
+                }
+                Task::none()
+            }
+            Message::DismissError => {
+                self.error = None;
+                Task::none()
+            }
+        }
+    }
+
+    pub fn view(&self) -> Element<'_, Message> {
+        if self.is_loading {
+            return Column::new()
+                .spacing(20)
+                .push(text::body("Loading room data..."))
+                .into();
+        }
+
+        let mut col = Column::new().spacing(20);
+
+        if let Some(error) = &self.error {
+            col = col.push(
+                Row::new()
+                    .spacing(10)
+                    .align_y(Alignment::Center)
+                    .push(text::body(error))
+                    .push(button::text("Dismiss").on_press(Message::DismissError))
+            );
+        }
+
+        col = col.push(text::title3("Room Profile"));
+
+        // Avatar Section
+        let mut avatar_row = Row::new().spacing(20).align_y(Alignment::Center);
+        if let Some(handle) = &self.avatar_handle {
+             avatar_row = avatar_row.push(
+                cosmic::widget::image(handle.clone())
+                    .width(cosmic::iced::Length::Fixed(64.0))
+                    .height(cosmic::iced::Length::Fixed(64.0))
+            );
+        } else if self.is_loading_avatar {
+             avatar_row = avatar_row.push(text::body("Loading avatar..."));
+        } else {
+             avatar_row = avatar_row.push(
+                cosmic::widget::container(text::body("No Avatar"))
+                    .width(cosmic::iced::Length::Fixed(64.0))
+                    .height(cosmic::iced::Length::Fixed(64.0))
+                    .align_x(Alignment::Center)
+                    .align_y(Alignment::Center)
+            );
+        }
+
+        let mut upload_btn = button::text(if self.is_uploading_avatar { "Uploading..." } else { "Change Avatar" });
+        if !self.is_uploading_avatar {
+            upload_btn = upload_btn.on_press(Message::SelectAvatar);
+        }
+        avatar_row = avatar_row.push(upload_btn);
+        col = col.push(avatar_row);
+
+        // Room Name
+        col = col.push(
+            Column::new().spacing(5)
+                .push(text::body("Room Name").size(12))
+                .push(text_input::text_input("Name", &self.name)
+                    .on_input(Message::NameChanged))
+        );
+
+        // Room Topic
+        col = col.push(
+            Column::new().spacing(5)
+                .push(text::body("Room Topic").size(12))
+                .push(text_input::text_input("Topic", &self.topic)
+                    .on_input(Message::TopicChanged))
+        );
+
+        // Permissions Section
+        let mut perm_col = Column::new().spacing(10);
+        perm_col = perm_col.push(text::title3("Permissions"));
+        perm_col = perm_col.push(Row::new().spacing(10).align_y(Alignment::Center).push(text::body("Invite level").width(100)).push(text_input::text_input("50", &self.invite_level_str).on_input(Message::InviteLevelChanged)));
+        perm_col = perm_col.push(Row::new().spacing(10).align_y(Alignment::Center).push(text::body("Kick level").width(100)).push(text_input::text_input("50", &self.kick_level_str).on_input(Message::KickLevelChanged)));
+        perm_col = perm_col.push(Row::new().spacing(10).align_y(Alignment::Center).push(text::body("Ban level").width(100)).push(text_input::text_input("50", &self.ban_level_str).on_input(Message::BanLevelChanged)));
+        perm_col = perm_col.push(Row::new().spacing(10).align_y(Alignment::Center).push(text::body("Redact level").width(100)).push(text_input::text_input("50", &self.redact_level_str).on_input(Message::RedactLevelChanged)));
+        col = col.push(perm_col);
+
+        let mut save_btn = button::text(if self.is_saving { "Saving..." } else { "Save Changes" });
+        if (self.name != self.original_name || self.topic != self.original_topic || self.ban_level != self.original_ban_level || self.invite_level != self.original_invite_level || self.kick_level != self.original_kick_level || self.redact_level != self.original_redact_level) && !self.is_saving {
+            save_btn = save_btn.on_press(Message::SaveRoom);
+        }
+        col = col.push(save_btn);
+
+        // Power Levels Section
+        if let Some((default_level, users)) = &self.power_levels {
+            let mut pl_col = Column::new().spacing(10);
+            pl_col = pl_col.push(text::title3("Manage Members"));
+            
+            // Member Filter
+            pl_col = pl_col.push(
+                text_input::text_input("Filter members...", &self.member_filter)
+                    .on_input(Message::MemberFilterChanged)
+            );
+
+            pl_col = pl_col.push(text::body(format!("Default level: {}", default_level)).size(12));
+
+            // Reason for actions (Kick/Ban)
+            pl_col = pl_col.push(
+                Column::new().spacing(5)
+                    .push(text::body("Reason for action").size(12))
+                    .push(text_input::text_input("Reason...", &self.action_reason)
+                        .on_input(Message::ActionReasonChanged))
+            );
+
+            let filter = self.member_filter.to_lowercase();
+            for (user_id, level) in users {
+                let user_id_str = user_id.to_string();
+                if !filter.is_empty() && !user_id_str.to_lowercase().contains(&filter) {
+                    continue;
+                }
+                
+                let is_updating = self.updating_power_level_for.as_ref() == Some(&user_id_str);
+                let is_me = Some(user_id_str.clone()) == self.current_user_id;
+
+                let user_row = Row::new().spacing(10).align_y(Alignment::Center)
+                    .push(text::body(user_id_str.clone()).size(14))
+                    .push(text::body(level.to_string()).size(14))
+                    .push(cosmic::widget::space().width(cosmic::iced::Length::Fill));
+                
+                let mut level_row = Row::new().spacing(5);
+                for l in [0, 50, 100] {
+                    let mut btn = button::text(match l {
+                        0 => "Default",
+                        50 => "Mod",
+                        100 => "Admin",
+                        _ => "??",
+                    });
+                    if !is_updating && *level != l {
+                        btn = btn.on_press(Message::UpdatePowerLevel(user_id_str.clone(), l));
+                    }
+                    level_row = level_row.push(btn);
+                }
+
+                pl_col = pl_col.push(user_row).push(level_row);
+
+                if !is_me {
+                    let mut action_row = Row::new().spacing(5);
+                    if self.my_power_level >= self.kick_level {
+                        action_row = action_row.push(button::text("Kick").on_press(Message::KickUser(user_id_str.clone())));
+                    }
+                    if self.my_power_level >= self.ban_level {
+                        action_row = action_row.push(button::text("Ban").on_press(Message::BanUser(user_id_str.clone())));
+                    }
+                    pl_col = pl_col.push(action_row);
+                }
+            }
+            col = col.push(pl_col);
+        } else if self.is_loading_power_levels {
+            col = col.push(text::body("Loading members..."));
+        }
+
+        // Add user to power levels by ID
+        let mut add_pl_col = Column::new().spacing(5);
+        add_pl_col = add_pl_col.push(text::title3("Invite & Promote"));
+        add_pl_col = add_pl_col.push(text::body("User ID").size(12));
+        add_pl_col = add_pl_col.push(
+            text_input::text_input("@user:example.com", &self.invite_user_id)
+                .on_input(Message::InviteUserIdChanged)
+        );
+
+        let mut promote_row = Row::new().spacing(10);
+        if self.my_power_level >= self.invite_level {
+            promote_row = promote_row.push(button::text("Invite").on_press(Message::InviteUser));
+        }
+        promote_row = promote_row.push(button::text("Mod").on_press(Message::UpdatePowerLevel(self.invite_user_id.clone(), 50)))
+                .push(button::text("Admin").on_press(Message::UpdatePowerLevel(self.invite_user_id.clone(), 100)));
+        add_pl_col = add_pl_col.push(promote_row);
+        col = col.push(add_pl_col);
+
+        // Membership Actions
+        if let Some(membership) = &self.membership {
+             use matrix_sdk::RoomState;
+             let mut actions_col = Column::new().spacing(10);
+             actions_col = actions_col.push(text::title3("Actions"));
+
+             match membership {
+                 RoomState::Joined => {
+                     actions_col = actions_col.push(
+                         button::text("Leave Room")
+                             .on_press(Message::LeaveRoom)
+                     );
+                 }
+                 RoomState::Left | RoomState::Invited => {
+                     actions_col = actions_col.push(
+                         button::text("Forget Room")
+                             .on_press(Message::ForgetRoom)
+                     );
+                 }
+                 _ => {}
+             }
+             col = col.push(actions_col);
+        }
+
+        col.into()
+    }
+}

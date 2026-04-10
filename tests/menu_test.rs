@@ -1,9 +1,9 @@
-use cosmic::app::{Core, Settings};
+use cosmic::app::Core;
 use cosmic::iced::Alignment;
-use cosmic::widget::{button, column, container, text, menu};
-use cosmic::{Application, Element, Task, Action};
-use cosmic::widget::RcElementWrapper;
 use cosmic::widget::menu::action::MenuAction;
+use cosmic::widget::{Column, RcElementWrapper};
+use cosmic::widget::{button, container, menu, text};
+use cosmic::{Action, Application, Element, Task};
 use std::collections::HashMap;
 
 fn main() {}
@@ -37,19 +37,23 @@ impl Application for App {
     type Flags = ();
     const APP_ID: &'static str = "com.test.menu";
 
-    fn core(&self) -> &Core { &self.core }
-    fn core_mut(&mut self) -> &mut Core { &mut self.core }
+    fn core(&self) -> &Core {
+        &self.core
+    }
+    fn core_mut(&mut self) -> &mut Core {
+        &mut self.core
+    }
     fn init(core: Core, _flags: ()) -> (Self, Task<Action<Self::Message>>) {
         (Self { core }, Task::none())
     }
-    fn update(&mut self, message: Message) -> Task<Action<Self::Message>> {
+    fn update(&mut self, _message: Message) -> Task<Action<Self::Message>> {
         Task::none()
     }
     fn view(&self) -> Element<'_, Message> {
         let avatar = container(text::body("U").size(24))
             .padding(8)
             .align_x(Alignment::Center);
-            
+
         let user_btn = button::custom(avatar);
         let key_binds: HashMap<cosmic::widget::menu::key_bind::KeyBind, MenuAct> = HashMap::new();
 
@@ -57,13 +61,7 @@ impl Application for App {
             RcElementWrapper::new(Element::from(user_btn)),
             menu::items(
                 &key_binds,
-                vec![
-                    menu::Item::Button(
-                        "Logout",
-                        None,
-                        MenuAct::Logout,
-                    ),
-                ],
+                vec![menu::Item::Button("Logout", None, MenuAct::Logout)],
             ),
         );
 
@@ -72,6 +70,6 @@ impl Application for App {
             .item_width(menu::ItemWidth::Uniform(120))
             .spacing(4.0);
 
-        column().push(user_menu).into()
+        Column::new().push(user_menu).into()
     }
 }
