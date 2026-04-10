@@ -861,6 +861,32 @@ impl MatrixEngine {
         Ok(())
     }
 
+    pub async fn set_room_name(&self, room_id: &str, name: String) -> Result<()> {
+        let room_id_parsed = RoomId::parse(room_id)?;
+        let client = self.client().await;
+        let room = client.get_room(&room_id_parsed).context("Room not found")?;
+        room.set_name(name).await?;
+        Ok(())
+    }
+
+    pub async fn set_room_topic(&self, room_id: &str, topic: String) -> Result<()> {
+        let room_id_parsed = RoomId::parse(room_id)?;
+        let client = self.client().await;
+        let room = client.get_room(&room_id_parsed).context("Room not found")?;
+        room.set_room_topic(&topic).await?;
+        Ok(())
+    }
+
+    pub async fn upload_room_avatar(&self, room_id: &str, data: Vec<u8>, mime: &str) -> Result<()> {
+        let room_id_parsed = RoomId::parse(room_id)?;
+        let client = self.client().await;
+        let room = client.get_room(&room_id_parsed).context("Room not found")?;
+        
+        let content_type = mime.parse::<mime::Mime>()?;
+        room.upload_avatar(&content_type, data, None).await?;
+        Ok(())
+    }
+
     pub async fn send_message(
         &self,
         room_id: &str,
