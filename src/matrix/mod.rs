@@ -887,6 +887,96 @@ impl MatrixEngine {
         Ok(())
     }
 
+    pub async fn leave_room(&self, room_id: &str) -> Result<()> {
+        let room_id_parsed = RoomId::parse(room_id)?;
+        let client = self.client().await;
+        let room = client.get_room(&room_id_parsed).context("Room not found")?;
+        room.leave().await?;
+        Ok(())
+    }
+
+    pub async fn forget_room(&self, room_id: &str) -> Result<()> {
+        let room_id_parsed = RoomId::parse(room_id)?;
+        let client = self.client().await;
+        let room = client.get_room(&room_id_parsed).context("Room not found")?;
+        room.forget().await?;
+        Ok(())
+    }
+
+    pub async fn get_room_power_levels(&self, room_id: &str) -> Result<(i64, HashMap<matrix_sdk::ruma::OwnedUserId, i64>)> {
+        let room_id_parsed = RoomId::parse(room_id)?;
+        let client = self.client().await;
+        let room = client.get_room(&room_id_parsed).context("Room not found")?;
+        let power_levels = room.power_levels().await?;
+        
+        let users = room.users_with_power_levels().await;
+        // Also add users who have the default power level but are members
+        // To avoid listing thousands of users in large rooms, maybe we only list members if the room is small?
+        // Actually, let's just use what's in the power levels event first.
+        // If the user wants to promote someone else, they can search for them.
+        Ok((power_levels.users_default.into(), users))
+    }
+
+    pub async fn update_user_power_level(&self, room_id: &str, user_id: &str, level: i64) -> Result<()> {
+        let room_id_parsed = RoomId::parse(room_id)?;
+        let user_id_parsed = matrix_sdk::ruma::UserId::parse(user_id)?;
+        let client = self.client().await;
+        let room = client.get_room(&room_id_parsed).context("Room not found")?;
+        
+        let int_level = matrix_sdk::ruma::Int::new(level).ok_or_else(|| anyhow::anyhow!("Invalid power level"))?;
+        room.update_power_levels(vec![(&user_id_parsed, int_level)]).await?;
+        Ok(())
+    }
+
+    pub async fn update_room_power_level_settings(
+        &self, 
+        room_id: &str, 
+        ban: Option<i64>,
+        invite: Option<i64>,
+        kick: Option<i64>,
+        redact: Option<i64>,
+    ) -> Result<()> {
+        let room_id_parsed = RoomId::parse(room_id)?;
+        let client = self.client().await;
+        let room = client.get_room(&room_id_parsed).context("Room not found")?;
+
+        let mut changes = matrix_sdk::room::power_levels::RoomPowerLevelChanges::new();
+        changes.ban = ban;
+        changes.invite = invite;
+        changes.kick = kick;
+        changes.redact = redact;
+
+        room.apply_power_level_changes(changes).await?;
+        Ok(())
+    }
+
+    pub async fn invite_user(&self, room_id: &str, user_id: &str) -> Result<()> {
+        let room_id_parsed = RoomId::parse(room_id)?;
+        let user_id_parsed = matrix_sdk::ruma::UserId::parse(user_id)?;
+        let client = self.client().await;
+        let room = client.get_room(&room_id_parsed).context("Room not found")?;
+        room.invite_user_by_id(&user_id_parsed).await?;
+        Ok(())
+    }
+
+    pub async fn kick_user(&self, room_id: &str, user_id: &str, reason: Option<String>) -> Result<()> {
+        let room_id_parsed = RoomId::parse(room_id)?;
+        let user_id_parsed = matrix_sdk::ruma::UserId::parse(user_id)?;
+        let client = self.client().await;
+        let room = client.get_room(&room_id_parsed).context("Room not found")?;
+        room.kick_user(&user_id_parsed, reason.as_deref()).await?;
+        Ok(())
+    }
+
+    pub async fn ban_user(&self, room_id: &str, user_id: &str, reason: Option<String>) -> Result<()> {
+        let room_id_parsed = RoomId::parse(room_id)?;
+        let user_id_parsed = matrix_sdk::ruma::UserId::parse(user_id)?;
+        let client = self.client().await;
+        let room = client.get_room(&room_id_parsed).context("Room not found")?;
+        room.ban_user(&user_id_parsed, reason.as_deref()).await?;
+        Ok(())
+    }
+
     pub async fn send_message(
         &self,
         room_id: &str,
