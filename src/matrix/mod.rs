@@ -1070,6 +1070,14 @@ impl MatrixEngine {
         Ok(())
     }
 
+    pub async fn typing_notice(&self, room_id: &str, typing: bool) -> Result<()> {
+        let room_id = RoomId::parse(room_id)?;
+        let client = self.client().await;
+        let room = client.get_room(&room_id).context("Room not found")?;
+        room.typing_notice(typing).await?;
+        Ok(())
+    }
+
     pub async fn fetch_media(&self, source: MediaSource) -> Result<Vec<u8>> {
         let client = self.client().await;
         let request = matrix_sdk::media::MediaRequestParameters {
