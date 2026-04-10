@@ -3,18 +3,18 @@ use tokio::sync::mpsc;
 use zbus::names::WellKnownName;
 use zbus::{interface, proxy, Connection};
 
-pub const DBUS_NAME: &str = "com.system76.Claw";
-pub const DBUS_PATH: &str = "/com/system76/Claw";
+pub const DBUS_NAME: &str = "fi.joonastuomi.CosmicExtConstellations";
+pub const DBUS_PATH: &str = "/fi/joonastuomi/CosmicExtConstellations";
 
 pub struct IpcInterface {
     tx: mpsc::UnboundedSender<String>,
 }
 
-#[interface(name = "fi.joonastuomi.Constellations.Ipc")]
+#[interface(name = "fi.joonastuomi.CosmicExtConstellations.Ipc")]
 impl IpcInterface {
     async fn handle_callback(&self, uri: String) {
-        if !uri.starts_with("fi.joonastuomi.Constellations://callback") {
-            tracing::warn!("Received invalid OIDC callback URI: {}", uri);
+        if !uri.starts_with("fi.joonastuomi.CosmicExtConstellations://callback") {
+            tracing::warn!("Received invalid OIDC callback URI");
             return;
         }
         tracing::info!("Received OIDC callback URI via D-Bus");
@@ -23,9 +23,9 @@ impl IpcInterface {
 }
 
 #[proxy(
-    interface = "fi.joonastuomi.Constellations.Ipc",
-    default_service = "fi.joonastuomi.Constellations",
-    default_path = "/fi/joonastuomi/Constellations"
+    interface = "fi.joonastuomi.CosmicExtConstellations.Ipc",
+    default_service = "fi.joonastuomi.CosmicExtConstellations",
+    default_path = "/fi/joonastuomi/CosmicExtConstellations"
 )]
 pub trait Ipc {
     fn handle_callback(&self, uri: String) -> zbus::Result<()>;
