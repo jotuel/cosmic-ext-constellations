@@ -176,7 +176,7 @@ impl State {
                                 self.is_loading_avatar = true;
                                 tasks.push(Task::perform(
                                     async move {
-                                        let mxc_uri = <&matrix_sdk::ruma::MxcUri>::try_from(mxc.as_str()).map_err(|e| e.to_string())?;
+                                        let mxc_uri = <&matrix_sdk::ruma::MxcUri>::from(mxc.as_str());
                                         let source = MediaSource::Plain(mxc_uri.to_owned());
                                         engine.fetch_media(source).await.map_err(|e| e.to_string())
                                     },
@@ -442,7 +442,7 @@ impl State {
                                 }
                                 if new_ban != original_ban || new_invite != original_invite || new_kick != original_kick || new_redact != original_redact {
                                     engine.update_room_power_level_settings(
-                                        &room_id_clone, 
+                                        &room_id_clone,
                                         if new_ban != original_ban { Some(new_ban) } else { None },
                                         if new_invite != original_invite { Some(new_invite) } else { None },
                                         if new_kick != original_kick { Some(new_kick) } else { None },
@@ -497,7 +497,7 @@ impl State {
                         self.is_uploading_avatar = true;
                         let engine = matrix.clone();
                         let room_id = self.room_id.clone().unwrap_or_default();
-                        
+
                         return Task::perform(
                             async move {
                                 let data = std::fs::read(&path).map_err(|e| e.to_string())?;
@@ -676,7 +676,7 @@ impl State {
         if let Some((default_level, users)) = &self.power_levels {
             let mut pl_col = Column::new().spacing(10);
             pl_col = pl_col.push(text::title3("Manage Members"));
-            
+
             // Member Filter
             pl_col = pl_col.push(
                 text_input::text_input("Filter members...", &self.member_filter)
@@ -699,7 +699,7 @@ impl State {
                 if !filter.is_empty() && !user_id_str.to_lowercase().contains(&filter) {
                     continue;
                 }
-                
+
                 let is_updating = self.updating_power_level_for.as_ref() == Some(&user_id_str);
                 let is_me = Some(user_id_str.clone()) == self.current_user_id;
 
@@ -707,7 +707,7 @@ impl State {
                     .push(text::body(user_id_str.clone()).size(14))
                     .push(text::body(level.to_string()).size(14))
                     .push(cosmic::widget::space().width(cosmic::iced::Length::Fill));
-                
+
                 let mut level_row = Row::new().spacing(5);
                 for l in [0, 50, 100] {
                     let mut btn = button::text(match l {

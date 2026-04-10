@@ -113,15 +113,13 @@ impl Constellations {
 
                     timeline = timeline.push(bubble_wrapper);
                 }
-            } else if let Some(virt) = item.item.as_virtual() {
-                if let matrix::VirtualTimelineItem::DateDivider(_date) = virt {
+            } else if let Some(matrix::VirtualTimelineItem::DateDivider(_date)) = item.item.as_virtual() {
                     timeline = timeline.push(
                         container(text::body("--- Day Divider ---").size(12))
                             .width(cosmic::iced::Length::Fill)
                             .align_x(Alignment::Center)
                             .padding(10),
                     );
-                }
             }
         }
 
