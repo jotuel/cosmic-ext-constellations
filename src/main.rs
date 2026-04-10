@@ -76,11 +76,11 @@ struct Constellations {
     is_oidc_logging_in: bool,
     is_initializing: bool,
     selected_space: Option<OwnedRoomId>,
-    show_sync_indicator: bool,
     current_settings_panel: Option<SettingsPanel>,
     user_settings: settings::user::State,
     room_settings: settings::room::State,
     space_settings: settings::space::State,
+    app_settings: settings::app::State,
 }
 
 #[derive(Debug, Clone)]
@@ -119,6 +119,9 @@ pub enum Message {
     UserSettings(settings::user::Message),
     RoomSettings(settings::room::Message),
     SpaceSettings(settings::space::Message),
+    AppSettings(settings::app::Message),
+    AppSettingChanged,
+    NoOp,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -379,11 +382,11 @@ impl Application for Constellations {
             is_oidc_logging_in: false,
             is_initializing: true,
             selected_space: None,
-            show_sync_indicator: false,
             current_settings_panel: None,
             user_settings: Default::default(),
             room_settings: Default::default(),
             space_settings: Default::default(),
+            app_settings: Default::default(),
         };
 
         let title_task = app.update_title();
@@ -405,10 +408,7 @@ impl Application for Constellations {
                 SettingsPanel::User => self.user_settings.view().map(Message::UserSettings),
                 SettingsPanel::Room => self.room_settings.view().map(Message::RoomSettings),
                 SettingsPanel::Space => self.space_settings.view().map(Message::SpaceSettings),
-                _ => cosmic::widget::Column::new()
-                    .spacing(20)
-                    .push(cosmic::widget::text::body("Settings options will go here..."))
-                    .into(),
+                SettingsPanel::App => self.app_settings.view().map(Message::AppSettings),
             };
 
             Some(
@@ -542,6 +542,10 @@ impl Application for Constellations {
             Message::SpaceSettings(msg) => {
                 self.space_settings.update(msg, &self.matrix)
             }
+            Message::AppSettings(msg) => {
+                self.app_settings.update(msg)
+            }
+            Message::AppSettingChanged | Message::NoOp => Task::none(),
         }
     }
 
@@ -747,7 +751,7 @@ impl Application for Constellations {
             .push(sidebar)
             .push(content);
 
-        if self.show_sync_indicator {
+        if self.app_settings.show_sync_indicator {
             main_row = main_row.push(
                 container(cosmic::widget::icon::from_name("process-working-symbolic").size(24))
                     .padding(20)
