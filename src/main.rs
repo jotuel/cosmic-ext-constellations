@@ -25,7 +25,7 @@ use url::Url;
 // We cache the parsed Markdown structure in `PreviewEvent`s to avoid running
 // `pulldown_cmark::Parser` on every single render frame inside `view_preview()`.
 #[derive(Clone, Debug, PartialEq)]
-enum PreviewEvent {
+pub enum PreviewEvent {
     StartHeading,
     EndBlock,
     Text(String),
@@ -33,7 +33,7 @@ enum PreviewEvent {
     Break,
 }
 
-fn parse_markdown(text: &str) -> Vec<PreviewEvent> {
+pub fn parse_markdown(text: &str) -> Vec<PreviewEvent> {
     let mut events = Vec::new();
     let parser = pulldown_cmark::Parser::new(text);
     for event in parser {
@@ -121,7 +121,6 @@ pub enum Message {
     SpaceSettings(settings::space::Message),
     AppSettings(settings::app::Message),
     AppSettingChanged,
-    NoOp,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -442,6 +441,23 @@ impl Application for Constellations {
             Message::ComposerChanged(text) => {
                 self.composer_preview_events = parse_markdown(&text);
                 self.composer_text = text;
+                
+                if self.app_settings.send_typing_notifications {
+                    if let Some(matrix) = &self.matrix {
+                        if let Some(room_id) = &self.selected_room {
+                            let matrix = matrix.clone();
+                            let room_id = room_id.clone();
+                            let typing = !self.composer_text.is_empty();
+                            return Task::perform(
+                                async move {
+                                    let _ = matrix.typing_notice(&room_id, typing).await;
+                                },
+                                |_| Action::from(Message::NoOp)
+                            );
+                        }
+                    }
+                }
+                
                 Task::none()
             }
             Message::TogglePreview => {
@@ -543,9 +559,15 @@ impl Application for Constellations {
                 self.space_settings.update(msg, &self.matrix)
             }
             Message::AppSettings(msg) => {
-                self.app_settings.update(msg)
+                match msg {
+                    settings::app::Message::ClearCache => {
+                        self.media_cache.clear();
+                        Task::none()
+                    }
+                    _ => self.app_settings.update(msg)
+                }
             }
-            Message::AppSettingChanged | Message::NoOp => Task::none(),
+            Message::AppSettingChanged => Task::none(),
         }
     }
 
