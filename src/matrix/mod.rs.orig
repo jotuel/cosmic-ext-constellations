@@ -136,8 +136,6 @@ impl SpaceHierarchy {
         self.is_in_space_recursive(room_id, space_id, &mut visited)
     }
 
-    // ⚡ Bolt Optimization:
-    // Use `HashSet<&RoomId>` to prevent string allocations (`.to_owned()`) during recursive traversal
     fn is_in_space_recursive<'a>(
         &'a self,
         current_id: &'a RoomId,
