@@ -88,6 +88,7 @@ struct Constellations {
     show_sync_indicator: bool,
     current_settings_panel: Option<SettingsPanel>,
     user_settings: settings::user::State,
+    room_settings: settings::room::State,
 }
 
 #[derive(Debug, Clone)]
@@ -124,6 +125,7 @@ pub enum Message {
     OpenSettings(SettingsPanel),
     CloseSettings,
     UserSettings(settings::user::Message),
+    RoomSettings(settings::room::Message),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -387,6 +389,7 @@ impl Application for Constellations {
             show_sync_indicator: false,
             current_settings_panel: None,
             user_settings: Default::default(),
+            room_settings: Default::default(),
         };
 
         let title_task = app.update_title();
@@ -406,6 +409,7 @@ impl Application for Constellations {
 
             let panel_content = match panel {
                 SettingsPanel::User => self.user_settings.view().map(Message::UserSettings),
+                SettingsPanel::Room => self.room_settings.view().map(Message::RoomSettings),
                 _ => cosmic::widget::Column::new()
                     .spacing(20)
                     .push(cosmic::widget::text::body("Settings options will go here..."))
@@ -518,6 +522,10 @@ impl Application for Constellations {
                 self.core.set_show_context(true);
                 if panel == SettingsPanel::User {
                     return self.user_settings.update(settings::user::Message::LoadProfile, &self.matrix);
+                } else if panel == SettingsPanel::Room {
+                    if let Some(room_id) = &self.selected_room {
+                        return self.room_settings.update(settings::room::Message::LoadRoom(room_id.clone()), &self.matrix);
+                    }
                 }
                 Task::none()
             }
@@ -528,6 +536,9 @@ impl Application for Constellations {
             }
             Message::UserSettings(msg) => {
                 self.user_settings.update(msg, &self.matrix)
+            }
+            Message::RoomSettings(msg) => {
+                self.room_settings.update(msg, &self.matrix)
             }
         }
     }
