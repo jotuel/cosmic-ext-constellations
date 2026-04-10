@@ -80,6 +80,7 @@ struct Constellations {
     current_settings_panel: Option<SettingsPanel>,
     user_settings: settings::user::State,
     room_settings: settings::room::State,
+    space_settings: settings::space::State,
 }
 
 #[derive(Debug, Clone)]
@@ -117,6 +118,7 @@ pub enum Message {
     CloseSettings,
     UserSettings(settings::user::Message),
     RoomSettings(settings::room::Message),
+    SpaceSettings(settings::space::Message),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -381,6 +383,7 @@ impl Application for Constellations {
             current_settings_panel: None,
             user_settings: Default::default(),
             room_settings: Default::default(),
+            space_settings: Default::default(),
         };
 
         let title_task = app.update_title();
@@ -401,6 +404,7 @@ impl Application for Constellations {
             let panel_content = match panel {
                 SettingsPanel::User => self.user_settings.view().map(Message::UserSettings),
                 SettingsPanel::Room => self.room_settings.view().map(Message::RoomSettings),
+                SettingsPanel::Space => self.space_settings.view().map(Message::SpaceSettings),
                 _ => cosmic::widget::Column::new()
                     .spacing(20)
                     .push(cosmic::widget::text::body("Settings options will go here..."))
@@ -517,6 +521,10 @@ impl Application for Constellations {
                     if let Some(room_id) = &self.selected_room {
                         return self.room_settings.update(settings::room::Message::LoadRoom(room_id.clone()), &self.matrix);
                     }
+                } else if panel == SettingsPanel::Space {
+                    if let Some(space_id) = &self.selected_space {
+                        return self.space_settings.update(settings::space::Message::LoadSpace(space_id.to_string()), &self.matrix);
+                    }
                 }
                 Task::none()
             }
@@ -530,6 +538,9 @@ impl Application for Constellations {
             }
             Message::RoomSettings(msg) => {
                 self.room_settings.update(msg, &self.matrix)
+            }
+            Message::SpaceSettings(msg) => {
+                self.space_settings.update(msg, &self.matrix)
             }
         }
     }
