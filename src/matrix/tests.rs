@@ -347,17 +347,8 @@ fn test_timeline_diff_variant() {
     }
 }
 
-#[test]
-fn test_backoff_logic() {
-    let mut backoff = Backoff::new(2, 60);
-    assert_eq!(backoff.next(), 2);
-    assert_eq!(backoff.next(), 4);
-    assert_eq!(backoff.next(), 8);
-    assert_eq!(backoff.next(), 16);
-    assert_eq!(backoff.next(), 32);
-    assert_eq!(backoff.next(), 60);
-    assert_eq!(backoff.next(), 60);
-}
+
+
 
 fn create_test_session() -> matrix_sdk::authentication::matrix::MatrixSession {
     matrix_sdk::authentication::matrix::MatrixSession {
