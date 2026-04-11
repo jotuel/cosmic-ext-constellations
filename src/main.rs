@@ -7,6 +7,7 @@ mod matrix;
 pub mod settings;
 
 use anyhow::Result;
+use cosmic::iced::widget::image;
 use cosmic::iced::{Alignment, Subscription};
 use cosmic::widget::icon::Named;
 use cosmic::widget::menu::action::MenuAction;
@@ -18,6 +19,7 @@ use eyeball_im::Vector;
 use matrix_sdk::ruma::events::room::MediaSource;
 use matrix_sdk::ruma::OwnedRoomId;
 use matrix_sdk_ui::sync_service::State as SyncServiceState;
+use std::collections::HashMap;
 use std::sync::Arc;
 use url::Url;
 
@@ -65,7 +67,7 @@ struct Constellations {
     composer_preview_events: Vec<PreviewEvent>,
     composer_is_preview: bool,
     user_id: Option<String>,
-    media_cache: std::collections::HashMap<String, cosmic::iced::widget::image::Handle>,
+    media_cache: HashMap<String, image::Handle>,
     creating_room: bool,
     new_room_name: String,
     error: Option<String>,
@@ -75,6 +77,7 @@ struct Constellations {
     is_logging_in: bool,
     is_oidc_logging_in: bool,
     is_initializing: bool,
+    is_sync_indicator_active: bool,
     selected_space: Option<OwnedRoomId>,
     current_settings_panel: Option<SettingsPanel>,
     user_settings: settings::user::State,
@@ -370,7 +373,7 @@ impl Application for Constellations {
             composer_preview_events: Vec::new(),
             composer_is_preview: false,
             user_id: None,
-            media_cache: std::collections::HashMap::new(),
+            media_cache: HashMap::new(),
             creating_room: false,
             new_room_name: String::new(),
             error: None,
@@ -380,6 +383,7 @@ impl Application for Constellations {
             is_logging_in: false,
             is_oidc_logging_in: false,
             is_initializing: true,
+            is_sync_indicator_active: false,
             selected_space: None,
             current_settings_panel: None,
             user_settings: Default::default(),
@@ -441,7 +445,7 @@ impl Application for Constellations {
             Message::ComposerChanged(text) => {
                 self.composer_preview_events = parse_markdown(&text);
                 self.composer_text = text;
-                
+
                 if self.app_settings.send_typing_notifications {
                     if let Some(matrix) = &self.matrix {
                         if let Some(room_id) = &self.selected_room {
@@ -457,7 +461,7 @@ impl Application for Constellations {
                         }
                     }
                 }
-                
+
                 Task::none()
             }
             Message::TogglePreview => {
@@ -573,7 +577,17 @@ impl Application for Constellations {
 
     fn view(&self) -> Element<'_, Message> {
         if self.is_initializing {
-            return container(text::title1("Initializing..."))
+            let content = Column::new()
+                .push(
+                    cosmic::widget::svg(cosmic::widget::svg::Handle::from_memory(include_bytes!("../res/const.svg")))
+                        .width(cosmic::iced::Length::Fixed(128.0))
+                        .height(cosmic::iced::Length::Fixed(128.0))
+                )
+                .push(cosmic::widget::progress_bar::indeterminate_circular())
+                .spacing(32)
+                .align_x(Alignment::Center);
+
+            return container(content)
                 .width(cosmic::iced::Length::Fill)
                 .height(cosmic::iced::Length::Fill)
                 .align_x(Alignment::Center)
@@ -773,9 +787,28 @@ impl Application for Constellations {
             .push(sidebar)
             .push(content);
 
-        if self.app_settings.show_sync_indicator {
+        if self.app_settings.show_sync_indicator && self.is_sync_indicator_active {
+            let sync_widget: Element<'_, Message> = match self.sync_status {
+                matrix::SyncStatus::Syncing => {
+                    container(cosmic::widget::progress_bar::indeterminate_circular().size(24.0))
+                        .into()
+                }
+                matrix::SyncStatus::Connected => {
+                    container(cosmic::widget::icon::from_name("network-idle-symbolic").size(24))
+                        .into()
+                }
+                matrix::SyncStatus::Disconnected => {
+                    container(cosmic::widget::icon::from_name("network-offline-symbolic").size(24))
+                        .into()
+                }
+                matrix::SyncStatus::Error(_) | matrix::SyncStatus::MissingSlidingSyncSupport => {
+                    container(cosmic::widget::icon::from_name("network-error-symbolic").size(24))
+                        .into()
+                }
+            };
+
             main_row = main_row.push(
-                container(cosmic::widget::icon::from_name("process-working-symbolic").size(24))
+                container(sync_widget)
                     .padding(20)
                     .height(cosmic::iced::Length::Fill)
                     .align_y(Alignment::End)

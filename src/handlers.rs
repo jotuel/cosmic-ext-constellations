@@ -162,7 +162,7 @@ impl Constellations {
                 Task::none()
             }
             matrix::MatrixEvent::SyncIndicatorChanged(show) => {
-                self.app_settings.show_sync_indicator = show;
+                self.is_sync_indicator_active = show;
                 Task::none()
             }
             matrix::MatrixEvent::RoomDiff(diff) => {
@@ -455,7 +455,7 @@ impl Constellations {
         self.login_password.clear();
         self.error = None;
         self.selected_space = None;
-        self.app_settings.show_sync_indicator = false;
+        self.is_sync_indicator_active = false;
         Task::none()
     }
 }
