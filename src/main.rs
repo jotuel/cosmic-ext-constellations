@@ -682,7 +682,8 @@ impl Application for Constellations {
             room_content = room_content.push(header);
 
             if let Some(last_msg) = &room.last_message {
-                room_content = room_content.push(text::body(last_msg.clone()).size(12));
+                // Optimization: Avoid allocating a new String on every render frame
+                room_content = room_content.push(text::body(last_msg.as_str()).size(12));
             }
 
             let btn = button::custom(
