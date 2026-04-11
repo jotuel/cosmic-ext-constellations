@@ -783,7 +783,7 @@ impl Application for Constellations {
             content = content.push(error_bar);
         }
 
-        let mut main_row = Row::new()
+        let main_view = Row::new()
             .push(self.view_space_switcher())
             .push(sidebar)
             .push(content);
@@ -808,16 +808,17 @@ impl Application for Constellations {
                 }
             };
 
-            main_row = main_row.push(
-                container(sync_widget)
-                    .padding(20)
-                    .height(cosmic::iced::Length::Fill)
-                    .align_y(Alignment::End)
-                    .align_x(Alignment::End),
-            );
+            let sync_overlay = container(sync_widget)
+                .padding(20)
+                .width(cosmic::iced::Length::Fill)
+                .height(cosmic::iced::Length::Fill)
+                .align_x(Alignment::End)
+                .align_y(Alignment::End);
+
+            return cosmic::iced::widget::stack![main_view, sync_overlay].into();
         }
 
-        main_row.into()
+        main_view.into()
     }
 
     fn subscription(&self) -> Subscription<Self::Message> {
