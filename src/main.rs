@@ -346,7 +346,8 @@ impl Application for Constellations {
         let mut tasks = Vec::new();
         tasks.push(Task::perform(
             async move {
-                matrix::MatrixEngine::new(data_dir.expect("Error: No data dir"))
+                let dir = data_dir.ok_or_else(|| matrix::SyncError::from(anyhow::anyhow!("No standard data directory found")))?;
+                matrix::MatrixEngine::new(dir)
                     .await
                     .map_err(matrix::SyncError::from)
             },
