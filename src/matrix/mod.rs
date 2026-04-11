@@ -24,7 +24,6 @@ use tokio::sync::RwLock;
 use tracing::{error, info};
 use url::Url;
 
-
 const OIDC_CALLBACK_URL: &str = "fi.joonastuomi.CosmicExtConstellations://callback";
 const OIDC_CLIENT_ID: &str = "fi.joonastuomi.CosmicExtConstellations";
 
@@ -240,7 +239,6 @@ impl std::fmt::Debug for MatrixEngineInner {
             .finish()
     }
 }
-
 
 impl MatrixEngine {
     pub async fn new(data_dir: PathBuf) -> Result<Self> {
@@ -600,7 +598,7 @@ impl MatrixEngine {
 
     pub async fn logout(&self) -> Result<()> {
         let keyring = Keyring::new().await?;
-        
+
         let mut session_attributes = HashMap::new();
         session_attributes.insert("app_id", "fi.joonastuomi.CosmicExtConstellations");
         session_attributes.insert("type", "matrix-session");
@@ -610,7 +608,7 @@ impl MatrixEngine {
                 let _ = item.delete().await;
             }
         }
-        
+
         let mut pass_attributes = HashMap::new();
         pass_attributes.insert("app_id", "fi.joonastuomi.CosmicExtConstellations");
         pass_attributes.insert("type", "store-passphrase");
@@ -779,7 +777,7 @@ impl MatrixEngine {
             let handle = tokio::spawn(async move {
                 info!("Starting Matrix sync service...");
                 sync_service.start().await;
-                
+
                 let mut state_stream = sync_service.state();
                 while let Some(state) = state_stream.next().await {
                     match state {
@@ -849,7 +847,7 @@ impl MatrixEngine {
         let room_id_parsed = RoomId::parse(room_id)?;
         let client = self.client().await;
         let room = client.get_room(&room_id_parsed).context("Room not found")?;
-        
+
         let content_type = mime.parse::<mime::Mime>()?;
         room.upload_avatar(&content_type, data, None).await?;
         Ok(())
@@ -871,12 +869,15 @@ impl MatrixEngine {
         Ok(())
     }
 
-    pub async fn get_room_power_levels(&self, room_id: &str) -> Result<(i64, HashMap<matrix_sdk::ruma::OwnedUserId, i64>)> {
+    pub async fn get_room_power_levels(
+        &self,
+        room_id: &str,
+    ) -> Result<(i64, HashMap<matrix_sdk::ruma::OwnedUserId, i64>)> {
         let room_id_parsed = RoomId::parse(room_id)?;
         let client = self.client().await;
         let room = client.get_room(&room_id_parsed).context("Room not found")?;
         let power_levels = room.power_levels().await?;
-        
+
         let users = room.users_with_power_levels().await;
         // Also add users who have the default power level but are members
         // To avoid listing thousands of users in large rooms, maybe we only list members if the room is small?
@@ -885,20 +886,27 @@ impl MatrixEngine {
         Ok((power_levels.users_default.into(), users))
     }
 
-    pub async fn update_user_power_level(&self, room_id: &str, user_id: &str, level: i64) -> Result<()> {
+    pub async fn update_user_power_level(
+        &self,
+        room_id: &str,
+        user_id: &str,
+        level: i64,
+    ) -> Result<()> {
         let room_id_parsed = RoomId::parse(room_id)?;
         let user_id_parsed = matrix_sdk::ruma::UserId::parse(user_id)?;
         let client = self.client().await;
         let room = client.get_room(&room_id_parsed).context("Room not found")?;
-        
-        let int_level = matrix_sdk::ruma::Int::new(level).ok_or_else(|| anyhow::anyhow!("Invalid power level"))?;
-        room.update_power_levels(vec![(&user_id_parsed, int_level)]).await?;
+
+        let int_level = matrix_sdk::ruma::Int::new(level)
+            .ok_or_else(|| anyhow::anyhow!("Invalid power level"))?;
+        room.update_power_levels(vec![(&user_id_parsed, int_level)])
+            .await?;
         Ok(())
     }
 
     pub async fn update_room_power_level_settings(
-        &self, 
-        room_id: &str, 
+        &self,
+        room_id: &str,
         ban: Option<i64>,
         invite: Option<i64>,
         kick: Option<i64>,
@@ -927,7 +935,12 @@ impl MatrixEngine {
         Ok(())
     }
 
-    pub async fn kick_user(&self, room_id: &str, user_id: &str, reason: Option<String>) -> Result<()> {
+    pub async fn kick_user(
+        &self,
+        room_id: &str,
+        user_id: &str,
+        reason: Option<String>,
+    ) -> Result<()> {
         let room_id_parsed = RoomId::parse(room_id)?;
         let user_id_parsed = matrix_sdk::ruma::UserId::parse(user_id)?;
         let client = self.client().await;
@@ -936,7 +949,12 @@ impl MatrixEngine {
         Ok(())
     }
 
-    pub async fn ban_user(&self, room_id: &str, user_id: &str, reason: Option<String>) -> Result<()> {
+    pub async fn ban_user(
+        &self,
+        room_id: &str,
+        user_id: &str,
+        reason: Option<String>,
+    ) -> Result<()> {
         let room_id_parsed = RoomId::parse(room_id)?;
         let user_id_parsed = matrix_sdk::ruma::UserId::parse(user_id)?;
         let client = self.client().await;
@@ -948,19 +966,28 @@ impl MatrixEngine {
     pub async fn get_space_children(&self, space_id: &str) -> Result<Vec<RoomData>> {
         let space_id_parsed = RoomId::parse(space_id)?;
         let client = self.client().await;
-        let space = client.get_room(&space_id_parsed).context("Space not found")?;
-        
+        let space = client
+            .get_room(&space_id_parsed)
+            .context("Space not found")?;
+
         use matrix_sdk::ruma::events::space::child::SpaceChildEventContent;
-        use matrix_sdk_base::deserialized_responses::SyncOrStrippedState;
         use matrix_sdk::ruma::events::SyncStateEvent;
-        let children_events = space.get_state_events_static::<SpaceChildEventContent>().await?;
-        
+        use matrix_sdk_base::deserialized_responses::SyncOrStrippedState;
+        let children_events = space
+            .get_state_events_static::<SpaceChildEventContent>()
+            .await?;
+
         let mut children = Vec::new();
         for event in children_events {
             if let Ok(event) = event.deserialize() {
                 let (child_id, via_empty) = match event {
-                    SyncOrStrippedState::Sync(SyncStateEvent::Original(ev)) => (ev.state_key.to_owned(), ev.content.via.is_empty()),
-                    SyncOrStrippedState::Stripped(ev) => (ev.state_key.to_owned(), ev.content.via.map(|v| v.is_empty()).unwrap_or(true)),
+                    SyncOrStrippedState::Sync(SyncStateEvent::Original(ev)) => {
+                        (ev.state_key.to_owned(), ev.content.via.is_empty())
+                    }
+                    SyncOrStrippedState::Stripped(ev) => (
+                        ev.state_key.to_owned(),
+                        ev.content.via.map(|v| v.is_empty()).unwrap_or(true),
+                    ),
                     _ => continue,
                 };
 
@@ -990,16 +1017,23 @@ impl MatrixEngine {
         let space_id_parsed = RoomId::parse(space_id)?;
         let child_id_parsed = RoomId::parse(child_id)?;
         let client = self.client().await;
-        let space = client.get_room(&space_id_parsed).context("Space not found")?;
-        
+        let space = client
+            .get_room(&space_id_parsed)
+            .context("Space not found")?;
+
         use matrix_sdk::ruma::events::space::child::SpaceChildEventContent;
         let mut via = Vec::new();
-        if let Some(server) = client.user_id().and_then(|id| id.server_name().to_owned().into()) {
+        if let Some(server) = client
+            .user_id()
+            .and_then(|id| id.server_name().to_owned().into())
+        {
             via.push(server);
         }
-        
+
         let content = SpaceChildEventContent::new(via);
-        space.send_state_event_for_key(&child_id_parsed, content).await?;
+        space
+            .send_state_event_for_key(&child_id_parsed, content)
+            .await?;
         Ok(())
     }
 
@@ -1007,12 +1041,16 @@ impl MatrixEngine {
         let space_id_parsed = RoomId::parse(space_id)?;
         let child_id_parsed = RoomId::parse(child_id)?;
         let client = self.client().await;
-        let space = client.get_room(&space_id_parsed).context("Space not found")?;
-        
+        let space = client
+            .get_room(&space_id_parsed)
+            .context("Space not found")?;
+
         // To remove, send an empty via list
         use matrix_sdk::ruma::events::space::child::SpaceChildEventContent;
         let content = SpaceChildEventContent::new(Vec::new());
-        space.send_state_event_for_key(&child_id_parsed, content).await?;
+        space
+            .send_state_event_for_key(&child_id_parsed, content)
+            .await?;
         Ok(())
     }
 

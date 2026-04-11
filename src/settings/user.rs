@@ -1,8 +1,10 @@
-use cosmic::widget::{button, text, text_input, tooltip, tooltip::Position, Column, Row};
-use cosmic::iced::Alignment;
-use cosmic::{Element, Task, Action};
 use crate::matrix::MatrixEngine;
-use matrix_sdk::encryption::verification::{VerificationRequest, SasVerification, VerificationRequestState, SasState};
+use cosmic::iced::Alignment;
+use cosmic::widget::{button, text, text_input, tooltip, tooltip::Position, Column, Row};
+use cosmic::{Action, Element, Task};
+use matrix_sdk::encryption::verification::{
+    SasState, SasVerification, VerificationRequest, VerificationRequestState,
+};
 
 #[derive(Debug, Clone)]
 pub struct DeviceInfo {
@@ -48,7 +50,6 @@ pub struct State {
     pub verification_ui_state: VerificationUIState,
     pub device_delete_password: String,
 }
-
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -104,23 +105,41 @@ impl State {
                     let matrix_name = matrix.clone();
                     let t_name = Task::perform(
                         async move {
-                            matrix_name.client().await.account().get_display_name().await.map_err(|e| e.to_string())
+                            matrix_name
+                                .client()
+                                .await
+                                .account()
+                                .get_display_name()
+                                .await
+                                .map_err(|e| e.to_string())
                         },
-                        |res| Action::from(crate::Message::UserSettings(Message::ProfileLoaded(res))),
+                        |res| {
+                            Action::from(crate::Message::UserSettings(Message::ProfileLoaded(res)))
+                        },
                     );
 
                     let matrix_avatar = matrix.clone();
                     let t_avatar = Task::perform(
                         async move {
-                            matrix_avatar.client().await.account().get_avatar_url().await.map(|u| u.map(|uri| uri.to_string())).map_err(|e| e.to_string())
+                            matrix_avatar
+                                .client()
+                                .await
+                                .account()
+                                .get_avatar_url()
+                                .await
+                                .map(|u| u.map(|uri| uri.to_string()))
+                                .map_err(|e| e.to_string())
                         },
-                        |res| Action::from(crate::Message::UserSettings(Message::AvatarUrlLoaded(res))),
+                        |res| {
+                            Action::from(crate::Message::UserSettings(Message::AvatarUrlLoaded(
+                                res,
+                            )))
+                        },
                     );
 
-                    let t_devices = Task::perform(
-                        async move {},
-                        |_| Action::from(crate::Message::UserSettings(Message::LoadDevices)),
-                    );
+                    let t_devices = Task::perform(async move {}, |_| {
+                        Action::from(crate::Message::UserSettings(Message::LoadDevices))
+                    });
 
                     return Task::batch(vec![t_name, t_avatar, t_devices]);
                 }
@@ -150,10 +169,15 @@ impl State {
                             return Task::perform(
                                 async move {
                                     let uri = matrix_sdk::ruma::OwnedMxcUri::from(url.as_str());
-                                    let source = matrix_sdk::ruma::events::room::MediaSource::Plain(uri);
+                                    let source =
+                                        matrix_sdk::ruma::events::room::MediaSource::Plain(uri);
                                     matrix.fetch_media(source).await.map_err(|e| e.to_string())
                                 },
-                                |res| Action::from(crate::Message::UserSettings(Message::AvatarMediaFetched(res))),
+                                |res| {
+                                    Action::from(crate::Message::UserSettings(
+                                        Message::AvatarMediaFetched(res),
+                                    ))
+                                },
                             );
                         }
                     }
@@ -170,7 +194,8 @@ impl State {
             Message::AvatarMediaFetched(res) => {
                 match res {
                     Ok(data) => {
-                        self.avatar_handle = Some(cosmic::iced::widget::image::Handle::from_bytes(data));
+                        self.avatar_handle =
+                            Some(cosmic::iced::widget::image::Handle::from_bytes(data));
                     }
                     Err(e) => {
                         self.error = Some(format!("Failed to fetch avatar media: {}", e));
@@ -178,18 +203,20 @@ impl State {
                 }
                 Task::none()
             }
-            Message::SelectAvatar => {
-                Task::perform(
-                    async move {
-                        rfd::AsyncFileDialog::new()
-                            .add_filter("Image", &["png", "jpg", "jpeg", "webp"])
-                            .pick_file()
-                            .await
-                            .map(|f| f.path().to_path_buf())
-                    },
-                    |res| Action::from(crate::Message::UserSettings(Message::AvatarFileSelected(res))),
-                )
-            }
+            Message::SelectAvatar => Task::perform(
+                async move {
+                    rfd::AsyncFileDialog::new()
+                        .add_filter("Image", &["png", "jpg", "jpeg", "webp"])
+                        .pick_file()
+                        .await
+                        .map(|f| f.path().to_path_buf())
+                },
+                |res| {
+                    Action::from(crate::Message::UserSettings(Message::AvatarFileSelected(
+                        res,
+                    )))
+                },
+            ),
             Message::AvatarFileSelected(path_opt) => {
                 if let (Some(path), Some(matrix)) = (path_opt, matrix) {
                     self.is_uploading_avatar = true;
@@ -200,9 +227,18 @@ impl State {
                         async move {
                             let data = tokio::fs::read(&path).await.map_err(|e| e.to_string())?;
                             let mime_type = mime_guess::from_path(&path).first_or_octet_stream();
-                            matrix.client().await.account().upload_avatar(&mime_type, data).await.map(|uri| uri.to_string()).map_err(|e| e.to_string())
+                            matrix
+                                .client()
+                                .await
+                                .account()
+                                .upload_avatar(&mime_type, data)
+                                .await
+                                .map(|uri| uri.to_string())
+                                .map_err(|e| e.to_string())
                         },
-                        |res| Action::from(crate::Message::UserSettings(Message::AvatarUploaded(res))),
+                        |res| {
+                            Action::from(crate::Message::UserSettings(Message::AvatarUploaded(res)))
+                        },
                     );
                 }
                 Task::none()
@@ -232,10 +268,24 @@ impl State {
                         let new_name = self.display_name.clone();
                         return Task::perform(
                             async move {
-                                let name_opt = if new_name.is_empty() { None } else { Some(new_name.as_str()) };
-                                matrix.client().await.account().set_display_name(name_opt).await.map_err(|e| e.to_string())
+                                let name_opt = if new_name.is_empty() {
+                                    None
+                                } else {
+                                    Some(new_name.as_str())
+                                };
+                                matrix
+                                    .client()
+                                    .await
+                                    .account()
+                                    .set_display_name(name_opt)
+                                    .await
+                                    .map_err(|e| e.to_string())
                             },
-                            |res| Action::from(crate::Message::UserSettings(Message::ProfileSaved(res))),
+                            |res| {
+                                Action::from(crate::Message::UserSettings(Message::ProfileSaved(
+                                    res,
+                                )))
+                            },
                         );
                     }
                 }
@@ -290,14 +340,35 @@ impl State {
 
                     return Task::perform(
                         async move {
-                            let user_id = matrix.client().await.user_id().map(|u| u.to_string()).unwrap_or_default();
+                            let user_id = matrix
+                                .client()
+                                .await
+                                .user_id()
+                                .map(|u| u.to_string())
+                                .unwrap_or_default();
                             let identifier = matrix_sdk::ruma::api::client::uiaa::UserIdentifier::UserIdOrLocalpart(user_id);
-                            let password_auth = matrix_sdk::ruma::api::client::uiaa::Password::new(identifier, current_password);
-                            let auth_data = matrix_sdk::ruma::api::client::uiaa::AuthData::Password(password_auth);
+                            let password_auth = matrix_sdk::ruma::api::client::uiaa::Password::new(
+                                identifier,
+                                current_password,
+                            );
+                            let auth_data = matrix_sdk::ruma::api::client::uiaa::AuthData::Password(
+                                password_auth,
+                            );
 
-                            matrix.client().await.account().change_password(&new_password, Some(auth_data)).await.map(|_| ()).map_err(|e| e.to_string())
+                            matrix
+                                .client()
+                                .await
+                                .account()
+                                .change_password(&new_password, Some(auth_data))
+                                .await
+                                .map(|_| ())
+                                .map_err(|e| e.to_string())
                         },
-                        |res| Action::from(crate::Message::UserSettings(Message::PasswordChanged(res))),
+                        |res| {
+                            Action::from(crate::Message::UserSettings(Message::PasswordChanged(
+                                res,
+                            )))
+                        },
                     );
                 }
                 Task::none()
@@ -330,8 +401,13 @@ impl State {
                         async move {
                             let client = matrix.client().await;
                             let user_id = client.user_id().ok_or("No user ID")?;
-                            let current_device_id = client.device_id().ok_or("No device ID")?.to_string();
-                            let user_devices = client.encryption().get_user_devices(user_id).await.map_err(|e| e.to_string())?;
+                            let current_device_id =
+                                client.device_id().ok_or("No device ID")?.to_string();
+                            let user_devices = client
+                                .encryption()
+                                .get_user_devices(user_id)
+                                .await
+                                .map_err(|e| e.to_string())?;
 
                             let mut devices = Vec::new();
                             for device in user_devices.devices() {
@@ -347,7 +423,9 @@ impl State {
                             }
                             Ok(devices)
                         },
-                        |res| Action::from(crate::Message::UserSettings(Message::DevicesLoaded(res))),
+                        |res| {
+                            Action::from(crate::Message::UserSettings(Message::DevicesLoaded(res)))
+                        },
                     );
                 }
                 Task::none()
@@ -374,12 +452,24 @@ impl State {
                             let client = matrix.client().await;
                             let user_id = client.user_id().ok_or("No user ID")?;
                             let device_id_typed = matrix_sdk::ruma::OwnedDeviceId::from(device_id);
-                            let device = client.encryption().get_device(user_id, &device_id_typed).await.map_err(|e| e.to_string())?.ok_or("Device not found")?;
+                            let device = client
+                                .encryption()
+                                .get_device(user_id, &device_id_typed)
+                                .await
+                                .map_err(|e| e.to_string())?
+                                .ok_or("Device not found")?;
 
-                            let request = device.request_verification().await.map_err(|e| e.to_string())?;
+                            let request = device
+                                .request_verification()
+                                .await
+                                .map_err(|e| e.to_string())?;
                             Ok(request)
                         },
-                        |res| Action::from(crate::Message::UserSettings(Message::VerificationRequested(res))),
+                        |res| {
+                            Action::from(crate::Message::UserSettings(
+                                Message::VerificationRequested(res),
+                            ))
+                        },
                     );
                 }
                 Task::none()
@@ -388,10 +478,11 @@ impl State {
                 match res {
                     Ok(request) => {
                         self.active_verification_request = Some(request.clone());
-                        return Task::run(
-                            request.changes(),
-                            |state| Action::from(crate::Message::UserSettings(Message::VerificationRequestStateChanged(state)))
-                        );
+                        return Task::run(request.changes(), |state| {
+                            Action::from(crate::Message::UserSettings(
+                                Message::VerificationRequestStateChanged(state),
+                            ))
+                        });
                     }
                     Err(e) => {
                         self.error = Some(format!("Failed to request verification: {}", e));
@@ -406,10 +497,12 @@ impl State {
                         if let Some(request) = &self.active_verification_request {
                             let req = request.clone();
                             return Task::perform(
-                                async move {
-                                    req.start_sas().await.map_err(|e| e.to_string())
+                                async move { req.start_sas().await.map_err(|e| e.to_string()) },
+                                |res| {
+                                    Action::from(crate::Message::UserSettings(Message::SasStarted(
+                                        res,
+                                    )))
                                 },
-                                |res| Action::from(crate::Message::UserSettings(Message::SasStarted(res)))
                             );
                         }
                     }
@@ -432,13 +525,15 @@ impl State {
                 match res {
                     Ok(Some(sas)) => {
                         self.active_sas = Some(sas.clone());
-                        return Task::run(
-                            sas.changes(),
-                            |state| Action::from(crate::Message::UserSettings(Message::SasStateChanged(state)))
-                        );
+                        return Task::run(sas.changes(), |state| {
+                            Action::from(crate::Message::UserSettings(Message::SasStateChanged(
+                                state,
+                            )))
+                        });
                     }
                     Ok(None) => {
-                        self.error = Some("Other device does not support SAS verification.".to_string());
+                        self.error =
+                            Some("Other device does not support SAS verification.".to_string());
                         self.verification_ui_state = VerificationUIState::Cancelled;
                     }
                     Err(e) => {
@@ -450,10 +545,17 @@ impl State {
             }
             Message::SasStateChanged(state) => {
                 match state {
-                    SasState::KeysExchanged { emojis: Some(emojis), .. } => {
-                            let emoji_list = emojis.emojis.iter().map(|e| (e.symbol.to_string(), e.description.to_string())).collect();
-                            self.verification_ui_state = VerificationUIState::ShowingEmojis(emoji_list);
-                        }
+                    SasState::KeysExchanged {
+                        emojis: Some(emojis),
+                        ..
+                    } => {
+                        let emoji_list = emojis
+                            .emojis
+                            .iter()
+                            .map(|e| (e.symbol.to_string(), e.description.to_string()))
+                            .collect();
+                        self.verification_ui_state = VerificationUIState::ShowingEmojis(emoji_list);
+                    }
                     SasState::Done { .. } => {
                         self.verification_ui_state = VerificationUIState::Done;
                         self.active_sas = None;
@@ -473,10 +575,12 @@ impl State {
                 if let Some(sas) = &self.active_sas {
                     let sas = sas.clone();
                     return Task::perform(
-                        async move {
-                            sas.confirm().await.map_err(|e| e.to_string())
+                        async move { sas.confirm().await.map_err(|e| e.to_string()) },
+                        |res| {
+                            Action::from(crate::Message::UserSettings(Message::EmojisConfirmed(
+                                res,
+                            )))
                         },
-                        |res| Action::from(crate::Message::UserSettings(Message::EmojisConfirmed(res)))
                     );
                 }
                 Task::none()
@@ -495,7 +599,7 @@ impl State {
                         async move {
                             let _ = sas.cancel().await;
                         },
-                        |_| Action::from(crate::Message::NoOp)
+                        |_| Action::from(crate::Message::NoOp),
                     );
                 } else if let Some(req) = &self.active_verification_request {
                     let req = req.clone();
@@ -503,7 +607,7 @@ impl State {
                         async move {
                             let _ = req.cancel().await;
                         },
-                        |_| Action::from(crate::Message::NoOp)
+                        |_| Action::from(crate::Message::NoOp),
                     );
                 }
                 self.verification_ui_state = VerificationUIState::Cancelled;
@@ -536,7 +640,8 @@ impl State {
             }
             Message::SaveDeviceName(device_id) => {
                 if let Some(matrix) = matrix {
-                    if let Some(device) = self.devices.iter_mut().find(|d| d.device_id == device_id) {
+                    if let Some(device) = self.devices.iter_mut().find(|d| d.device_id == device_id)
+                    {
                         device.is_renaming = false;
                         let new_name = device.edit_name.clone();
                         let device_id_str = device_id.clone();
@@ -544,10 +649,22 @@ impl State {
                         let matrix = matrix.clone();
                         return Task::perform(
                             async move {
-                                let did = matrix_sdk::ruma::OwnedDeviceId::from(device_id_str.as_str());
-                                matrix.client().await.rename_device(&did, &new_name).await.map(|_| ()).map_err(|e| e.to_string())
+                                let did =
+                                    matrix_sdk::ruma::OwnedDeviceId::from(device_id_str.as_str());
+                                matrix
+                                    .client()
+                                    .await
+                                    .rename_device(&did, &new_name)
+                                    .await
+                                    .map(|_| ())
+                                    .map_err(|e| e.to_string())
                             },
-                            move |res| Action::from(crate::Message::UserSettings(Message::DeviceRenamed(device_id_for_closure, res))),
+                            move |res| {
+                                Action::from(crate::Message::UserSettings(Message::DeviceRenamed(
+                                    device_id_for_closure,
+                                    res,
+                                )))
+                            },
                         );
                     }
                 }
@@ -556,7 +673,9 @@ impl State {
             Message::DeviceRenamed(device_id, res) => {
                 match res {
                     Ok(_) => {
-                        if let Some(device) = self.devices.iter_mut().find(|d| d.device_id == device_id) {
+                        if let Some(device) =
+                            self.devices.iter_mut().find(|d| d.device_id == device_id)
+                        {
                             device.display_name = Some(device.edit_name.clone());
                         }
                     }
@@ -568,7 +687,8 @@ impl State {
             }
             Message::DeleteDevice(device_id) => {
                 if let Some(matrix) = matrix {
-                    if let Some(device) = self.devices.iter_mut().find(|d| d.device_id == device_id) {
+                    if let Some(device) = self.devices.iter_mut().find(|d| d.device_id == device_id)
+                    {
                         device.is_deleting = true;
                         let matrix = matrix.clone();
                         let device_id_str = device_id.clone();
@@ -578,16 +698,25 @@ impl State {
                             async move {
                                 let client = matrix.client().await;
                                 let user_id = client.user_id().ok_or("No user ID")?.to_string();
-                                let did = matrix_sdk::ruma::OwnedDeviceId::from(device_id_str.as_str());
+                                let did =
+                                    matrix_sdk::ruma::OwnedDeviceId::from(device_id_str.as_str());
 
-                                if let Err(e) = client.delete_devices(std::slice::from_ref(&did), None).await {
+                                if let Err(e) = client
+                                    .delete_devices(std::slice::from_ref(&did), None)
+                                    .await
+                                {
                                     if let Some(info) = e.as_uiaa_response() {
                                         if password.is_empty() {
-                                            return Err("Password required to delete device".to_string());
+                                            return Err(
+                                                "Password required to delete device".to_string()
+                                            );
                                         }
 
                                         let identifier = matrix_sdk::ruma::api::client::uiaa::UserIdentifier::UserIdOrLocalpart(user_id);
-                                        let mut password_auth = matrix_sdk::ruma::api::client::uiaa::Password::new(identifier, password);
+                                        let mut password_auth =
+                                            matrix_sdk::ruma::api::client::uiaa::Password::new(
+                                                identifier, password,
+                                            );
                                         password_auth.session = info.session.clone();
 
                                         client.delete_devices(&[did], Some(matrix_sdk::ruma::api::client::uiaa::AuthData::Password(password_auth))).await.map(|_| ()).map_err(|e| e.to_string())?;
@@ -597,7 +726,12 @@ impl State {
                                 }
                                 Ok(())
                             },
-                            move |res| Action::from(crate::Message::UserSettings(Message::DeviceDeleted(device_id_for_closure, res))),
+                            move |res| {
+                                Action::from(crate::Message::UserSettings(Message::DeviceDeleted(
+                                    device_id_for_closure,
+                                    res,
+                                )))
+                            },
                         );
                     }
                 }
@@ -630,16 +764,15 @@ impl State {
             let mut avatar_col = Column::new().spacing(10).align_x(Alignment::Center);
 
             if let Some(handle) = &self.avatar_handle {
-                avatar_col = avatar_col.push(
-                    cosmic::widget::image(handle.clone()).width(128).height(128)
-                );
+                avatar_col =
+                    avatar_col.push(cosmic::widget::image(handle.clone()).width(128).height(128));
             } else {
                 avatar_col = avatar_col.push(
                     cosmic::widget::container(text::body("No Avatar").size(16))
                         .width(128)
                         .height(128)
                         .align_x(Alignment::Center)
-                        .align_y(Alignment::Center)
+                        .align_y(Alignment::Center),
                 );
             }
 
@@ -658,12 +791,13 @@ impl State {
             col = col.push(avatar_col);
 
             col = col.push(
-                Column::new().spacing(5)
+                Column::new()
+                    .spacing(5)
                     .push(text::body("Display Name").size(16))
                     .push(
                         text_input("Enter your display name", &self.display_name)
-                            .on_input(Message::DisplayNameChanged)
-                    )
+                            .on_input(Message::DisplayNameChanged),
+                    ),
             );
 
             let mut save_row = Row::new().spacing(10);
@@ -683,54 +817,71 @@ impl State {
 
         if let Some(err) = &self.error {
             col = col.push(
-                Row::new().spacing(10).align_y(Alignment::Center)
+                Row::new()
+                    .spacing(10)
+                    .align_y(Alignment::Center)
                     .push(text::body(err))
-                    .push(button::text("Dismiss").on_press(Message::DismissError))
+                    .push(button::text("Dismiss").on_press(Message::DismissError)),
             );
         }
 
         col = col.push(
-            Column::new().spacing(5)
+            Column::new()
+                .spacing(5)
                 .push(text::title3("Change Password"))
                 .push(
                     text_input("Current password", &self.current_password)
                         .password()
-                        .on_input(Message::CurrentPasswordChanged)
+                        .on_input(Message::CurrentPasswordChanged),
                 )
                 .push(
                     text_input("New password", &self.new_password)
                         .password()
-                        .on_input(Message::NewPasswordChanged)
+                        .on_input(Message::NewPasswordChanged),
                 )
                 .push(
                     text_input("Confirm new password", &self.confirm_new_password)
                         .password()
-                        .on_input(Message::ConfirmNewPasswordChanged)
-                )
+                        .on_input(Message::ConfirmNewPasswordChanged),
+                ),
         );
 
-        let mut pw_btn = button::text(if self.is_changing_password { "Changing..." } else { "Change Password" });
-        if !self.is_changing_password && !self.current_password.is_empty() && !self.new_password.is_empty() && self.new_password == self.confirm_new_password {
+        let mut pw_btn = button::text(if self.is_changing_password {
+            "Changing..."
+        } else {
+            "Change Password"
+        });
+        if !self.is_changing_password
+            && !self.current_password.is_empty()
+            && !self.new_password.is_empty()
+            && self.new_password == self.confirm_new_password
+        {
             pw_btn = pw_btn.on_press(Message::ChangePassword);
         }
         col = col.push(pw_btn);
 
         if let Some(success) = &self.password_success {
             col = col.push(
-                Row::new().spacing(10).align_y(Alignment::Center)
+                Row::new()
+                    .spacing(10)
+                    .align_y(Alignment::Center)
                     .push(text::body(success))
-                    .push(button::text("Dismiss").on_press(Message::DismissPasswordSuccess))
+                    .push(button::text("Dismiss").on_press(Message::DismissPasswordSuccess)),
             );
         }
 
-        let mut devices_col = Column::new().spacing(10)
+        let mut devices_col = Column::new()
+            .spacing(10)
             .push(text::title3("Devices & Sessions"));
 
         if self.is_loading_devices {
             devices_col = devices_col.push(text::body("Loading devices..."));
         } else {
             for device in &self.devices {
-                let name = device.display_name.clone().unwrap_or_else(|| "Unknown Device".to_string());
+                let name = device
+                    .display_name
+                    .clone()
+                    .unwrap_or_else(|| "Unknown Device".to_string());
                 let mut row = Row::new().spacing(10).align_y(Alignment::Center);
 
                 if device.is_renaming {
@@ -741,23 +892,31 @@ impl State {
                                     let id = device.device_id.clone();
                                     move |v| Message::EditDeviceNameChanged(id.clone(), v)
                                 })
-                                .on_submit(|_| Message::SaveDeviceName(device.device_id.clone()))
+                                .on_submit(|_| Message::SaveDeviceName(device.device_id.clone())),
                         )
-                        .push(button::text("Save").on_press(Message::SaveDeviceName(device.device_id.clone())))
-                        .push(button::text("Cancel").on_press(Message::CancelRenameDevice(device.device_id.clone())));
+                        .push(
+                            button::text("Save")
+                                .on_press(Message::SaveDeviceName(device.device_id.clone())),
+                        )
+                        .push(
+                            button::text("Cancel")
+                                .on_press(Message::CancelRenameDevice(device.device_id.clone())),
+                        );
                 } else {
                     row = row
                         .push(text::body(name).size(14))
                         .push(text::body(format!("({})", device.device_id)).size(12))
                         .push(tooltip(
-                            button::text("✏️").on_press(Message::StartRenameDevice(device.device_id.clone())),
+                            button::text("✏️")
+                                .on_press(Message::StartRenameDevice(device.device_id.clone())),
                             text::body("Rename Device"),
-                            Position::Top
+                            Position::Top,
                         ));
                 }
 
                 if device.is_current {
-                    row = row.push(cosmic::widget::container(text::body("Current").size(12)).padding(2));
+                    row = row
+                        .push(cosmic::widget::container(text::body("Current").size(12)).padding(2));
                 }
 
                 row = row.push(cosmic::widget::space().width(cosmic::iced::Length::Fill));
@@ -767,11 +926,18 @@ impl State {
                 } else {
                     row = row.push(text::body("❌ Unverified").size(14));
                     if !device.is_current {
-                        row = row.push(button::text("Verify").on_press(Message::VerifyDevice(device.device_id.clone())));
+                        row = row.push(
+                            button::text("Verify")
+                                .on_press(Message::VerifyDevice(device.device_id.clone())),
+                        );
                     }
                 }
 
-                let mut del_btn = button::text(if device.is_deleting { "Deleting..." } else { "🗑️ Delete" });
+                let mut del_btn = button::text(if device.is_deleting {
+                    "Deleting..."
+                } else {
+                    "🗑️ Delete"
+                });
                 if !device.is_deleting {
                     del_btn = del_btn.on_press(Message::DeleteDevice(device.device_id.clone()));
                 }
@@ -781,54 +947,63 @@ impl State {
             }
 
             devices_col = devices_col.push(
-                Column::new().spacing(5)
+                Column::new()
+                    .spacing(5)
                     .push(text::body("Password to delete devices:").size(12))
                     .push(
                         text_input("Password", &self.device_delete_password)
                             .password()
-                            .on_input(Message::DeviceDeletePasswordChanged)
-                    )
+                            .on_input(Message::DeviceDeletePasswordChanged),
+                    ),
             );
         }
 
         match &self.verification_ui_state {
             VerificationUIState::WaitingForOtherDevice => {
                 devices_col = devices_col.push(
-                    Column::new().spacing(10).align_x(Alignment::Center)
-                        .push(text::body("Verification requested. Please accept it on the other device."))
-                        .push(button::text("Cancel Verification").on_press(Message::CancelVerification))
+                    Column::new()
+                        .spacing(10)
+                        .align_x(Alignment::Center)
+                        .push(text::body(
+                            "Verification requested. Please accept it on the other device.",
+                        ))
+                        .push(
+                            button::text("Cancel Verification")
+                                .on_press(Message::CancelVerification),
+                        ),
                 );
             }
             VerificationUIState::ShowingEmojis(emojis) => {
                 let mut emoji_row = Row::new().spacing(10).align_y(Alignment::Center);
                 for (symbol, desc) in emojis {
                     emoji_row = emoji_row.push(
-                        Column::new().spacing(2).align_x(Alignment::Center)
+                        Column::new()
+                            .spacing(2)
+                            .align_x(Alignment::Center)
                             .push(text::title1(symbol))
-                            .push(text::body(desc).size(12))
+                            .push(text::body(desc).size(12)),
                     );
                 }
 
                 devices_col = devices_col.push(
-                    Column::new().spacing(10).align_x(Alignment::Center)
+                    Column::new()
+                        .spacing(10)
+                        .align_x(Alignment::Center)
                         .push(text::body("Do these emojis match the other device?"))
                         .push(emoji_row)
                         .push(
-                            Row::new().spacing(10)
+                            Row::new()
+                                .spacing(10)
                                 .push(button::text("Match!").on_press(Message::ConfirmEmojis))
-                                .push(button::text("Cancel").on_press(Message::CancelVerification))
-                        )
+                                .push(button::text("Cancel").on_press(Message::CancelVerification)),
+                        ),
                 );
             }
             VerificationUIState::Done => {
-                devices_col = devices_col.push(
-                    text::body("Verification successful!")
-                );
+                devices_col = devices_col.push(text::body("Verification successful!"));
             }
             VerificationUIState::Cancelled => {
-                devices_col = devices_col.push(
-                    text::body("Verification cancelled.")
-                );
+                devices_col = devices_col.push(text::body("Verification cancelled."));
             }
             VerificationUIState::None => {}
         }

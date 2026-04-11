@@ -1,4 +1,4 @@
-pub mod user;
+pub mod app;
 pub mod room;
 pub mod space;
-pub mod app;
+pub mod user;

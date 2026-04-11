@@ -1,6 +1,8 @@
-use cosmic::{Application, Task, Action};
-use crate::{Constellations, Message, Url, MediaSource, redact_url, OwnedRoomId, ConstellationsItem, ApplyVectorDiffExt, matrix};
-
+use crate::{
+    matrix, redact_url, ApplyVectorDiffExt, Constellations, ConstellationsItem, MediaSource,
+    Message, OwnedRoomId, Url,
+};
+use cosmic::{Action, Application, Task};
 
 impl Constellations {
     pub fn handle_engine_ready(
@@ -18,7 +20,12 @@ impl Constellations {
                             let sync_res = engine.start_sync().await;
                             (user_id, sync_res)
                         } else {
-                            (None, Err(matrix::SyncError::Generic("No session to restore".to_string())))
+                            (
+                                None,
+                                Err(matrix::SyncError::Generic(
+                                    "No session to restore".to_string(),
+                                )),
+                            )
                         }
                     },
                     |(user_id, sync_res)| {
@@ -49,7 +56,7 @@ impl Constellations {
         if self.user_id.is_none() {
             return title_task;
         }
-        
+
         match sync_res {
             Ok(_) => {}
             Err(matrix::SyncError::MissingSlidingSyncSupport) => {
@@ -181,9 +188,7 @@ impl Constellations {
         }
     }
 
-    pub fn handle_load_more(
-        &mut self,
-    ) -> Task<Action<<Constellations as Application>::Message>> {
+    pub fn handle_load_more(&mut self) -> Task<Action<<Constellations as Application>::Message>> {
         if let (Some(matrix), Some(room_id)) = (&self.matrix, &self.selected_room) {
             let matrix = matrix.clone();
             let room_id = room_id.clone();
