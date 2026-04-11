@@ -24,9 +24,7 @@ use tokio::sync::RwLock;
 use tracing::{error, info};
 use url::Url;
 
-const BACKOFF_INITIAL: u64 = 2;
-const BACKOFF_MAX: u64 = 60;
-const BACKOFF_RESET_THRESHOLD: u64 = 30;
+
 const OIDC_CALLBACK_URL: &str = "fi.joonastuomi.CosmicExtConstellations://callback";
 const OIDC_CLIENT_ID: &str = "fi.joonastuomi.CosmicExtConstellations";
 
@@ -243,25 +241,6 @@ impl std::fmt::Debug for MatrixEngineInner {
     }
 }
 
-struct Backoff {
-    current: u64,
-    max: u64,
-}
-
-impl Backoff {
-    fn new(initial: u64, max: u64) -> Self {
-        Self {
-            current: initial,
-            max,
-        }
-    }
-
-    fn next(&mut self) -> u64 {
-        let next = self.current;
-        self.current = (self.current * 2).min(self.max);
-        next
-    }
-}
 
 impl MatrixEngine {
     pub async fn new(data_dir: PathBuf) -> Result<Self> {
@@ -798,32 +777,19 @@ impl MatrixEngine {
         if let Some(sync_service) = &inner.sync_service {
             let sync_service = sync_service.clone();
             let handle = tokio::spawn(async move {
-                let mut backoff = Backoff::new(BACKOFF_INITIAL, BACKOFF_MAX);
-                loop {
-                    let current_backoff = backoff.current;
-                    info!(
-                        "Starting Matrix sync service (current backoff: {}s)...",
-                        current_backoff
-                    );
-                    let start_time = std::time::Instant::now();
-
-                    // The start() future completes when the service is stopped or fails.
-                    sync_service.start().await;
-
-                    let elapsed = start_time.elapsed();
-                    let state = sync_service.state().get();
-
-                    if elapsed.as_secs() > BACKOFF_RESET_THRESHOLD {
-                        info!(
-                            "Matrix sync service ran for {:?}, resetting backoff.",
-                            elapsed
-                        );
-                        backoff = Backoff::new(BACKOFF_INITIAL, BACKOFF_MAX);
+                info!("Starting Matrix sync service...");
+                sync_service.start().await;
+                
+                let mut state_stream = sync_service.state();
+                while let Some(state) = state_stream.next().await {
+                    match state {
+                        matrix_sdk_ui::sync_service::State::Terminated
+                        | matrix_sdk_ui::sync_service::State::Error(_) => {
+                            error!("Matrix sync service stopped or failed. State: {:?}", state);
+                            break;
+                        }
+                        _ => {}
                     }
-
-                    let next_delay = backoff.next();
-                    error!("Matrix sync service stopped after {:?}. State: {:?}. Retrying in {} seconds...", elapsed, state, next_delay);
-                    tokio::time::sleep(std::time::Duration::from_secs(next_delay)).await;
                 }
             });
             inner.sync_handle = Some(handle);
