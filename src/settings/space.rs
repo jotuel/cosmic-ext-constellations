@@ -112,8 +112,7 @@ impl State {
                                     async move {
                                         use matrix_sdk::ruma::events::room::MediaSource;
                                         let mxc_uri =
-                                            <&matrix_sdk::ruma::MxcUri>::try_from(mxc.as_str())
-                                                .map_err(|e| e.to_string())?;
+                                            <&matrix_sdk::ruma::MxcUri>::from(mxc.as_str());
                                         let source = MediaSource::Plain(mxc_uri.to_owned());
                                         engine.fetch_media(source).await.map_err(|e| e.to_string())
                                     },
