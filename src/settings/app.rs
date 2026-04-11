@@ -1,6 +1,6 @@
-use cosmic::widget::{button, text, Column, Row, toggler};
 use cosmic::iced::Alignment;
-use cosmic::{Element, Task, Action};
+use cosmic::widget::{button, text, toggler, Column, Row};
+use cosmic::{Action, Element, Task};
 
 #[derive(Debug, Clone, Default)]
 pub struct State {
@@ -20,10 +20,7 @@ pub enum Message {
 }
 
 impl State {
-    pub fn update(
-        &mut self,
-        message: Message,
-    ) -> Task<Action<crate::Message>> {
+    pub fn update(&mut self, message: Message) -> Task<Action<crate::Message>> {
         match message {
             Message::ToggleSyncIndicator(show) => {
                 self.show_sync_indicator = show;
@@ -41,9 +38,9 @@ impl State {
                 self.compact_mode = compact;
                 Task::done(Action::from(crate::Message::AppSettingChanged))
             }
-            Message::ClearCache => {
-                Task::done(Action::from(crate::Message::AppSettings(Message::ClearCache)))
-            }
+            Message::ClearCache => Task::done(Action::from(crate::Message::AppSettings(
+                Message::ClearCache,
+            ))),
         }
     }
 
@@ -58,7 +55,7 @@ impl State {
                 .align_y(Alignment::Center)
                 .push(text::body("Show Sync Indicator"))
                 .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
-                .push(toggler(self.show_sync_indicator).on_toggle(Message::ToggleSyncIndicator))
+                .push(toggler(self.show_sync_indicator).on_toggle(Message::ToggleSyncIndicator)),
         );
         col = col.push(text::body("Display a small indicator in the header when the app is actively syncing with Matrix servers.").size(12));
 
@@ -68,7 +65,10 @@ impl State {
                 .align_y(Alignment::Center)
                 .push(text::body("Send Typing Notifications"))
                 .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
-                .push(toggler(self.send_typing_notifications).on_toggle(Message::ToggleTypingNotifications))
+                .push(
+                    toggler(self.send_typing_notifications)
+                        .on_toggle(Message::ToggleTypingNotifications),
+                ),
         );
 
         col = col.push(
@@ -77,7 +77,7 @@ impl State {
                 .align_y(Alignment::Center)
                 .push(text::body("Render Markdown"))
                 .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
-                .push(toggler(self.render_markdown).on_toggle(Message::ToggleMarkdown))
+                .push(toggler(self.render_markdown).on_toggle(Message::ToggleMarkdown)),
         );
 
         col = col.push(
@@ -86,7 +86,7 @@ impl State {
                 .align_y(Alignment::Center)
                 .push(text::body("Compact Mode"))
                 .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
-                .push(toggler(self.compact_mode).on_toggle(Message::ToggleCompactMode))
+                .push(toggler(self.compact_mode).on_toggle(Message::ToggleCompactMode)),
         );
 
         col = col.push(text::title3("Maintenance"));
@@ -96,7 +96,7 @@ impl State {
                 .align_y(Alignment::Center)
                 .push(text::body("Media Cache"))
                 .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
-                .push(button::text("Clear Cache").on_press(Message::ClearCache))
+                .push(button::text("Clear Cache").on_press(Message::ClearCache)),
         );
 
         col.into()

@@ -2,18 +2,16 @@
 
 mod handlers;
 mod ipc;
-mod view;
 mod matrix;
 pub mod settings;
+mod view;
 
 use anyhow::Result;
 use cosmic::iced::widget::image;
 use cosmic::iced::{Alignment, Subscription};
 use cosmic::widget::icon::Named;
 use cosmic::widget::menu::action::MenuAction;
-use cosmic::widget::{
-    Column, Row, button, container, scrollable, text, text_input
-};
+use cosmic::widget::{button, container, scrollable, text, text_input, Column, Row};
 use cosmic::{Action, Application, Core, Element, Task};
 use eyeball_im::Vector;
 use matrix_sdk::ruma::events::room::MediaSource;
@@ -40,16 +38,17 @@ pub fn parse_markdown(text: &str) -> Vec<PreviewEvent> {
     let parser = pulldown_cmark::Parser::new(text);
     for event in parser {
         match event {
-            pulldown_cmark::Event::Start(pulldown_cmark::Tag::Heading { .. }) =>
-                events.push(PreviewEvent::StartHeading),
-            pulldown_cmark::Event::End(pulldown_cmark::TagEnd::Paragraph | pulldown_cmark::TagEnd::Heading(_)) =>
-                events.push(PreviewEvent::EndBlock),
-            pulldown_cmark::Event::Text(t) =>
-                events.push(PreviewEvent::Text(t.to_string())),
-            pulldown_cmark::Event::Code(c) =>
-                events.push(PreviewEvent::Code(c.to_string())),
-            pulldown_cmark::Event::SoftBreak | pulldown_cmark::Event::HardBreak =>
-                events.push(PreviewEvent::Break),
+            pulldown_cmark::Event::Start(pulldown_cmark::Tag::Heading { .. }) => {
+                events.push(PreviewEvent::StartHeading)
+            }
+            pulldown_cmark::Event::End(
+                pulldown_cmark::TagEnd::Paragraph | pulldown_cmark::TagEnd::Heading(_),
+            ) => events.push(PreviewEvent::EndBlock),
+            pulldown_cmark::Event::Text(t) => events.push(PreviewEvent::Text(t.to_string())),
+            pulldown_cmark::Event::Code(c) => events.push(PreviewEvent::Code(c.to_string())),
+            pulldown_cmark::Event::SoftBreak | pulldown_cmark::Event::HardBreak => {
+                events.push(PreviewEvent::Break)
+            }
             _ => {}
         }
     }
@@ -327,8 +326,6 @@ impl<T: Clone> ApplyVectorDiffExt<T> for eyeball_im::Vector<T> {
     }
 }
 
-
-
 impl Application for Constellations {
     type Executor = cosmic::executor::Default;
     type Message = Message;
@@ -398,7 +395,9 @@ impl Application for Constellations {
         (app, Task::batch(tasks))
     }
 
-    fn context_drawer(&self) -> Option<cosmic::app::context_drawer::ContextDrawer<'_, Self::Message>> {
+    fn context_drawer(
+        &self,
+    ) -> Option<cosmic::app::context_drawer::ContextDrawer<'_, Self::Message>> {
         if let Some(panel) = &self.current_settings_panel {
             let title = match panel {
                 SettingsPanel::App => "App Settings",
@@ -416,7 +415,7 @@ impl Application for Constellations {
 
             Some(
                 cosmic::app::context_drawer::context_drawer(panel_content, Message::CloseSettings)
-                    .title(title)
+                    .title(title),
             )
         } else {
             None
@@ -426,8 +425,7 @@ impl Application for Constellations {
     fn update(&mut self, message: Message) -> Task<Action<Self::Message>> {
         match message {
             Message::EngineReady(res) => self.handle_engine_ready(res),
-            Message::UserReady(user_id, sync_res) =>
-                self.handle_user_ready(user_id, sync_res),
+            Message::UserReady(user_id, sync_res) => self.handle_user_ready(user_id, sync_res),
 
             Message::Matrix(event) => self.handle_matrix_event(event),
             Message::LoadMore => self.handle_load_more(),
@@ -456,7 +454,7 @@ impl Application for Constellations {
                                 async move {
                                     let _ = matrix.typing_notice(&room_id, typing).await;
                                 },
-                                |_| Action::from(Message::NoOp)
+                                |_| Action::from(Message::NoOp),
                             );
                         }
                     }
@@ -536,14 +534,22 @@ impl Application for Constellations {
                 self.current_settings_panel = Some(panel.clone());
                 self.core.set_show_context(true);
                 if panel == SettingsPanel::User {
-                    return self.user_settings.update(settings::user::Message::LoadProfile, &self.matrix);
+                    return self
+                        .user_settings
+                        .update(settings::user::Message::LoadProfile, &self.matrix);
                 } else if panel == SettingsPanel::Room {
                     if let Some(room_id) = &self.selected_room {
-                        return self.room_settings.update(settings::room::Message::LoadRoom(room_id.clone()), &self.matrix);
+                        return self.room_settings.update(
+                            settings::room::Message::LoadRoom(room_id.clone()),
+                            &self.matrix,
+                        );
                     }
                 } else if panel == SettingsPanel::Space {
                     if let Some(space_id) = &self.selected_space {
-                        return self.space_settings.update(settings::space::Message::LoadSpace(space_id.to_string()), &self.matrix);
+                        return self.space_settings.update(
+                            settings::space::Message::LoadSpace(space_id.to_string()),
+                            &self.matrix,
+                        );
                     }
                 }
                 Task::none()
@@ -553,24 +559,16 @@ impl Application for Constellations {
                 self.core.set_show_context(false);
                 Task::none()
             }
-            Message::UserSettings(msg) => {
-                self.user_settings.update(msg, &self.matrix)
-            }
-            Message::RoomSettings(msg) => {
-                self.room_settings.update(msg, &self.matrix)
-            }
-            Message::SpaceSettings(msg) => {
-                self.space_settings.update(msg, &self.matrix)
-            }
-            Message::AppSettings(msg) => {
-                match msg {
-                    settings::app::Message::ClearCache => {
-                        self.media_cache.clear();
-                        Task::none()
-                    }
-                    _ => self.app_settings.update(msg)
+            Message::UserSettings(msg) => self.user_settings.update(msg, &self.matrix),
+            Message::RoomSettings(msg) => self.room_settings.update(msg, &self.matrix),
+            Message::SpaceSettings(msg) => self.space_settings.update(msg, &self.matrix),
+            Message::AppSettings(msg) => match msg {
+                settings::app::Message::ClearCache => {
+                    self.media_cache.clear();
+                    Task::none()
                 }
-            }
+                _ => self.app_settings.update(msg),
+            },
             Message::AppSettingChanged => Task::none(),
         }
     }
@@ -579,9 +577,11 @@ impl Application for Constellations {
         if self.is_initializing {
             let content = Column::new()
                 .push(
-                    cosmic::widget::svg(cosmic::widget::svg::Handle::from_memory(include_bytes!("../res/const.svg")))
-                        .width(cosmic::iced::Length::Fixed(128.0))
-                        .height(cosmic::iced::Length::Fixed(128.0))
+                    cosmic::widget::svg(cosmic::widget::svg::Handle::from_memory(include_bytes!(
+                        "../res/const.svg"
+                    )))
+                    .width(cosmic::iced::Length::Fixed(128.0))
+                    .height(cosmic::iced::Length::Fixed(128.0)),
                 )
                 .push(cosmic::widget::progress_bar::indeterminate_circular())
                 .spacing(32)
@@ -655,7 +655,8 @@ impl Application for Constellations {
                 .push(text::title3(space_name))
                 .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
                 .push(
-                    button::icon(Named::new("emblem-system")).tooltip("Space Settings")
+                    button::icon(Named::new("emblem-system"))
+                        .tooltip("Space Settings")
                         .on_press(Message::OpenSettings(SettingsPanel::Space)),
                 );
             room_list = room_list.push(container(space_header).padding(5));
@@ -722,7 +723,9 @@ impl Application for Constellations {
                 .push(text::title3(room_name))
                 .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
                 .push(
-                    button::icon(Named::new("emblem-system")).tooltip("Room Settings").on_press(Message::OpenSettings(SettingsPanel::Room)),
+                    button::icon(Named::new("emblem-system"))
+                        .tooltip("Room Settings")
+                        .on_press(Message::OpenSettings(SettingsPanel::Room)),
                 );
             content = content.push(room_header);
 

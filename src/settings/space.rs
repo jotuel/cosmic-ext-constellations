@@ -1,7 +1,7 @@
-use cosmic::widget::{button, text, text_input, Column, Row};
-use cosmic::iced::Alignment;
-use cosmic::{Element, Task, Action};
 use crate::matrix::{MatrixEngine, RoomData};
+use cosmic::iced::Alignment;
+use cosmic::widget::{button, text, text_input, Column, Row};
+use cosmic::{Action, Element, Task};
 use matrix_sdk::ruma::RoomId;
 
 #[derive(Debug, Clone, Default)]
@@ -69,9 +69,11 @@ impl State {
                     let engine = matrix.clone();
                     Task::perform(
                         async move {
-                            let room_id_parsed = RoomId::parse(&space_id).map_err(|e| e.to_string())?;
+                            let room_id_parsed =
+                                RoomId::parse(&space_id).map_err(|e| e.to_string())?;
                             let client = engine.client().await;
-                            let room = client.get_room(&room_id_parsed)
+                            let room = client
+                                .get_room(&room_id_parsed)
                                 .ok_or_else(|| "Space not found".to_string())?;
 
                             Ok(SpaceInfo {
@@ -80,7 +82,9 @@ impl State {
                                 avatar_url: room.avatar_url().map(|u| u.to_string()),
                             })
                         },
-                        |res| Action::from(crate::Message::SpaceSettings(Message::SpaceLoaded(res)))
+                        |res| {
+                            Action::from(crate::Message::SpaceSettings(Message::SpaceLoaded(res)))
+                        },
                     )
                 } else {
                     Task::none()
@@ -96,7 +100,7 @@ impl State {
                         self.original_topic = info.topic;
                         self.avatar_url = info.avatar_url;
                         self.error = None;
-                        
+
                         let mut tasks = Vec::new();
 
                         if let Some(url) = &self.avatar_url {
@@ -107,16 +111,24 @@ impl State {
                                 tasks.push(Task::perform(
                                     async move {
                                         use matrix_sdk::ruma::events::room::MediaSource;
-                                        let mxc_uri = <&matrix_sdk::ruma::MxcUri>::try_from(mxc.as_str()).map_err(|e| e.to_string())?;
+                                        let mxc_uri =
+                                            <&matrix_sdk::ruma::MxcUri>::try_from(mxc.as_str())
+                                                .map_err(|e| e.to_string())?;
                                         let source = MediaSource::Plain(mxc_uri.to_owned());
                                         engine.fetch_media(source).await.map_err(|e| e.to_string())
                                     },
-                                    |res| Action::from(crate::Message::SpaceSettings(Message::AvatarMediaFetched(res)))
+                                    |res| {
+                                        Action::from(crate::Message::SpaceSettings(
+                                            Message::AvatarMediaFetched(res),
+                                        ))
+                                    },
                                 ));
                             }
                         }
 
-                        tasks.push(Task::done(Action::from(crate::Message::SpaceSettings(Message::LoadChildren))));
+                        tasks.push(Task::done(Action::from(crate::Message::SpaceSettings(
+                            Message::LoadChildren,
+                        ))));
                         return Task::batch(tasks);
                     }
                     Err(e) => {
@@ -129,7 +141,8 @@ impl State {
                 self.is_loading_avatar = false;
                 match res {
                     Ok(data) => {
-                        self.avatar_handle = Some(cosmic::iced::widget::image::Handle::from_bytes(data));
+                        self.avatar_handle =
+                            Some(cosmic::iced::widget::image::Handle::from_bytes(data));
                     }
                     Err(e) => {
                         self.error = Some(format!("Failed to fetch avatar: {}", e));
@@ -137,33 +150,44 @@ impl State {
                 }
                 Task::none()
             }
-            Message::SelectAvatar => {
-                Task::perform(
-                    async {
-                        rfd::AsyncFileDialog::new()
-                            .add_filter("Images", &["png", "jpg", "jpeg", "webp", "gif"])
-                            .set_title("Select Space Avatar")
-                            .pick_file()
-                            .await
-                            .map(|handle| handle.path().to_owned())
-                    },
-                    |res| Action::from(crate::Message::SpaceSettings(Message::AvatarFileSelected(res)))
-                )
-            }
+            Message::SelectAvatar => Task::perform(
+                async {
+                    rfd::AsyncFileDialog::new()
+                        .add_filter("Images", &["png", "jpg", "jpeg", "webp", "gif"])
+                        .set_title("Select Space Avatar")
+                        .pick_file()
+                        .await
+                        .map(|handle| handle.path().to_owned())
+                },
+                |res| {
+                    Action::from(crate::Message::SpaceSettings(Message::AvatarFileSelected(
+                        res,
+                    )))
+                },
+            ),
             Message::AvatarFileSelected(path_opt) => {
                 if let Some(path) = path_opt {
                     if let Some(matrix) = matrix {
                         self.is_uploading_avatar = true;
                         let engine = matrix.clone();
                         let room_id = self.space_id.clone().unwrap_or_default();
-                        
+
                         return Task::perform(
                             async move {
                                 let data = std::fs::read(&path).map_err(|e| e.to_string())?;
-                                let mime = mime_guess::from_path(&path).first_raw().unwrap_or("image/jpeg");
-                                engine.upload_room_avatar(&room_id, data, mime).await.map_err(|e| e.to_string())
+                                let mime = mime_guess::from_path(&path)
+                                    .first_raw()
+                                    .unwrap_or("image/jpeg");
+                                engine
+                                    .upload_room_avatar(&room_id, data, mime)
+                                    .await
+                                    .map_err(|e| e.to_string())
                             },
-                            |res| Action::from(crate::Message::SpaceSettings(Message::AvatarUploaded(res)))
+                            |res| {
+                                Action::from(crate::Message::SpaceSettings(
+                                    Message::AvatarUploaded(res),
+                                ))
+                            },
                         );
                     }
                 }
@@ -191,9 +215,16 @@ impl State {
                         let space_id_clone = space_id.clone();
                         return Task::perform(
                             async move {
-                                engine.get_space_children(&space_id_clone).await.map_err(|e| e.to_string())
+                                engine
+                                    .get_space_children(&space_id_clone)
+                                    .await
+                                    .map_err(|e| e.to_string())
                             },
-                            |res| Action::from(crate::Message::SpaceSettings(Message::ChildrenLoaded(res)))
+                            |res| {
+                                Action::from(crate::Message::SpaceSettings(
+                                    Message::ChildrenLoaded(res),
+                                ))
+                            },
                         );
                     }
                 }
@@ -235,14 +266,24 @@ impl State {
                         Task::perform(
                             async move {
                                 if new_name != original_name {
-                                    engine.set_room_name(&space_id_clone, new_name).await.map_err(|e| e.to_string())?;
+                                    engine
+                                        .set_room_name(&space_id_clone, new_name)
+                                        .await
+                                        .map_err(|e| e.to_string())?;
                                 }
                                 if new_topic != original_topic {
-                                    engine.set_room_topic(&space_id_clone, new_topic).await.map_err(|e| e.to_string())?;
+                                    engine
+                                        .set_room_topic(&space_id_clone, new_topic)
+                                        .await
+                                        .map_err(|e| e.to_string())?;
                                 }
                                 Ok(())
                             },
-                            |res| Action::from(crate::Message::SpaceSettings(Message::SpaceSaved(res)))
+                            |res| {
+                                Action::from(crate::Message::SpaceSettings(Message::SpaceSaved(
+                                    res,
+                                )))
+                            },
                         )
                     } else {
                         Task::none()
@@ -274,9 +315,16 @@ impl State {
                         let child_id_clone = self.new_child_id.clone();
                         return Task::perform(
                             async move {
-                                engine.add_space_child(&space_id_clone, &child_id_clone).await.map_err(|e| e.to_string())
+                                engine
+                                    .add_space_child(&space_id_clone, &child_id_clone)
+                                    .await
+                                    .map_err(|e| e.to_string())
                             },
-                            |res| Action::from(crate::Message::SpaceSettings(Message::ChildAdded(res)))
+                            |res| {
+                                Action::from(crate::Message::SpaceSettings(Message::ChildAdded(
+                                    res,
+                                )))
+                            },
                         );
                     }
                 }
@@ -287,7 +335,9 @@ impl State {
                 match res {
                     Ok(_) => {
                         self.new_child_id = String::new();
-                        return Task::done(Action::from(crate::Message::SpaceSettings(Message::LoadChildren)));
+                        return Task::done(Action::from(crate::Message::SpaceSettings(
+                            Message::LoadChildren,
+                        )));
                     }
                     Err(e) => {
                         self.error = Some(format!("Failed to add child: {}", e));
@@ -304,9 +354,17 @@ impl State {
                         let child_id_for_task = child_id.clone();
                         return Task::perform(
                             async move {
-                                engine.remove_space_child(&space_id_clone, &child_id_for_task).await.map_err(|e| e.to_string())
+                                engine
+                                    .remove_space_child(&space_id_clone, &child_id_for_task)
+                                    .await
+                                    .map_err(|e| e.to_string())
                             },
-                            move |res| Action::from(crate::Message::SpaceSettings(Message::ChildRemoved(child_id_clone, res)))
+                            move |res| {
+                                Action::from(crate::Message::SpaceSettings(Message::ChildRemoved(
+                                    child_id_clone,
+                                    res,
+                                )))
+                            },
                         );
                     }
                 }
@@ -315,7 +373,9 @@ impl State {
             Message::ChildRemoved(_child_id, res) => {
                 match res {
                     Ok(_) => {
-                        return Task::done(Action::from(crate::Message::SpaceSettings(Message::LoadChildren)));
+                        return Task::done(Action::from(crate::Message::SpaceSettings(
+                            Message::LoadChildren,
+                        )));
                     }
                     Err(e) => {
                         self.error = Some(format!("Failed to remove child: {}", e));
@@ -350,7 +410,7 @@ impl State {
                     .spacing(10)
                     .align_y(Alignment::Center)
                     .push(text::body(error))
-                    .push(button::text("Dismiss").on_press(Message::DismissError))
+                    .push(button::text("Dismiss").on_press(Message::DismissError)),
             );
         }
 
@@ -359,46 +419,55 @@ impl State {
         // Avatar Section
         let mut avatar_row = Row::new().spacing(20).align_y(Alignment::Center);
         if let Some(handle) = &self.avatar_handle {
-             avatar_row = avatar_row.push(
+            avatar_row = avatar_row.push(
                 cosmic::widget::image(handle.clone())
                     .width(cosmic::iced::Length::Fixed(64.0))
-                    .height(cosmic::iced::Length::Fixed(64.0))
+                    .height(cosmic::iced::Length::Fixed(64.0)),
             );
         } else if self.is_loading_avatar {
-             avatar_row = avatar_row.push(text::body("Loading avatar..."));
+            avatar_row = avatar_row.push(text::body("Loading avatar..."));
         } else {
-             avatar_row = avatar_row.push(
+            avatar_row = avatar_row.push(
                 cosmic::widget::container(text::body("No Avatar"))
                     .width(cosmic::iced::Length::Fixed(64.0))
                     .height(cosmic::iced::Length::Fixed(64.0))
                     .align_x(Alignment::Center)
-                    .align_y(Alignment::Center)
+                    .align_y(Alignment::Center),
             );
         }
 
-        let mut upload_btn = button::text(if self.is_uploading_avatar { "Uploading..." } else { "Change Avatar" });
+        let mut upload_btn = button::text(if self.is_uploading_avatar {
+            "Uploading..."
+        } else {
+            "Change Avatar"
+        });
         if !self.is_uploading_avatar {
             upload_btn = upload_btn.on_press(Message::SelectAvatar);
         }
         avatar_row = avatar_row.push(upload_btn);
         col = col.push(avatar_row);
-        
+
         col = col.push(
-            Column::new().spacing(5)
+            Column::new()
+                .spacing(5)
                 .push(text::body("Space Name").size(12))
-                .push(text_input::text_input("Name", &self.name)
-                    .on_input(Message::NameChanged))
+                .push(text_input::text_input("Name", &self.name).on_input(Message::NameChanged)),
         );
 
         col = col.push(
-            Column::new().spacing(5)
+            Column::new()
+                .spacing(5)
                 .push(text::body("Space Topic").size(12))
-                .push(text_input::text_input("Topic", &self.topic)
-                    .on_input(Message::TopicChanged))
+                .push(text_input::text_input("Topic", &self.topic).on_input(Message::TopicChanged)),
         );
 
-        let mut save_btn = button::text(if self.is_saving { "Saving..." } else { "Save Changes" });
-        if (self.name != self.original_name || self.topic != self.original_topic) && !self.is_saving {
+        let mut save_btn = button::text(if self.is_saving {
+            "Saving..."
+        } else {
+            "Save Changes"
+        });
+        if (self.name != self.original_name || self.topic != self.original_topic) && !self.is_saving
+        {
             save_btn = save_btn.on_press(Message::SaveSpace);
         }
         col = col.push(save_btn);
@@ -418,7 +487,9 @@ impl State {
                         .align_y(Alignment::Center)
                         .push(text::body(name))
                         .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
-                        .push(button::text("Remove").on_press(Message::RemoveChild(child.id.clone())))
+                        .push(
+                            button::text("Remove").on_press(Message::RemoveChild(child.id.clone())),
+                        ),
                 );
             }
         }
@@ -429,9 +500,11 @@ impl State {
         col = col.push(
             Row::new()
                 .spacing(10)
-                .push(text_input::text_input("!room_id:server.com", &self.new_child_id)
-                    .on_input(Message::NewChildIdChanged))
-                .push(button::text("Add Child").on_press(Message::AddChild))
+                .push(
+                    text_input::text_input("!room_id:server.com", &self.new_child_id)
+                        .on_input(Message::NewChildIdChanged),
+                )
+                .push(button::text("Add Child").on_press(Message::AddChild)),
         );
 
         col.into()
