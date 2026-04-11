@@ -44,11 +44,11 @@ impl Constellations {
                                 .push(cosmic::widget::image(handle.clone()).width(20).height(20));
                         } else {
                             sender_info =
-                                sender_info.push(container(text::body("👤").size(12)).padding(2));
+                                sender_info.push(container(cosmic::widget::icon::from_name("avatar-default-symbolic").size(12)).padding(2));
                         }
                     } else {
                         sender_info =
-                            sender_info.push(container(text::body("👤").size(12)).padding(2));
+                            sender_info.push(container(cosmic::widget::icon::from_name("avatar-default-symbolic").size(12)).padding(2));
                     }
 
                     // Optimization: Avoid allocating a new String on every render frame by using a reference
