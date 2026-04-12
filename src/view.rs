@@ -132,13 +132,13 @@ impl Constellations {
                             }
                         }
                         _ => {
-                            if self.app_settings.render_markdown {
-                                let events = parse_markdown(message.body());
-                                let mut md_col = Column::new()
-                                    .spacing(if self.app_settings.compact_mode { 2 } else { 5 });
-                                let mut current_row =
-                                    Row::new().spacing(0).align_y(Alignment::Center);
-                                let mut row_has_content = false;
+                            if self.app_settings.render_markdown && item.parsed_markdown.is_some() {
+                                if let Some(events) = item.parsed_markdown.as_deref() {
+                                    let mut md_col = Column::new()
+                                        .spacing(if self.app_settings.compact_mode { 2 } else { 5 });
+                                    let mut current_row =
+                                        Row::new().spacing(0).align_y(Alignment::Center);
+                                    let mut row_has_content = false;
 
                                 for event in events {
                                     match event {
@@ -161,7 +161,7 @@ impl Constellations {
                                             }
                                         }
                                         PreviewEvent::Text(t) => {
-                                            current_row = current_row.push(text::body(t).size(
+                                            current_row = current_row.push(text::body(t.as_str()).size(
                                                 if self.app_settings.compact_mode {
                                                     12
                                                 } else {
@@ -172,7 +172,7 @@ impl Constellations {
                                         }
                                         PreviewEvent::Code(c) => {
                                             current_row = current_row.push(
-                                                container(text::body(c).size(
+                                                container(text::body(c.as_str()).size(
                                                     if self.app_settings.compact_mode {
                                                         10
                                                     } else {
@@ -194,10 +194,11 @@ impl Constellations {
                                         }
                                     }
                                 }
-                                if row_has_content {
-                                    md_col = md_col.push(current_row);
+                                    if row_has_content {
+                                        md_col = md_col.push(current_row);
+                                    }
+                                    bubble_col = bubble_col.push(md_col);
                                 }
-                                bubble_col = bubble_col.push(md_col);
                             } else {
                                 bubble_col = bubble_col.push(text::body(message.body()).size(
                                     if self.app_settings.compact_mode {

@@ -230,6 +230,7 @@ struct ConstellationsItem {
     pub avatar_url: Option<String>,
     pub timestamp: String,
     pub is_me: bool,
+    pub parsed_markdown: Option<Vec<PreviewEvent>>,
 }
 
 impl ConstellationsItem {
@@ -239,6 +240,7 @@ impl ConstellationsItem {
         let mut avatar_url = None;
         let mut timestamp = String::new();
         let mut is_me = false;
+        let mut parsed_markdown = None;
 
         if let Some(event) = item.as_event() {
             sender = event.sender().to_string();
@@ -265,6 +267,10 @@ impl ConstellationsItem {
                 .to_string();
 
             is_me = user_id == Some(&sender);
+
+            if let Some(message) = event.content().as_message() {
+                parsed_markdown = Some(parse_markdown(message.body()));
+            }
         }
 
         Self {
@@ -274,6 +280,7 @@ impl ConstellationsItem {
             avatar_url,
             timestamp,
             is_me,
+            parsed_markdown,
         }
     }
 }
