@@ -935,11 +935,11 @@ impl State {
                     }
                 }
 
-                let mut del_btn = button::icon(Named::new(if device.is_deleting {
-                    "process-working-symbolic"
+                let mut del_btn = button::destructive(if device.is_deleting {
+                    "Deleting..."
                 } else {
-                    "user-trash-symbolic"
-                }));
+                    "Delete"
+                });
                 if !device.is_deleting {
                     del_btn = del_btn.on_press(Message::DeleteDevice(device.device_id.clone()));
                 }
