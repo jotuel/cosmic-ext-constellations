@@ -1,3 +1,6 @@
+## 2023-10-27 - [O(1) Cloning of Identifiers in Render Loop]
+**Learning:** `iced`/`libcosmic` immediate-mode `view` functions execute frequently (up to 60 FPS or on every state change event), making `String` allocations inside these loops a severe performance bottleneck.
+**Action:** Always type state fields and message payloads that act as keys or identifiers (e.g., room IDs, user IDs) as `std::sync::Arc<str>` instead of `String`. This allows for extremely cheap O(1) cloning inside closures (like `.on_press()`) via atomic reference counting while preserving the necessary memory safety and ownership boundaries required by the GUI framework.
 ## 2024-05-24 - [Efficient String Cloning in Iced UI rendering loops]
 **Learning:** `iced` rendering loops invoke view functions and map message payloads continuously on every frame, causing performance degradation when deep-copying `String` allocations into message enums via `.clone()`.
 **Action:** Wrap string-heavy UI loop fields (e.g. unique identifiers like `device_id`) inside `std::sync::Arc<str>`. This converts O(N) allocation and copy costs per frame into O(1) atomic reference count increments.
