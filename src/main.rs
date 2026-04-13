@@ -1164,6 +1164,85 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn test_parse_markdown_paragraph() {
+        let text = "This is a simple paragraph.";
+        let events = parse_markdown(text);
+        assert_eq!(
+            events,
+            vec![
+                PreviewEvent::Text("This is a simple paragraph.".to_string()),
+                PreviewEvent::EndBlock
+            ]
+        );
+    }
+
+    #[test]
+    fn test_parse_markdown_heading() {
+        let text = "# Heading 1\nSome text.";
+        let events = parse_markdown(text);
+        assert_eq!(
+            events,
+            vec![
+                PreviewEvent::StartHeading,
+                PreviewEvent::Text("Heading 1".to_string()),
+                PreviewEvent::EndBlock,
+                PreviewEvent::Text("Some text.".to_string()),
+                PreviewEvent::EndBlock,
+            ]
+        );
+    }
+
+    #[test]
+    fn test_parse_markdown_code() {
+        let text = "Here is `some code` inline.";
+        let events = parse_markdown(text);
+        assert_eq!(
+            events,
+            vec![
+                PreviewEvent::Text("Here is ".to_string()),
+                PreviewEvent::Code("some code".to_string()),
+                PreviewEvent::Text(" inline.".to_string()),
+                PreviewEvent::EndBlock,
+            ]
+        );
+    }
+
+    #[test]
+    fn test_parse_markdown_breaks() {
+        let text = "Line 1\nLine 2  \nLine 3";
+        let events = parse_markdown(text);
+        assert_eq!(
+            events,
+            vec![
+                PreviewEvent::Text("Line 1".to_string()),
+                PreviewEvent::Break,
+                PreviewEvent::Text("Line 2".to_string()),
+                PreviewEvent::Break,
+                PreviewEvent::Text("Line 3".to_string()),
+                PreviewEvent::EndBlock,
+            ]
+        );
+    }
+
+    #[test]
+    fn test_parse_markdown_ignored_formatting() {
+        // Italics and bold should just emit Text events without wrapping them in special formatting events.
+        let text = "Some **bold** and *italic* text.";
+        let events = parse_markdown(text);
+        assert_eq!(
+            events,
+            vec![
+                PreviewEvent::Text("Some ".to_string()),
+                PreviewEvent::Text("bold".to_string()),
+                PreviewEvent::Text(" and ".to_string()),
+                PreviewEvent::Text("italic".to_string()),
+                PreviewEvent::Text(" text.".to_string()),
+                PreviewEvent::EndBlock,
+            ]
+        );
+    }
+
     #[tokio::test]
     async fn test_get_room_data_not_found() {
         let tmp_dir = tempfile::tempdir().unwrap();
