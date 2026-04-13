@@ -1,3 +1,6 @@
+## 2024-05-24 - [Efficient String Cloning in Iced UI rendering loops]
+**Learning:** `iced` rendering loops invoke view functions and map message payloads continuously on every frame, causing performance degradation when deep-copying `String` allocations into message enums via `.clone()`.
+**Action:** Wrap string-heavy UI loop fields (e.g. unique identifiers like `device_id`) inside `std::sync::Arc<str>`. This converts O(N) allocation and copy costs per frame into O(1) atomic reference count increments.
 ## 2023-10-27 - [Pre-compute UI Strings to Avoid Allocations in Render Loop]
 **Learning:** In immediate-mode UI frameworks like `iced` and `libcosmic`, allocating memory inside the rendering cycle (such as using `format!` or `.to_string()` in `view()` functions) heavily impacts framerate since it triggers string allocations up to 60 times a second per widget.
 **Action:** When strings depend on underlying integer states (like unread notification counts) that change infrequently compared to the render loop, format them once during the data ingestion pipeline (e.g., when the state diffs update the `RoomData` struct) and store them as cached fields (`Option<String>`). Use borrowed string slices (`&str`) in the view tree.
