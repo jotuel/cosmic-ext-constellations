@@ -7,3 +7,6 @@
 ## 2023-10-27 - Tooltips for Icon-Only Buttons
 **Learning:** Icon-only buttons (like Space Switcher avatars/initials) lack context. Adding tooltips makes the app significantly more accessible and intuitive without cluttering the UI.
 **Action:** When creating a list or grid of generic or custom icons, wrap them in `cosmic::widget::tooltip` so users know what they represent.
+## 2024-05-18 - Replacing Emojis with Symbolic Icons
+**Learning:** Using raw emojis for UI actions (like '✏️' or '🗑️') can break visual consistency with the system theme and lacks accessible tooltips if not explicitly wrapped.
+**Action:** When designing UI elements in `libcosmic`, prefer semantic widgets over generic text buttons: use `button::icon` with standard freedesktop icons (e.g., `Named::new("document-edit-symbolic")`) and ensure they are wrapped in a `cosmic::widget::tooltip` to provide correct visual affordances and accessibility.
