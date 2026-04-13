@@ -133,14 +133,13 @@ impl Constellations {
                         }
                         _ => {
                             if self.app_settings.render_markdown {
-                                let events = parse_markdown(message.body());
                                 let mut md_col = Column::new()
                                     .spacing(if self.app_settings.compact_mode { 2 } else { 5 });
                                 let mut current_row =
                                     Row::new().spacing(0).align_y(Alignment::Center);
                                 let mut row_has_content = false;
 
-                                for event in events {
+                                for event in &item.markdown {
                                     match event {
                                         PreviewEvent::StartHeading => {
                                             if row_has_content {
@@ -161,18 +160,19 @@ impl Constellations {
                                             }
                                         }
                                         PreviewEvent::Text(t) => {
-                                            current_row = current_row.push(text::body(t).size(
-                                                if self.app_settings.compact_mode {
-                                                    12
-                                                } else {
-                                                    14
-                                                },
-                                            ));
+                                            current_row =
+                                                current_row.push(text::body(t.as_str()).size(
+                                                    if self.app_settings.compact_mode {
+                                                        12
+                                                    } else {
+                                                        14
+                                                    },
+                                                ));
                                             row_has_content = true;
                                         }
                                         PreviewEvent::Code(c) => {
                                             current_row = current_row.push(
-                                                container(text::body(c).size(
+                                                container(text::body(c.as_str()).size(
                                                     if self.app_settings.compact_mode {
                                                         10
                                                     } else {
