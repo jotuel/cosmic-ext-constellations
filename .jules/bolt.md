@@ -1,3 +1,6 @@
+## 2023-10-27 - [Pre-compute UI Strings to Avoid Allocations in Render Loop]
+**Learning:** In immediate-mode UI frameworks like `iced` and `libcosmic`, allocating memory inside the rendering cycle (such as using `format!` or `.to_string()` in `view()` functions) heavily impacts framerate since it triggers string allocations up to 60 times a second per widget.
+**Action:** When strings depend on underlying integer states (like unread notification counts) that change infrequently compared to the render loop, format them once during the data ingestion pipeline (e.g., when the state diffs update the `RoomData` struct) and store them as cached fields (`Option<String>`). Use borrowed string slices (`&str`) in the view tree.
 ## 2025-02-23 - [Dependencies Recursion Limit Issue]
 **Learning:** The external dependency `matrix-sdk v0.16.0` produces a query depth recursion limit error when running `cargo check` on this environment. This is a known upstream dependency issue on newer rustc versions, not a local code bug in the `cosmic-ext-constellations` refactoring.
 **Action:** Ignore `cargo check` blocking errors related to `matrix-sdk` query depth when verifying optimizations that only touch local frontend render logic.
