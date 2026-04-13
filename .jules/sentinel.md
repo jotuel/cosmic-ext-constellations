@@ -1,4 +1,4 @@
-## 2024-05-18 - Insecure E2E Store Passphrase Generation Fallback
-**Vulnerability:** The `get_or_create_store_passphrase` function used a time-based pseudo-random generator as a fallback for the E2E store encryption key when `/dev/urandom` failed, which made the key predictable. It also ignored errors when reading from `/dev/urandom`.
-**Learning:** Security-critical cryptography, like a master key/passphrase generation, should never fail-open or fall back to an insecure entropy source like `SystemTime`. If sufficient entropy is unavailable, the application must abort securely.
-**Prevention:** Always propagate errors for secure operations (e.g., using `read_exact` and returning `Result`) rather than swallowing errors and employing a weak fallback.
+## 2025-02-18 - Uncaught Panic on Invalid Room ID in Space Settings
+**Vulnerability:** A Denial of Service (DoS) vulnerability existed in `src/settings/room.rs` where calling `RoomId::parse(&room_id_clone).unwrap()` could trigger a panic if the provided `room_id_clone` string was not a valid Matrix Room ID format.
+**Learning:** This existed because the parsing logic assumed that any `room_id` variable passed to the room settings would always be syntactically valid, neglecting the possibility of malformed data or unexpected inputs during application state transitions, leading to an application crash.
+**Prevention:** Always handle standard library and dependency `Result` or `Option` returns gracefully when processing external or internal string identifiers. Use `map_err` or `ok_or` to convert parsing failures into handled application errors rather than using `.unwrap()`.
