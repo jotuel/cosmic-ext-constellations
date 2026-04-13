@@ -1,3 +1,9 @@
+# ***General***
+
+[ ] Create account option in Login
+
+[ ] Multi-user/account support
+
 # ***Bugs***
 
 [x] Regression session not persisting between runs
@@ -18,7 +24,7 @@
 
 # ***Messaging***
 
-[ ] Frostmark for message rendering
+[x] Frostmark for message rendering
 
 [ ] Rich Media Support: Sending images etc.
 

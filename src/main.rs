@@ -5,6 +5,7 @@ mod ipc;
 mod matrix;
 pub mod settings;
 mod view;
+pub mod frostmark;
 
 use anyhow::Result;
 use cosmic::iced::widget::image;
@@ -22,38 +23,7 @@ use std::sync::Arc;
 use url::Url;
 
 // ⚡ Bolt Optimization:
-// We cache the parsed Markdown structure in `PreviewEvent`s to avoid running
-// `pulldown_cmark::Parser` on every single render frame inside `view_preview()`.
-#[derive(Clone, Debug, PartialEq)]
-pub enum PreviewEvent {
-    StartHeading,
-    EndBlock,
-    Text(String),
-    Code(String),
-    Break,
-}
-
-pub fn parse_markdown(text: &str) -> Vec<PreviewEvent> {
-    let mut events = Vec::new();
-    let parser = pulldown_cmark::Parser::new(text);
-    for event in parser {
-        match event {
-            pulldown_cmark::Event::Start(pulldown_cmark::Tag::Heading { .. }) => {
-                events.push(PreviewEvent::StartHeading)
-            }
-            pulldown_cmark::Event::End(
-                pulldown_cmark::TagEnd::Paragraph | pulldown_cmark::TagEnd::Heading(_),
-            ) => events.push(PreviewEvent::EndBlock),
-            pulldown_cmark::Event::Text(t) => events.push(PreviewEvent::Text(t.to_string())),
-            pulldown_cmark::Event::Code(c) => events.push(PreviewEvent::Code(c.to_string())),
-            pulldown_cmark::Event::SoftBreak | pulldown_cmark::Event::HardBreak => {
-                events.push(PreviewEvent::Break)
-            }
-            _ => {}
-        }
-    }
-    events
-}
+// We store the parsed Markdown state and use frostmark to render it.
 
 struct Constellations {
     core: Core,
@@ -63,7 +33,7 @@ struct Constellations {
     selected_room: Option<String>,
     timeline_items: Vector<ConstellationsItem>,
     composer_text: String,
-    composer_preview_events: Vec<PreviewEvent>,
+    composer_preview_state: Arc<crate::frostmark::MarkState>,
     composer_is_preview: bool,
     user_id: Option<String>,
     media_cache: HashMap<String, image::Handle>,
@@ -222,7 +192,7 @@ impl<T: Clone> ApplyVectorDiffExt<T> for Vec<T> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 struct ConstellationsItem {
     pub item: Arc<matrix::TimelineItem>,
     pub sender: String,
@@ -230,8 +200,22 @@ struct ConstellationsItem {
     pub avatar_url: Option<String>,
     pub timestamp: String,
     pub is_me: bool,
-    pub markdown: Vec<PreviewEvent>,
+    pub markdown_state: Arc<crate::frostmark::MarkState>,
 }
+
+impl std::fmt::Debug for ConstellationsItem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ConstellationsItem")
+            .field("item", &self.item)
+            .field("sender", &self.sender)
+            .field("sender_name", &self.sender_name)
+            .field("avatar_url", &self.avatar_url)
+            .field("timestamp", &self.timestamp)
+            .field("is_me", &self.is_me)
+            .finish()
+    }
+}
+
 
 impl ConstellationsItem {
     fn new(item: Arc<matrix::TimelineItem>, user_id: Option<&str>) -> Self {
@@ -240,11 +224,11 @@ impl ConstellationsItem {
         let mut avatar_url = None;
         let mut timestamp = String::new();
         let mut is_me = false;
-        let mut markdown = Vec::new();
+        let mut markdown_state = Arc::new(crate::frostmark::MarkState::default());
 
         if let Some(event) = item.as_event() {
             if let Some(msg) = event.content().as_message() {
-                markdown = crate::parse_markdown(msg.body());
+                markdown_state = Arc::new(crate::frostmark::MarkState::with_markdown_only(msg.body()));
             }
             sender = event.sender().to_string();
             let (name, url) = match event.sender_profile() {
@@ -279,7 +263,7 @@ impl ConstellationsItem {
             avatar_url,
             timestamp,
             is_me,
-            markdown,
+            markdown_state,
         }
     }
 }
@@ -374,7 +358,7 @@ impl Application for Constellations {
             selected_room: None,
             timeline_items: Vector::new(),
             composer_text: String::new(),
-            composer_preview_events: Vec::new(),
+            composer_preview_state: Arc::new(crate::frostmark::MarkState::default()),
             composer_is_preview: false,
             user_id: None,
             media_cache: HashMap::new(),
@@ -448,7 +432,7 @@ impl Application for Constellations {
                 self.update_title()
             }
             Message::ComposerChanged(text) => {
-                self.composer_preview_events = parse_markdown(&text);
+                self.composer_preview_state = Arc::new(crate::frostmark::MarkState::with_markdown_only(&text));
                 self.composer_text = text;
 
                 if self.app_settings.send_typing_notifications {
@@ -478,7 +462,7 @@ impl Application for Constellations {
                 match res {
                     Ok(_) => {
                         self.composer_text.clear();
-                        self.composer_preview_events.clear();
+                        self.composer_preview_state = Arc::new(crate::frostmark::MarkState::default());
                         self.composer_is_preview = false;
                     }
                     Err(e) => {

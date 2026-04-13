@@ -10,7 +10,8 @@ use cosmic::{
 };
 use matrix_sdk::ruma::events::room::{message::MessageType, MediaSource};
 
-use crate::{matrix, parse_markdown, Constellations, MenuAct, Message, PreviewEvent};
+use crate::{matrix, Constellations, MenuAct, Message};
+use crate::frostmark::MarkState;
 
 impl Constellations {
     pub fn view_timeline(&self) -> Element<'_, Message> {
@@ -133,71 +134,8 @@ impl Constellations {
                         }
                         _ => {
                             if self.app_settings.render_markdown {
-                                let mut md_col = Column::new()
-                                    .spacing(if self.app_settings.compact_mode { 2 } else { 5 });
-                                let mut current_row =
-                                    Row::new().spacing(0).align_y(Alignment::Center);
-                                let mut row_has_content = false;
-
-                                for event in &item.markdown {
-                                    match event {
-                                        PreviewEvent::StartHeading => {
-                                            if row_has_content {
-                                                md_col = md_col.push(current_row);
-                                                current_row = Row::new()
-                                                    .spacing(0)
-                                                    .align_y(Alignment::Center);
-                                                row_has_content = false;
-                                            }
-                                        }
-                                        PreviewEvent::EndBlock => {
-                                            if row_has_content {
-                                                md_col = md_col.push(current_row);
-                                                current_row = Row::new()
-                                                    .spacing(0)
-                                                    .align_y(Alignment::Center);
-                                                row_has_content = false;
-                                            }
-                                        }
-                                        PreviewEvent::Text(t) => {
-                                            current_row =
-                                                current_row.push(text::body(t.as_str()).size(
-                                                    if self.app_settings.compact_mode {
-                                                        12
-                                                    } else {
-                                                        14
-                                                    },
-                                                ));
-                                            row_has_content = true;
-                                        }
-                                        PreviewEvent::Code(c) => {
-                                            current_row = current_row.push(
-                                                container(text::body(c.as_str()).size(
-                                                    if self.app_settings.compact_mode {
-                                                        10
-                                                    } else {
-                                                        12
-                                                    },
-                                                ))
-                                                .padding(2),
-                                            );
-                                            row_has_content = true;
-                                        }
-                                        PreviewEvent::Break => {
-                                            if row_has_content {
-                                                md_col = md_col.push(current_row);
-                                                current_row = Row::new()
-                                                    .spacing(0)
-                                                    .align_y(Alignment::Center);
-                                                row_has_content = false;
-                                            }
-                                        }
-                                    }
-                                }
-                                if row_has_content {
-                                    md_col = md_col.push(current_row);
-                                }
-                                bubble_col = bubble_col.push(md_col);
+                                let widget = crate::frostmark::MarkWidget::new(&item.markdown_state);
+                                bubble_col = bubble_col.push(widget);
                             } else {
                                 bubble_col = bubble_col.push(text::body(message.body()).size(
                                     if self.app_settings.compact_mode {
@@ -250,48 +188,8 @@ impl Constellations {
     }
 
     pub fn view_preview(&self) -> Element<'_, Message> {
-        let mut preview_col = Column::new().spacing(10);
-
-        let mut current_row = Row::new().spacing(0).align_y(Alignment::Center);
-        let mut row_has_content = false;
-
-        for event in &self.composer_preview_events {
-            match event {
-                PreviewEvent::StartHeading => {
-                    if row_has_content {
-                        preview_col = preview_col.push(current_row);
-                        current_row = Row::new().spacing(0).align_y(Alignment::Center);
-                        row_has_content = false;
-                    }
-                }
-                PreviewEvent::EndBlock => {
-                    if row_has_content {
-                        preview_col = preview_col.push(current_row);
-                        current_row = Row::new().spacing(0).align_y(Alignment::Center);
-                        row_has_content = false;
-                    }
-                }
-                PreviewEvent::Text(t) => {
-                    let txt = text::body(t.as_str());
-                    current_row = current_row.push(txt);
-                    row_has_content = true;
-                }
-                PreviewEvent::Code(c) => {
-                    current_row = current_row.push(container(text::body(c.as_str())).padding(2));
-                    row_has_content = true;
-                }
-                PreviewEvent::Break => {
-                    current_row = current_row.push(text::body(" "));
-                    row_has_content = true;
-                }
-            }
-        }
-
-        if row_has_content {
-            preview_col = preview_col.push(current_row);
-        }
-
-        container(scrollable(preview_col).height(100))
+        let widget = crate::frostmark::MarkWidget::new(&self.composer_preview_state);
+        container(scrollable(widget).height(100))
             .padding(10)
             .into()
     }

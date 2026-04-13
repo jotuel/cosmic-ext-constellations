@@ -1274,10 +1274,20 @@ impl MatrixEngine {
 }
 
 pub fn markdown_to_html(markdown: &str) -> String {
-    let mut html_body = String::new();
-    let parser = pulldown_cmark::Parser::new(markdown);
-    pulldown_cmark::html::push_html(&mut html_body, parser);
-    html_body
+    comrak::markdown_to_html(
+        markdown,
+        &comrak::Options {
+            extension: comrak::options::Extension {
+                strikethrough: true,
+                table: true,
+                autolink: true,
+                tasklist: true,
+                superscript: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+    )
 }
 
 #[cfg(test)]

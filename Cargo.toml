@@ -26,11 +26,14 @@ tempfile = "3"
 rusqlite = { version = "0.37", features = ["bundled"] }
 chrono = "0.4"
 cosmic-text = "0.12"
-pulldown-cmark = "0.10"
+comrak = "0.49"
 open = "5.3.3"
 rfd = "0.17.2"
 mime = "0.3.17"
 mime_guess = "2.0.5"
+html5ever = "0.27"
+markup5ever_rcdom = "0.3"
+bitflags = "2"
 
 [dev-dependencies]
 matrix-sdk-test = "0.16.0"
@@ -38,5 +41,13 @@ tempfile = "3"
 wiremock = "0.6.5"
 
 [patch.crates-io]
-# Many COSMIC apps need to patch iced or other dependencies to match what libcosmic uses.
-# However, for a basic shell, let's start without patches and see if it compiles.
+iced = { git = "https://github.com/pop-os/libcosmic", branch = "master" }
+iced_core = { git = "https://github.com/pop-os/libcosmic", branch = "master" }
+iced_widget = { git = "https://github.com/pop-os/libcosmic", branch = "master" }
+iced_graphics = { git = "https://github.com/pop-os/libcosmic", branch = "master" }
+iced_renderer = { git = "https://github.com/pop-os/libcosmic", branch = "master" }
+iced_runtime = { git = "https://github.com/pop-os/libcosmic", branch = "master" }
+iced_futures = { git = "https://github.com/pop-os/libcosmic", branch = "master" }
+iced_winit = { git = "https://github.com/pop-os/libcosmic", branch = "master" }
+iced_wgpu = { git = "https://github.com/pop-os/libcosmic", branch = "master" }
+iced_tiny_skia = { git = "https://github.com/pop-os/libcosmic", branch = "master" }
