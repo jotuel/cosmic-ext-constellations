@@ -464,3 +464,62 @@ impl Constellations {
         Task::none()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Core;
+    use std::collections::HashMap;
+
+    fn create_dummy_constellations() -> Constellations {
+        Constellations {
+            core: Core::default(),
+            matrix: None,
+            sync_status: matrix::SyncStatus::Disconnected,
+            room_list: Vec::new(),
+            selected_room: None,
+            timeline_items: eyeball_im::Vector::new(),
+            composer_text: String::new(),
+            composer_preview_events: Vec::new(),
+            composer_is_preview: false,
+            user_id: None,
+            media_cache: HashMap::new(),
+            creating_room: false,
+            new_room_name: String::new(),
+            error: None,
+            login_homeserver: String::new(),
+            login_username: String::new(),
+            login_password: String::new(),
+            is_logging_in: false,
+            is_oidc_logging_in: false,
+            is_initializing: false,
+            is_sync_indicator_active: false,
+            selected_space: None,
+            current_settings_panel: None,
+            user_settings: crate::settings::user::State::default(),
+            room_settings: crate::settings::room::State::default(),
+            space_settings: crate::settings::space::State::default(),
+            app_settings: crate::settings::app::State::default(),
+        }
+    }
+
+    #[test]
+    fn test_handle_media_fetched_error() {
+        let mut app = create_dummy_constellations();
+
+        // Ensure error is initially None
+        assert_eq!(app.error, None);
+
+        // Call handle_media_fetched with an Err result
+        let _task = app.handle_media_fetched(
+            "mxc://example.com/media".to_string(),
+            Err("network timeout".to_string()),
+        );
+
+        // Verify the error state is set correctly
+        assert_eq!(app.error, Some("Failed to fetch media: network timeout".to_string()));
+
+        // Ensure nothing was inserted into the cache
+        assert!(app.media_cache.is_empty());
+    }
+}
