@@ -759,7 +759,7 @@ impl State {
         }
     }
 
-    pub fn view(&self) -> Element<'_, Message> {
+    fn view_profile<'a>(&'a self) -> Element<'a, Message> {
         let mut col = Column::new().spacing(20);
 
         if self.is_loading || self.is_loading_avatar {
@@ -818,16 +818,11 @@ impl State {
 
             col = col.push(save_row);
         }
+        col.into()
+    }
 
-        if let Some(err) = &self.error {
-            col = col.push(
-                Row::new()
-                    .spacing(10)
-                    .align_y(Alignment::Center)
-                    .push(text::body(err))
-                    .push(button::text("Dismiss").on_press(Message::DismissError)),
-            );
-        }
+    fn view_password_change<'a>(&'a self) -> Element<'a, Message> {
+        let mut col = Column::new().spacing(20);
 
         col = col.push(
             Column::new()
@@ -874,6 +869,10 @@ impl State {
             );
         }
 
+        col.into()
+    }
+
+    fn view_devices<'a>(&'a self) -> Element<'a, Message> {
         let mut devices_col = Column::new()
             .spacing(10)
             .push(text::title3("Devices & Sessions"));
@@ -962,9 +961,14 @@ impl State {
             );
         }
 
+        devices_col.into()
+    }
+
+    fn view_verification<'a>(&'a self) -> Element<'a, Message> {
+        let mut col = Column::new().spacing(10);
         match &self.verification_ui_state {
             VerificationUIState::WaitingForOtherDevice => {
-                devices_col = devices_col.push(
+                col = col.push(
                     Column::new()
                         .spacing(10)
                         .align_x(Alignment::Center)
@@ -989,7 +993,7 @@ impl State {
                     );
                 }
 
-                devices_col = devices_col.push(
+                col = col.push(
                     Column::new()
                         .spacing(10)
                         .align_x(Alignment::Center)
@@ -1004,15 +1008,36 @@ impl State {
                 );
             }
             VerificationUIState::Done => {
-                devices_col = devices_col.push(text::body("Verification successful!"));
+                col = col.push(text::body("Verification successful!"));
             }
             VerificationUIState::Cancelled => {
-                devices_col = devices_col.push(text::body("Verification cancelled."));
+                col = col.push(text::body("Verification cancelled."));
             }
             VerificationUIState::None => {}
         }
+        col.into()
+    }
 
-        col = col.push(devices_col);
+    pub fn view(&self) -> Element<'_, Message> {
+        let mut col = Column::new().spacing(20);
+
+        col = col.push(self.view_profile());
+
+        if let Some(err) = &self.error {
+            col = col.push(
+                Row::new()
+                    .spacing(10)
+                    .align_y(Alignment::Center)
+                    .push(text::body(err))
+                    .push(button::text("Dismiss").on_press(Message::DismissError)),
+            );
+        }
+
+        col = col.push(self.view_password_change());
+
+        col = col.push(self.view_devices());
+
+        col = col.push(self.view_verification());
 
         col.into()
     }
