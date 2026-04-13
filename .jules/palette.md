@@ -7,3 +7,6 @@
 ## 2023-10-27 - Tooltips for Icon-Only Buttons
 **Learning:** Icon-only buttons (like Space Switcher avatars/initials) lack context. Adding tooltips makes the app significantly more accessible and intuitive without cluttering the UI.
 **Action:** When creating a list or grid of generic or custom icons, wrap them in `cosmic::widget::tooltip` so users know what they represent.
+## 2026-04-12 - Semantic Widget Choices & Destructive Buttons
+**Learning:** Using generic text buttons (`button::text`) for destructive actions like delete, leave, or ban fails to warn the user visually, leading to potential misclicks or anxiety. Additionally, icon-only buttons ("✏️") lack accessibility context.
+**Action:** Always use libcosmic semantic widgets: `button::destructive` for irreversible or dangerous operations, and wrap any `button::icon` lacking descriptive text inside a `cosmic::widget::tooltip` to ensure clarity and accessibility for all users.
