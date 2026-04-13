@@ -1,10 +1,23 @@
 [package]
 name = "cosmic-ext-constellations"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
+authors = ["Joonas Tuomi <me@joonastuomi.fi>"]
+[features]
+default = []
+wgpu = ["libcosmic/wgpu"]
 
 [dependencies]
-libcosmic = { git = "https://github.com/pop-os/libcosmic", branch = "master", features = ["tokio"] }
+libcosmic = { git = "https://github.com/pop-os/libcosmic", branch = "master", features = [
+    "dbus-config",
+    "desktop",
+    "winit",
+    "wayland",
+    "tokio",
+    "single-instance",
+    "desktop-systemd-scope",
+    "xdg-portal",
+] }
 matrix-sdk = { version = "0.16.0", features = ["sqlite", "e2e-encryption", "sso-login", "testing"] }
 matrix-sdk-ui = { version = "0.16.0" }
 matrix-sdk-sqlite = "0.16.0"
