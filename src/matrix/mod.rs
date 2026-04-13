@@ -70,7 +70,7 @@ impl From<anyhow::Error> for SyncError {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoomData {
-    pub id: String,
+    pub id: std::sync::Arc<str>,
     pub name: Option<String>,
     pub last_message: Option<String>,
     pub unread_count: u32,
@@ -689,7 +689,7 @@ impl MatrixEngine {
     }
 
     pub async fn fetch_room_data(&self, room: &matrix_sdk::Room) -> Result<RoomData> {
-        let id = room.room_id().to_string();
+        let id: std::sync::Arc<str> = room.room_id().as_str().into();
         let name = match room.name() {
             Some(n) => Some(n.to_string()),
             None => room.cached_display_name().map(|n| n.to_string()),
@@ -1005,7 +1005,7 @@ impl MatrixEngine {
                     } else {
                         // Minimal RoomData if we don't have the room joined
                         children.push(RoomData {
-                            id: child_id.to_string(),
+                            id: child_id.as_str().into(),
                             name: None,
                             last_message: None,
                             unread_count: 0,
