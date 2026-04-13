@@ -1,6 +1,8 @@
 use crate::matrix::MatrixEngine;
 use cosmic::iced::Alignment;
-use cosmic::widget::{button, text, text_input, tooltip, tooltip::Position, Column, Row};
+use cosmic::widget::{
+    button, icon::Named, text, text_input, tooltip, tooltip::Position, Column, Row,
+};
 use cosmic::{Action, Element, Task};
 use matrix_sdk::encryption::verification::{
     SasState, SasVerification, VerificationRequest, VerificationRequestState,
@@ -907,7 +909,7 @@ impl State {
                         .push(text::body(name).size(14))
                         .push(text::body(format!("({})", device.device_id)).size(12))
                         .push(tooltip(
-                            button::text("✏️")
+                            button::icon(Named::new("document-edit-symbolic"))
                                 .on_press(Message::StartRenameDevice(device.device_id.clone())),
                             text::body("Rename Device"),
                             Position::Top,
@@ -933,15 +935,15 @@ impl State {
                     }
                 }
 
-                let mut del_btn = button::text(if device.is_deleting {
-                    "Deleting..."
+                let mut del_btn = button::icon(Named::new(if device.is_deleting {
+                    "process-working-symbolic"
                 } else {
-                    "🗑️ Delete"
-                });
+                    "user-trash-symbolic"
+                }));
                 if !device.is_deleting {
                     del_btn = del_btn.on_press(Message::DeleteDevice(device.device_id.clone()));
                 }
-                row = row.push(del_btn);
+                row = row.push(tooltip(del_btn, text::body("Delete Device"), Position::Top));
 
                 devices_col = devices_col.push(row);
             }
