@@ -173,7 +173,7 @@ impl State {
 
                         return Task::perform(
                             async move {
-                                let data = std::fs::read(&path).map_err(|e| e.to_string())?;
+                                let data = tokio::fs::read(&path).await.map_err(|e| e.to_string())?;
                                 let mime = mime_guess::from_path(&path)
                                     .first_raw()
                                     .unwrap_or("image/jpeg");
@@ -479,7 +479,7 @@ impl State {
             children_col = children_col.push(text::body("Loading children..."));
         } else {
             for child in &self.children {
-                let name = child.name.clone().unwrap_or_else(|| child.id.clone());
+                let name = child.name.as_deref().unwrap_or(&child.id);
                 children_col = children_col.push(
                     Row::new()
                         .spacing(10)

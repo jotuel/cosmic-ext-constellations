@@ -428,7 +428,7 @@ impl Constellations {
         content = content.push(global_tooltip);
 
         for space in self.room_list.iter().filter(|r| r.is_space) {
-            let space_id_str = space.id.clone();
+            let space_id_str = &space.id;
             let space_id = match matrix_sdk::ruma::RoomId::parse(space_id_str) {
                 Ok(id) => id.to_owned(),
                 Err(_) => continue,
