@@ -726,26 +726,24 @@ impl State {
         }
     }
 
-    pub fn view(&self) -> Element<'_, Message> {
-        if self.is_loading {
-            return Column::new()
-                .spacing(20)
-                .push(text::body("Loading room data..."))
-                .into();
-        }
 
-        let mut col = Column::new().spacing(20);
-
+    fn view_error(&self) -> Option<Element<'_, Message>> {
         if let Some(error) = &self.error {
-            col = col.push(
+            Some(
                 Row::new()
                     .spacing(10)
                     .align_y(Alignment::Center)
                     .push(text::body(error))
-                    .push(button::text("Dismiss").on_press(Message::DismissError)),
-            );
+                    .push(button::text("Dismiss").on_press(Message::DismissError))
+                    .into()
+            )
+        } else {
+            None
         }
+    }
 
+    fn view_profile(&self) -> Element<'_, Message> {
+        let mut col = Column::new().spacing(20);
         col = col.push(text::title3("Room Profile"));
 
         // Avatar Section
@@ -795,7 +793,10 @@ impl State {
                 .push(text_input::text_input("Topic", &self.topic).on_input(Message::TopicChanged)),
         );
 
-        // Permissions Section
+        col.into()
+    }
+
+    fn view_permissions(&self) -> Element<'_, Message> {
         let mut perm_col = Column::new().spacing(10);
         perm_col = perm_col.push(text::title3("Permissions"));
         perm_col = perm_col.push(
@@ -838,26 +839,31 @@ impl State {
                         .on_input(Message::RedactLevelChanged),
                 ),
         );
-        col = col.push(perm_col);
+        perm_col.into()
+    }
 
+    fn view_save_button(&self) -> Option<Element<'_, Message>> {
         let mut save_btn = button::text(if self.is_saving {
             "Saving..."
         } else {
             "Save Changes"
         });
-        if (self.name != self.original_name
+
+        let has_changes = self.name != self.original_name
             || self.topic != self.original_topic
             || self.ban_level != self.original_ban_level
             || self.invite_level != self.original_invite_level
             || self.kick_level != self.original_kick_level
-            || self.redact_level != self.original_redact_level)
-            && !self.is_saving
-        {
+            || self.redact_level != self.original_redact_level;
+
+        if has_changes && !self.is_saving {
             save_btn = save_btn.on_press(Message::SaveRoom);
         }
-        col = col.push(save_btn);
 
-        // Power Levels Section
+        Some(save_btn.into())
+    }
+
+    fn view_manage_members(&self) -> Option<Element<'_, Message>> {
         if let Some((default_level, users)) = &self.power_levels {
             let mut pl_col = Column::new().spacing(10);
             pl_col = pl_col.push(text::title3("Manage Members"));
@@ -929,12 +935,13 @@ impl State {
                     pl_col = pl_col.push(action_row);
                 }
             }
-            col = col.push(pl_col);
-        } else if self.is_loading_power_levels {
-            col = col.push(text::body("Loading members..."));
+            Some(pl_col.into())
+        } else {
+            None
         }
+    }
 
-        // Add user to power levels by ID
+    fn view_invite_promote(&self) -> Element<'_, Message> {
         let mut add_pl_col = Column::new().spacing(5);
         add_pl_col = add_pl_col.push(text::title3("Invite & Promote"));
         add_pl_col = add_pl_col.push(text::body("User ID").size(12));
@@ -957,9 +964,10 @@ impl State {
                     .on_press(Message::UpdatePowerLevel(self.invite_user_id.clone(), 100)),
             );
         add_pl_col = add_pl_col.push(promote_row);
-        col = col.push(add_pl_col);
+        add_pl_col.into()
+    }
 
-        // Membership Actions
+    fn view_membership_actions(&self) -> Option<Element<'_, Message>> {
         if let Some(membership) = &self.membership {
             use matrix_sdk::RoomState;
             let mut actions_col = Column::new().spacing(10);
@@ -976,7 +984,43 @@ impl State {
                 }
                 _ => {}
             }
-            col = col.push(actions_col);
+            Some(actions_col.into())
+        } else {
+            None
+        }
+    }
+
+    pub fn view(&self) -> Element<'_, Message> {
+        if self.is_loading {
+            return Column::new()
+                .spacing(20)
+                .push(text::body("Loading room data..."))
+                .into();
+        }
+
+        let mut col = Column::new().spacing(20);
+
+        if let Some(error_view) = self.view_error() {
+            col = col.push(error_view);
+        }
+
+        col = col.push(self.view_profile());
+        col = col.push(self.view_permissions());
+
+        if let Some(save_btn) = self.view_save_button() {
+            col = col.push(save_btn);
+        }
+
+        if let Some(members_view) = self.view_manage_members() {
+            col = col.push(members_view);
+        } else if self.is_loading_power_levels {
+            col = col.push(text::body("Loading members..."));
+        }
+
+        col = col.push(self.view_invite_promote());
+
+        if let Some(actions_view) = self.view_membership_actions() {
+            col = col.push(actions_view);
         }
 
         col.into()
