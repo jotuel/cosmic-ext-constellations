@@ -60,7 +60,7 @@ struct Constellations {
     matrix: Option<matrix::MatrixEngine>,
     sync_status: matrix::SyncStatus,
     room_list: Vec<matrix::RoomData>,
-    selected_room: Option<String>,
+    selected_room: Option<std::sync::Arc<str>>,
     timeline_items: Vector<ConstellationsItem>,
     composer_text: String,
     composer_preview_events: Vec<PreviewEvent>,
@@ -88,7 +88,7 @@ struct Constellations {
 #[derive(Debug, Clone)]
 pub enum Message {
     Matrix(matrix::MatrixEvent),
-    RoomSelected(String),
+    RoomSelected(std::sync::Arc<str>),
     EngineReady(Result<matrix::MatrixEngine, matrix::SyncError>),
     ComposerChanged(String),
     TogglePreview,
@@ -443,7 +443,7 @@ impl Application for Constellations {
                 Task::none()
             }
             Message::RoomSelected(room_id) => {
-                self.selected_room = Some(room_id);
+                self.selected_room = Some(room_id.clone());
                 self.timeline_items.clear();
                 self.update_title()
             }
@@ -508,7 +508,7 @@ impl Application for Constellations {
                     Ok(room_id) => {
                         self.creating_room = false;
                         self.new_room_name.clear();
-                        self.selected_room = Some(room_id);
+                        self.selected_room = Some(room_id.as_str().into());
                     }
                     Err(e) => {
                         self.error = Some(format!("Failed to create room: {}", e));
