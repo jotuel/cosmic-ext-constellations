@@ -1230,14 +1230,10 @@ impl MatrixEngine {
             }
         }
 
-        // Securely generate passphrase using standard library functionality (URandom) to avoid adding dependencies
+        // Securely generate passphrase using rand
+        use rand::RngCore;
         let mut buf = [0u8; 32];
-        let mut f = std::fs::File::open("/dev/urandom")
-            .context("Failed to open /dev/urandom for secure random generation")?;
-
-        use std::io::Read;
-        f.read_exact(&mut buf)
-            .context("Failed to securely read bytes from /dev/urandom")?;
+        rand::rng().fill_bytes(&mut buf);
 
         let passphrase: String = buf.iter().map(|b| format!("{:02x}", b)).collect();
 

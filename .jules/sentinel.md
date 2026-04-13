@@ -10,3 +10,7 @@
 **Vulnerability:** Synchronous `std::fs::read` was used inside an async `Task::perform` block when reading avatar images.
 **Learning:** Calling blocking synchronous APIs (like disk I/O) within async blocks can block the executor thread, leading to performance degradation or Denial of Service (DoS) in high-load scenarios.
 **Prevention:** Always use asynchronous equivalents (`tokio::fs::read`) when performing I/O operations inside `async` blocks or tasks to ensure the executor can yield and continue processing other futures.
+## 2025-02-21 - Non-Portable CSPRNG Source
+**Vulnerability:** Reading directly from `/dev/urandom` for secure passphrase generation instead of a portable CSPRNG.
+**Learning:** Hardcoding standard paths like `/dev/urandom` introduces bugs on platforms lacking these files (like Windows), and synchronous blocking file I/O operations can degrade asynchronous executor performance leading to DoS risks.
+**Prevention:** Always use standard cryptographic crates (like `rand` with the `std_rng` or `os_rng` capabilities) instead of raw file system accesses when generating cryptographic materials.
