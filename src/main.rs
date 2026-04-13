@@ -352,7 +352,9 @@ impl Application for Constellations {
         let mut tasks = Vec::new();
         tasks.push(Task::perform(
             async move {
-                let dir = data_dir.ok_or_else(|| matrix::SyncError::from(anyhow::anyhow!("No standard data directory found")))?;
+                let dir = data_dir.ok_or_else(|| {
+                    matrix::SyncError::from(anyhow::anyhow!("No standard data directory found"))
+                })?;
                 matrix::MatrixEngine::new(dir)
                     .await
                     .map_err(matrix::SyncError::from)
@@ -683,8 +685,8 @@ impl Application for Constellations {
             header = header.push(text::body("#"));
             header = header.push(text::body(name));
 
-            if room.unread_count > 0 {
-                header = header.push(text::body(format!("({})", room.unread_count)).size(12));
+            if let Some(unread_str) = &room.unread_count_str {
+                header = header.push(text::body(unread_str.as_str()).size(12));
             }
 
             room_content = room_content.push(header);
