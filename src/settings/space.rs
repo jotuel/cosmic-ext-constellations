@@ -173,7 +173,7 @@ impl State {
 
                         return Task::perform(
                             async move {
-                                let data = std::fs::read(&path).map_err(|e| e.to_string())?;
+                                let data = tokio::fs::read(&path).await.map_err(|e| e.to_string())?;
                                 let mime = mime_guess::from_path(&path)
                                     .first_raw()
                                     .unwrap_or("image/jpeg");
