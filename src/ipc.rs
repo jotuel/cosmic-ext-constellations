@@ -48,3 +48,34 @@ pub async fn call_handle_callback(uri: String) -> Result<(), Box<dyn Error>> {
     proxy.handle_callback(uri).await?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serial_test::serial;
+    use std::env;
+    use tokio::sync::mpsc;
+
+    #[tokio::test]
+    #[serial]
+    async fn test_start_server_dbus_error() {
+        // Save the original DBUS_SESSION_BUS_ADDRESS
+        let original_dbus_address = env::var("DBUS_SESSION_BUS_ADDRESS").ok();
+
+        // Mock a DBus error by setting an invalid session bus address
+        env::set_var("DBUS_SESSION_BUS_ADDRESS", "unix:path=/nonexistent");
+
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let result = start_server(tx).await;
+
+        // Restore the original address to not affect other tests
+        if let Some(addr) = original_dbus_address {
+            env::set_var("DBUS_SESSION_BUS_ADDRESS", addr);
+        } else {
+            env::remove_var("DBUS_SESSION_BUS_ADDRESS");
+        }
+
+        // The function should return an error since the session bus is unreachable
+        assert!(result.is_err(), "Expected an error when DBUS_SESSION_BUS_ADDRESS is invalid");
+    }
+}
