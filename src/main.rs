@@ -332,6 +332,243 @@ impl<T: Clone> ApplyVectorDiffExt<T> for eyeball_im::Vector<T> {
     }
 }
 
+impl Constellations {
+    fn ipc_subscription(&self) -> Subscription<Message> {
+        Subscription::run_with((), |_| {
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+            tokio::spawn(async move {
+                match ipc::start_server(tx).await {
+                    Ok(_conn) => {
+                        tracing::info!("IPC server started and waiting");
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to start IPC server: {}", e);
+                        return;
+                    }
+                }
+                std::future::pending::<()>().await;
+            });
+            cosmic::iced::futures::stream::unfold(rx, |mut rx| async move {
+                loop {
+                    if let Some(uri) = rx.recv().await {
+                        if let Ok(url) = Url::parse(&uri) {
+                            return Some((Message::OidcCallback(url), rx));
+                        }
+                    } else {
+                        return None;
+                    }
+                }
+            })
+        })
+    }
+
+    fn sync_subscription(&self, matrix: &matrix::MatrixEngine) -> Subscription<Message> {
+        Subscription::run_with(MatrixEngineWrapper(matrix.clone()), |wrapper| {
+            let engine = wrapper.0.clone();
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+
+            let tx_status = tx.clone();
+            let engine_status = engine.clone();
+            tokio::spawn(async move {
+                let sync_service = loop {
+                    if let Some(s) = engine_status.sync_service().await {
+                        break s;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                };
+
+                let mut status_stream = sync_service.state();
+                while let Some(status) = status_stream.next().await {
+                    let sync_status = match status {
+                            SyncServiceState::Idle => matrix::SyncStatus::Connected,
+                            SyncServiceState::Running => matrix::SyncStatus::Syncing,
+                            SyncServiceState::Terminated => matrix::SyncStatus::Disconnected,
+                            SyncServiceState::Offline => matrix::SyncStatus::Disconnected,
+                            SyncServiceState::Error(_) => {
+                                matrix::SyncStatus::Error("Sync error encountered. This may be due to missing server support for Sliding Sync (MSC4186) or network issues.".to_string())
+                            }
+                        };
+                    let _ = tx_status.send(Message::Matrix(
+                        matrix::MatrixEvent::SyncStatusChanged(sync_status),
+                    ));
+                }
+            });
+
+            let tx_indicator = tx.clone();
+            let engine_indicator = engine.clone();
+            tokio::spawn(async move {
+                let room_list_service = loop {
+                    if let Some(rls) = engine_indicator.room_list_service().await {
+                        break rls;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                };
+
+                let mut indicator_stream = Box::pin(room_list_service.sync_indicator(
+                    std::time::Duration::from_millis(500),
+                    std::time::Duration::from_millis(500),
+                ));
+                use cosmic::iced::futures::StreamExt;
+                while let Some(indicator) = indicator_stream.next().await {
+                    let show = indicator == matrix_sdk_ui::room_list_service::SyncIndicator::Show;
+                    let _ = tx_indicator.send(Message::Matrix(
+                        matrix::MatrixEvent::SyncIndicatorChanged(show),
+                    ));
+                }
+            });
+
+            let tx_rooms = tx.clone();
+            let engine_rooms = engine.clone();
+            tokio::spawn(async move {
+                let room_list_service = loop {
+                    if let Some(rls) = engine_rooms.room_list_service().await {
+                        break rls;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                };
+                let rooms = match room_list_service.all_rooms().await {
+                    Ok(rooms) => rooms,
+                    Err(_) => return,
+                };
+                let (stream, controller) = rooms.entries_with_dynamic_adapters(20);
+                let controller = Arc::new(controller);
+                engine_rooms
+                    .set_room_list_controller(controller.clone())
+                    .await;
+
+                use matrix_sdk_ui::room_list_service::filters;
+                controller.set_filter(Box::new(filters::new_filter_all(vec![])));
+
+                use cosmic::iced::futures::StreamExt;
+                let mut stream = Box::pin(stream);
+                while let Some(diffs) = stream.next().await {
+                    for diff in diffs {
+                        let room_diff = match diff {
+                            eyeball_im::VectorDiff::Insert { index, value } => {
+                                get_room_data(&engine_rooms, value.room_id())
+                                    .await
+                                    .map(|data| eyeball_im::VectorDiff::Insert {
+                                        index,
+                                        value: data,
+                                    })
+                            }
+                            eyeball_im::VectorDiff::Remove { index } => {
+                                Some(eyeball_im::VectorDiff::Remove { index })
+                            }
+                            eyeball_im::VectorDiff::Set { index, value } => {
+                                get_room_data(&engine_rooms, value.room_id())
+                                    .await
+                                    .map(|data| eyeball_im::VectorDiff::Set { index, value: data })
+                            }
+                            eyeball_im::VectorDiff::Reset { values } => {
+                                let futures: Vec<_> = values
+                                    .iter()
+                                    .map(|v| get_room_data(&engine_rooms, v.room_id()))
+                                    .collect();
+                                let new_values: Vec<_> =
+                                    cosmic::iced::futures::future::join_all(futures)
+                                        .await
+                                        .into_iter()
+                                        .flatten()
+                                        .collect();
+                                Some(eyeball_im::VectorDiff::Reset {
+                                    values: new_values.into(),
+                                })
+                            }
+                            eyeball_im::VectorDiff::Append { values } => {
+                                let futures: Vec<_> = values
+                                    .iter()
+                                    .map(|v| get_room_data(&engine_rooms, v.room_id()))
+                                    .collect();
+                                let new_values: Vec<_> =
+                                    cosmic::iced::futures::future::join_all(futures)
+                                        .await
+                                        .into_iter()
+                                        .flatten()
+                                        .collect();
+                                Some(eyeball_im::VectorDiff::Append {
+                                    values: new_values.into(),
+                                })
+                            }
+                            eyeball_im::VectorDiff::Truncate { length } => {
+                                Some(eyeball_im::VectorDiff::Truncate { length })
+                            }
+                            eyeball_im::VectorDiff::PushBack { value } => {
+                                get_room_data(&engine_rooms, value.room_id())
+                                    .await
+                                    .map(|data| eyeball_im::VectorDiff::PushBack { value: data })
+                            }
+                            eyeball_im::VectorDiff::PushFront { value } => {
+                                get_room_data(&engine_rooms, value.room_id())
+                                    .await
+                                    .map(|data| eyeball_im::VectorDiff::PushFront { value: data })
+                            }
+                            eyeball_im::VectorDiff::PopBack => {
+                                Some(eyeball_im::VectorDiff::PopBack)
+                            }
+                            eyeball_im::VectorDiff::PopFront => {
+                                Some(eyeball_im::VectorDiff::PopFront)
+                            }
+                            eyeball_im::VectorDiff::Clear => Some(eyeball_im::VectorDiff::Clear),
+                        };
+
+                        if let Some(diff) = room_diff {
+                            let _ =
+                                tx_rooms.send(Message::Matrix(matrix::MatrixEvent::RoomDiff(diff)));
+                        }
+                    }
+                }
+            });
+
+            cosmic::iced::futures::stream::unfold(rx, |mut rx| async move {
+                rx.recv().await.map(|msg| (msg, rx))
+            })
+        })
+    }
+
+    fn timeline_subscription(
+        &self,
+        matrix: &matrix::MatrixEngine,
+        room_id: String,
+    ) -> Subscription<Message> {
+        Subscription::run_with(
+            (MatrixEngineWrapper(matrix.clone()), room_id.clone()),
+            |(wrapper, room_id)| {
+                let engine = wrapper.0.clone();
+                let room_id = room_id.clone();
+                let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+
+                tokio::spawn(async move {
+                    let timeline = match engine.timeline(&room_id).await {
+                        Ok(t) => t,
+                        Err(_) => return,
+                    };
+
+                    let (items, mut stream) = timeline.subscribe().await;
+                    let _ = tx.send(Message::Matrix(matrix::MatrixEvent::TimelineReset));
+
+                    for (index, item) in items.into_iter().enumerate() {
+                        let _ = tx.send(Message::Matrix(matrix::MatrixEvent::TimelineDiff(
+                            eyeball_im::VectorDiff::Insert { index, value: item },
+                        )));
+                    }
+
+                    use cosmic::iced::futures::StreamExt;
+                    while let Some(diff) = stream.next().await {
+                        for d in diff {
+                            let _ = tx.send(Message::Matrix(matrix::MatrixEvent::TimelineDiff(d)));
+                        }
+                    }
+                });
+
+                cosmic::iced::futures::stream::unfold(rx, |mut rx| async move {
+                    rx.recv().await.map(|msg| (msg, rx))
+                })
+            },
+        )
+    }
+}
+
 impl Application for Constellations {
     type Executor = cosmic::executor::Default;
     type Message = Message;
@@ -352,7 +589,9 @@ impl Application for Constellations {
         let mut tasks = Vec::new();
         tasks.push(Task::perform(
             async move {
-                let dir = data_dir.ok_or_else(|| matrix::SyncError::from(anyhow::anyhow!("No standard data directory found")))?;
+                let dir = data_dir.ok_or_else(|| {
+                    matrix::SyncError::from(anyhow::anyhow!("No standard data directory found"))
+                })?;
                 matrix::MatrixEngine::new(dir)
                     .await
                     .map_err(matrix::SyncError::from)
@@ -683,8 +922,8 @@ impl Application for Constellations {
             header = header.push(text::body("#"));
             header = header.push(text::body(name));
 
-            if room.unread_count > 0 {
-                header = header.push(text::body(format!("({})", room.unread_count)).size(12));
+            if let Some(unread_str) = &room.unread_count_str {
+                header = header.push(text::body(unread_str.as_str()).size(12));
             }
 
             room_content = room_content.push(header);
@@ -832,237 +1071,17 @@ impl Application for Constellations {
     }
 
     fn subscription(&self) -> Subscription<Self::Message> {
-        let ipc_sub = Subscription::run_with((), |_| {
-            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-            tokio::spawn(async move {
-                match ipc::start_server(tx).await {
-                    Ok(_conn) => {
-                        tracing::info!("IPC server started and waiting");
-                    }
-                    Err(e) => {
-                        tracing::error!("Failed to start IPC server: {}", e);
-                        return;
-                    }
-                }
-                std::future::pending::<()>().await;
-            });
-            cosmic::iced::futures::stream::unfold(rx, |mut rx| async move {
-                loop {
-                    if let Some(uri) = rx.recv().await {
-                        if let Ok(url) = Url::parse(&uri) {
-                            return Some((Message::OidcCallback(url), rx));
-                        }
-                    } else {
-                        return None;
-                    }
-                }
-            })
-        });
+        let ipc_sub = self.ipc_subscription();
 
         let matrix = match &self.matrix {
             Some(m) => m,
             None => return ipc_sub,
         };
 
-        let sync_sub = Subscription::run_with(MatrixEngineWrapper(matrix.clone()), |wrapper| {
-            let engine = wrapper.0.clone();
-            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-
-            let tx_status = tx.clone();
-            let engine_status = engine.clone();
-            tokio::spawn(async move {
-                let sync_service = loop {
-                    if let Some(s) = engine_status.sync_service().await {
-                        break s;
-                    }
-                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                };
-
-                let mut status_stream = sync_service.state();
-                while let Some(status) = status_stream.next().await {
-                    let sync_status = match status {
-                            SyncServiceState::Idle => matrix::SyncStatus::Connected,
-                            SyncServiceState::Running => matrix::SyncStatus::Syncing,
-                            SyncServiceState::Terminated => matrix::SyncStatus::Disconnected,
-                            SyncServiceState::Offline => matrix::SyncStatus::Disconnected,
-                            SyncServiceState::Error(_) => {
-                                matrix::SyncStatus::Error("Sync error encountered. This may be due to missing server support for Sliding Sync (MSC4186) or network issues.".to_string())
-                            }
-                        };
-                    let _ = tx_status.send(Message::Matrix(
-                        matrix::MatrixEvent::SyncStatusChanged(sync_status),
-                    ));
-                }
-            });
-
-            let tx_indicator = tx.clone();
-            let engine_indicator = engine.clone();
-            tokio::spawn(async move {
-                let room_list_service = loop {
-                    if let Some(rls) = engine_indicator.room_list_service().await {
-                        break rls;
-                    }
-                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                };
-
-                let mut indicator_stream = Box::pin(room_list_service.sync_indicator(
-                    std::time::Duration::from_millis(500),
-                    std::time::Duration::from_millis(500),
-                ));
-                use cosmic::iced::futures::StreamExt;
-                while let Some(indicator) = indicator_stream.next().await {
-                    let show = indicator == matrix_sdk_ui::room_list_service::SyncIndicator::Show;
-                    let _ = tx_indicator.send(Message::Matrix(
-                        matrix::MatrixEvent::SyncIndicatorChanged(show),
-                    ));
-                }
-            });
-
-            let tx_rooms = tx.clone();
-            let engine_rooms = engine.clone();
-            tokio::spawn(async move {
-                let room_list_service = loop {
-                    if let Some(rls) = engine_rooms.room_list_service().await {
-                        break rls;
-                    }
-                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                };
-                let rooms = match room_list_service.all_rooms().await {
-                    Ok(rooms) => rooms,
-                    Err(_) => return,
-                };
-                let (stream, controller) = rooms.entries_with_dynamic_adapters(20);
-                let controller = Arc::new(controller);
-                engine_rooms
-                    .set_room_list_controller(controller.clone())
-                    .await;
-
-                use matrix_sdk_ui::room_list_service::filters;
-                controller.set_filter(Box::new(filters::new_filter_all(vec![])));
-
-                use cosmic::iced::futures::StreamExt;
-                let mut stream = Box::pin(stream);
-                while let Some(diffs) = stream.next().await {
-                    for diff in diffs {
-                        let room_diff = match diff {
-                            eyeball_im::VectorDiff::Insert { index, value } => {
-                                get_room_data(&engine_rooms, value.room_id())
-                                    .await
-                                    .map(|data| eyeball_im::VectorDiff::Insert {
-                                        index,
-                                        value: data,
-                                    })
-                            }
-                            eyeball_im::VectorDiff::Remove { index } => {
-                                Some(eyeball_im::VectorDiff::Remove { index })
-                            }
-                            eyeball_im::VectorDiff::Set { index, value } => {
-                                get_room_data(&engine_rooms, value.room_id())
-                                    .await
-                                    .map(|data| eyeball_im::VectorDiff::Set { index, value: data })
-                            }
-                            eyeball_im::VectorDiff::Reset { values } => {
-                                let futures: Vec<_> = values
-                                    .iter()
-                                    .map(|v| get_room_data(&engine_rooms, v.room_id()))
-                                    .collect();
-                                let new_values: Vec<_> =
-                                    cosmic::iced::futures::future::join_all(futures)
-                                        .await
-                                        .into_iter()
-                                        .flatten()
-                                        .collect();
-                                Some(eyeball_im::VectorDiff::Reset {
-                                    values: new_values.into(),
-                                })
-                            }
-                            eyeball_im::VectorDiff::Append { values } => {
-                                let futures: Vec<_> = values
-                                    .iter()
-                                    .map(|v| get_room_data(&engine_rooms, v.room_id()))
-                                    .collect();
-                                let new_values: Vec<_> =
-                                    cosmic::iced::futures::future::join_all(futures)
-                                        .await
-                                        .into_iter()
-                                        .flatten()
-                                        .collect();
-                                Some(eyeball_im::VectorDiff::Append {
-                                    values: new_values.into(),
-                                })
-                            }
-                            eyeball_im::VectorDiff::Truncate { length } => {
-                                Some(eyeball_im::VectorDiff::Truncate { length })
-                            }
-                            eyeball_im::VectorDiff::PushBack { value } => {
-                                get_room_data(&engine_rooms, value.room_id())
-                                    .await
-                                    .map(|data| eyeball_im::VectorDiff::PushBack { value: data })
-                            }
-                            eyeball_im::VectorDiff::PushFront { value } => {
-                                get_room_data(&engine_rooms, value.room_id())
-                                    .await
-                                    .map(|data| eyeball_im::VectorDiff::PushFront { value: data })
-                            }
-                            eyeball_im::VectorDiff::PopBack => {
-                                Some(eyeball_im::VectorDiff::PopBack)
-                            }
-                            eyeball_im::VectorDiff::PopFront => {
-                                Some(eyeball_im::VectorDiff::PopFront)
-                            }
-                            eyeball_im::VectorDiff::Clear => Some(eyeball_im::VectorDiff::Clear),
-                        };
-
-                        if let Some(diff) = room_diff {
-                            let _ =
-                                tx_rooms.send(Message::Matrix(matrix::MatrixEvent::RoomDiff(diff)));
-                        }
-                    }
-                }
-            });
-
-            cosmic::iced::futures::stream::unfold(rx, |mut rx| async move {
-                rx.recv().await.map(|msg| (msg, rx))
-            })
-        });
+        let sync_sub = self.sync_subscription(matrix);
 
         if let Some(room_id) = self.selected_room.clone() {
-            let timeline_sub = Subscription::run_with(
-                (MatrixEngineWrapper(matrix.clone()), room_id.clone()),
-                |(wrapper, room_id)| {
-                    let engine = wrapper.0.clone();
-                    let room_id = room_id.clone();
-                    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-
-                    tokio::spawn(async move {
-                        let timeline = match engine.timeline(&room_id).await {
-                            Ok(t) => t,
-                            Err(_) => return,
-                        };
-
-                        let (items, mut stream) = timeline.subscribe().await;
-                        let _ = tx.send(Message::Matrix(matrix::MatrixEvent::TimelineReset));
-
-                        for (index, item) in items.into_iter().enumerate() {
-                            let _ = tx.send(Message::Matrix(matrix::MatrixEvent::TimelineDiff(
-                                eyeball_im::VectorDiff::Insert { index, value: item },
-                            )));
-                        }
-
-                        use cosmic::iced::futures::StreamExt;
-                        while let Some(diff) = stream.next().await {
-                            for d in diff {
-                                let _ =
-                                    tx.send(Message::Matrix(matrix::MatrixEvent::TimelineDiff(d)));
-                            }
-                        }
-                    });
-
-                    cosmic::iced::futures::stream::unfold(rx, |mut rx| async move {
-                        rx.recv().await.map(|msg| (msg, rx))
-                    })
-                },
-            );
+            let timeline_sub = self.timeline_subscription(matrix, room_id);
             Subscription::batch([ipc_sub, sync_sub, timeline_sub])
         } else {
             Subscription::batch([ipc_sub, sync_sub])
