@@ -230,6 +230,7 @@ struct ConstellationsItem {
     pub avatar_url: Option<String>,
     pub timestamp: String,
     pub is_me: bool,
+    pub markdown: Vec<PreviewEvent>,
 }
 
 impl ConstellationsItem {
@@ -239,8 +240,12 @@ impl ConstellationsItem {
         let mut avatar_url = None;
         let mut timestamp = String::new();
         let mut is_me = false;
+        let mut markdown = Vec::new();
 
         if let Some(event) = item.as_event() {
+            if let Some(msg) = event.content().as_message() {
+                markdown = crate::parse_markdown(msg.body());
+            }
             sender = event.sender().to_string();
             let (name, url) = match event.sender_profile() {
                 matrix_sdk_ui::timeline::TimelineDetails::Ready(profile) => (
@@ -274,6 +279,7 @@ impl ConstellationsItem {
             avatar_url,
             timestamp,
             is_me,
+            markdown,
         }
     }
 }
