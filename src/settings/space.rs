@@ -479,7 +479,7 @@ impl State {
             children_col = children_col.push(text::body("Loading children..."));
         } else {
             for child in &self.children {
-                let name = child.name.clone().unwrap_or_else(|| child.id.clone());
+                let name = child.name.as_deref().unwrap_or(&child.id);
                 children_col = children_col.push(
                     Row::new()
                         .spacing(10)
@@ -487,7 +487,8 @@ impl State {
                         .push(text::body(name))
                         .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
                         .push(
-                            button::destructive("Remove").on_press(Message::RemoveChild(child.id.clone())),
+                            button::destructive("Remove")
+                                .on_press(Message::RemoveChild(child.id.clone())),
                         ),
                 );
             }
