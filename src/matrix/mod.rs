@@ -70,10 +70,11 @@ impl From<anyhow::Error> for SyncError {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoomData {
-    pub id: String,
+    pub id: std::sync::Arc<str>,
     pub name: Option<String>,
     pub last_message: Option<String>,
     pub unread_count: u32,
+    pub unread_count_str: Option<String>,
     pub avatar_url: Option<String>,
     pub room_type: Option<RoomType>,
     pub is_space: bool,
@@ -688,7 +689,7 @@ impl MatrixEngine {
     }
 
     pub async fn fetch_room_data(&self, room: &matrix_sdk::Room) -> Result<RoomData> {
-        let id = room.room_id().to_string();
+        let id: std::sync::Arc<str> = room.room_id().as_str().into();
         let name = match room.name() {
             Some(n) => Some(n.to_string()),
             None => room.cached_display_name().map(|n| n.to_string()),
@@ -737,11 +738,18 @@ impl MatrixEngine {
                 .map(|id| id.to_string())
         };
 
+        let unread_count_str = if unread_count > 0 {
+            Some(format!("({})", unread_count))
+        } else {
+            None
+        };
+
         Ok(RoomData {
             id,
             name,
             last_message,
             unread_count,
+            unread_count_str,
             avatar_url,
             room_type,
             is_space,
@@ -997,10 +1005,11 @@ impl MatrixEngine {
                     } else {
                         // Minimal RoomData if we don't have the room joined
                         children.push(RoomData {
-                            id: child_id.to_string(),
+                            id: child_id.as_str().into(),
                             name: None,
                             last_message: None,
                             unread_count: 0,
+                            unread_count_str: None,
                             avatar_url: None,
                             room_type: None,
                             is_space: false,
@@ -1221,14 +1230,10 @@ impl MatrixEngine {
             }
         }
 
-        // Securely generate passphrase using standard library functionality (URandom) to avoid adding dependencies
+        // Securely generate passphrase using rand
+        use rand::RngCore;
         let mut buf = [0u8; 32];
-        let mut f = std::fs::File::open("/dev/urandom")
-            .context("Failed to open /dev/urandom for secure random generation")?;
-
-        use std::io::Read;
-        f.read_exact(&mut buf)
-            .context("Failed to securely read bytes from /dev/urandom")?;
+        rand::rng().fill_bytes(&mut buf);
 
         let passphrase: String = buf.iter().map(|b| format!("{:02x}", b)).collect();
 

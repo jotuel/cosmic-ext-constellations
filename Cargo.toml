@@ -31,9 +31,11 @@ open = "5.3.3"
 rfd = "0.17.2"
 mime = "0.3.17"
 mime_guess = "2.0.5"
+rand = { version = "0.10.1", features = ["std_rng"] }
 
 [dev-dependencies]
 matrix-sdk-test = "0.16.0"
+serial_test = "3.4.0"
 tempfile = "3"
 wiremock = "0.6.5"
 
