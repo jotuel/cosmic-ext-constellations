@@ -16,6 +16,9 @@
 ## 2025-02-23 - [Immediate Mode GUI String Allocation]
 **Learning:** Immediate-mode GUIs like `iced`/`libcosmic` evaluate the rendering tree every frame. Using `.clone()` or `.to_string()` on text fields to satisfy `text::body(...)` triggers an unnecessary heap allocation on *every single frame render* for *every single text element*.
 **Action:** `libcosmic` UI text widgets accept `impl Into<Cow<'_, str>>`. Always pass cheap string references (e.g. `sender_name.as_str()` or `message.body()`) to `text::body()` and similar methods rather than `.to_string()` or `.clone()` to eliminate per-frame text allocations.
+## 2025-02-12 - [Avoid Unnecessary String Allocations in UI Iterators]
+**Learning:** Calling `.to_string()` and `.clone()` on strings inside a hot loop or UI rendering view (like `src/settings/room.rs`) causes significant and unnecessary heap allocations, degrading application responsiveness. When dealing with struct IDs like `OwnedUserId`, converting to an owned `String` just for conditional comparisons and displaying text is inefficient.
+**Action:** Always prefer borrowing by using `.as_str()` and comparing options with `.as_deref()`. Defer ownership to the point where an allocation is strictly required, such as constructing an owned `Message` variant.
 ## 2024-06-12 - [Prevent unneeded string allocations in `libcosmic` text elements]
 **Learning:** Using `clone()` on strings when pushing to `cosmic::widget::text::body` in loops causes noticeable allocation overhead because text elements accept `impl Into<Cow<'_, str>>`, meaning they can natively accept borrowed slices.
 **Action:** Use `.as_deref().unwrap_or(fallback)` to borrow string slices (`&str`) dynamically without allocating, providing significant speedups for dynamic layout construction.
