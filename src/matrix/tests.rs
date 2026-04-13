@@ -347,9 +347,6 @@ fn test_timeline_diff_variant() {
     }
 }
 
-
-
-
 fn create_test_session() -> matrix_sdk::authentication::matrix::MatrixSession {
     matrix_sdk::authentication::matrix::MatrixSession {
         meta: matrix_sdk::SessionMeta {
