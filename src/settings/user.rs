@@ -907,7 +907,7 @@ impl State {
                         .push(text::body(name).size(14))
                         .push(text::body(format!("({})", device.device_id)).size(12))
                         .push(tooltip(
-                            button::text("✏️")
+                            button::icon(cosmic::widget::icon::Named::new("document-edit-symbolic"))
                                 .on_press(Message::StartRenameDevice(device.device_id.clone())),
                             text::body("Rename Device"),
                             Position::Top,
@@ -933,10 +933,10 @@ impl State {
                     }
                 }
 
-                let mut del_btn = button::text(if device.is_deleting {
+                let mut del_btn = button::destructive(if device.is_deleting {
                     "Deleting..."
                 } else {
-                    "🗑️ Delete"
+                    "Delete"
                 });
                 if !device.is_deleting {
                     del_btn = del_btn.on_press(Message::DeleteDevice(device.device_id.clone()));
