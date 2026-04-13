@@ -47,7 +47,7 @@ pub struct State {
 
 #[derive(Debug, Clone)]
 pub enum Message {
-    LoadRoom(String),
+    LoadRoom(std::sync::Arc<str>),
     RoomLoaded(Result<RoomInfo, String>),
     NameChanged(String),
     TopicChanged(String),
