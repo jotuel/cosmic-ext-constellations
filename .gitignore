@@ -1,2 +1,4 @@
 /target
 script.sh
+test_src/
+test_opt
