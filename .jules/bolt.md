@@ -10,6 +10,9 @@
 ## 2025-02-23 - [Immediate Mode GUI String Allocation]
 **Learning:** Immediate-mode GUIs like `iced`/`libcosmic` evaluate the rendering tree every frame. Using `.clone()` or `.to_string()` on text fields to satisfy `text::body(...)` triggers an unnecessary heap allocation on *every single frame render* for *every single text element*.
 **Action:** `libcosmic` UI text widgets accept `impl Into<Cow<'_, str>>`. Always pass cheap string references (e.g. `sender_name.as_str()` or `message.body()`) to `text::body()` and similar methods rather than `.to_string()` or `.clone()` to eliminate per-frame text allocations.
-## 2024-06-12 - Prevent unneeded string allocations in `libcosmic` text elements
+## 2024-06-12 - [Prevent unneeded string allocations in `libcosmic` text elements]
 **Learning:** Using `clone()` on strings when pushing to `cosmic::widget::text::body` in loops causes noticeable allocation overhead because text elements accept `impl Into<Cow<'_, str>>`, meaning they can natively accept borrowed slices.
 **Action:** Use `.as_deref().unwrap_or(fallback)` to borrow string slices (`&str`) dynamically without allocating, providing significant speedups for dynamic layout construction.
+## 2025-02-13 - [Avoid String allocations in hot UI loops]
+**Learning:** In libcosmic/iced `view` rendering loops, unnecessary `String::clone()` calls can significantly degrade performance, especially when filtering collections like `room_list`. `matrix_sdk::ruma` ID parsing methods accept `impl AsRef<str>`, allowing the use of string references directly.
+**Action:** Always prefer passing `&String` or `&str` references to parsing and lookup functions instead of cloning owned strings to eliminate redundant heap allocations.
