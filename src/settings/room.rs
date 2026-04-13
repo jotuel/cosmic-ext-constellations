@@ -218,7 +218,7 @@ impl State {
                                 let client = engine.client().await;
                                 let user_id = client.user_id().ok_or("No user ID")?;
                                 let room = client
-                                    .get_room(&RoomId::parse(&room_id_clone).unwrap())
+                                    .get_room(&RoomId::parse(&room_id_clone).map_err(|e| e.to_string())?)
                                     .ok_or("Room not found")?;
                                 let my_level = match room.get_user_power_level(user_id).await {
                                     Ok(matrix_sdk::ruma::events::room::power_levels::UserPowerLevel::Int(l)) => l.into(),
@@ -918,12 +918,14 @@ impl State {
                     let mut action_row = Row::new().spacing(5);
                     if self.my_power_level >= self.kick_level {
                         action_row = action_row.push(
-                            button::destructive("Kick").on_press(Message::KickUser(user_id_str.clone())),
+                            button::destructive("Kick")
+                                .on_press(Message::KickUser(user_id_str.clone())),
                         );
                     }
                     if self.my_power_level >= self.ban_level {
                         action_row = action_row.push(
-                            button::destructive("Ban").on_press(Message::BanUser(user_id_str.clone())),
+                            button::destructive("Ban")
+                                .on_press(Message::BanUser(user_id_str.clone())),
                         );
                     }
                     pl_col = pl_col.push(action_row);
@@ -967,12 +969,12 @@ impl State {
 
             match membership {
                 RoomState::Joined => {
-                    actions_col =
-                        actions_col.push(button::destructive("Leave Room").on_press(Message::LeaveRoom));
+                    actions_col = actions_col
+                        .push(button::destructive("Leave Room").on_press(Message::LeaveRoom));
                 }
                 RoomState::Left | RoomState::Invited => {
-                    actions_col =
-                        actions_col.push(button::destructive("Forget Room").on_press(Message::ForgetRoom));
+                    actions_col = actions_col
+                        .push(button::destructive("Forget Room").on_press(Message::ForgetRoom));
                 }
                 _ => {}
             }
