@@ -883,18 +883,18 @@ impl State {
 
             let filter = self.member_filter.to_lowercase();
             for (user_id, level) in users {
-                let user_id_str = user_id.to_string();
+                let user_id_str = user_id.as_str();
                 if !filter.is_empty() && !user_id_str.to_lowercase().contains(&filter) {
                     continue;
                 }
 
-                let is_updating = self.updating_power_level_for.as_ref() == Some(&user_id_str);
-                let is_me = Some(user_id_str.clone()) == self.current_user_id;
+                let is_updating = self.updating_power_level_for.as_deref() == Some(user_id_str);
+                let is_me = self.current_user_id.as_deref() == Some(user_id_str);
 
                 let user_row = Row::new()
                     .spacing(10)
                     .align_y(Alignment::Center)
-                    .push(text::body(user_id_str.clone()).size(14))
+                    .push(text::body(user_id_str).size(14))
                     .push(text::body(level.to_string()).size(14))
                     .push(cosmic::widget::space().width(cosmic::iced::Length::Fill));
 
@@ -907,7 +907,7 @@ impl State {
                         _ => "??",
                     });
                     if !is_updating && *level != l {
-                        btn = btn.on_press(Message::UpdatePowerLevel(user_id_str.clone(), l));
+                        btn = btn.on_press(Message::UpdatePowerLevel(user_id_str.to_string(), l));
                     }
                     level_row = level_row.push(btn);
                 }
@@ -918,14 +918,12 @@ impl State {
                     let mut action_row = Row::new().spacing(5);
                     if self.my_power_level >= self.kick_level {
                         action_row = action_row.push(
-                            button::destructive("Kick")
-                                .on_press(Message::KickUser(user_id_str.clone())),
+                            button::destructive("Kick").on_press(Message::KickUser(user_id_str.to_string())),
                         );
                     }
                     if self.my_power_level >= self.ban_level {
                         action_row = action_row.push(
-                            button::destructive("Ban")
-                                .on_press(Message::BanUser(user_id_str.clone())),
+                            button::destructive("Ban").on_press(Message::BanUser(user_id_str.to_string())),
                         );
                     }
                     pl_col = pl_col.push(action_row);
