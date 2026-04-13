@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use crate::matrix::MatrixEngine;
 use cosmic::iced::Alignment;
 use cosmic::widget::{
@@ -10,7 +11,7 @@ use matrix_sdk::encryption::verification::{
 
 #[derive(Debug, Clone)]
 pub struct DeviceInfo {
-    pub device_id: String,
+    pub device_id: Arc<str>,
     pub display_name: Option<String>,
     pub is_verified: bool,
     pub is_current: bool,
@@ -74,7 +75,7 @@ pub enum Message {
     DismissPasswordSuccess,
     LoadDevices,
     DevicesLoaded(Result<Vec<DeviceInfo>, String>),
-    VerifyDevice(String),
+    VerifyDevice(Arc<str>),
     VerificationRequested(Result<VerificationRequest, String>),
     VerificationRequestStateChanged(VerificationRequestState),
     SasStarted(Result<Option<SasVerification>, String>),
@@ -83,13 +84,13 @@ pub enum Message {
     EmojisConfirmed(Result<(), String>),
     CancelVerification,
     DeviceDeletePasswordChanged(String),
-    StartRenameDevice(String),
-    CancelRenameDevice(String),
-    EditDeviceNameChanged(String, String),
-    SaveDeviceName(String),
-    DeviceRenamed(String, Result<(), String>),
-    DeleteDevice(String),
-    DeviceDeleted(String, Result<(), String>),
+    StartRenameDevice(Arc<str>),
+    CancelRenameDevice(Arc<str>),
+    EditDeviceNameChanged(Arc<str>, String),
+    SaveDeviceName(Arc<str>),
+    DeviceRenamed(Arc<str>, Result<(), String>),
+    DeleteDevice(Arc<str>),
+    DeviceDeleted(Arc<str>, Result<(), String>),
 }
 
 impl State {
@@ -404,7 +405,7 @@ impl State {
                             let client = matrix.client().await;
                             let user_id = client.user_id().ok_or("No user ID")?;
                             let current_device_id =
-                                client.device_id().ok_or("No device ID")?.to_string();
+                                client.device_id().ok_or("No device ID")?;
                             let user_devices = client
                                 .encryption()
                                 .get_user_devices(user_id)
@@ -414,10 +415,10 @@ impl State {
                             let mut devices = Vec::new();
                             for device in user_devices.devices() {
                                 devices.push(DeviceInfo {
-                                    device_id: device.device_id().to_string(),
+                                    device_id: Arc::from(device.device_id().as_str()),
                                     display_name: device.display_name().map(|n| n.to_string()),
                                     is_verified: device.is_verified(),
-                                    is_current: *device.device_id() == current_device_id,
+                                    is_current: device.device_id() == current_device_id,
                                     is_renaming: false,
                                     edit_name: String::new(),
                                     is_deleting: false,
@@ -449,11 +450,12 @@ impl State {
                     self.error = None;
                     self.verification_ui_state = VerificationUIState::WaitingForOtherDevice;
                     let matrix = matrix.clone();
+                    let device_id_clone = device_id.clone();
                     return Task::perform(
                         async move {
                             let client = matrix.client().await;
                             let user_id = client.user_id().ok_or("No user ID")?;
-                            let device_id_typed = matrix_sdk::ruma::OwnedDeviceId::from(device_id);
+                            let device_id_typed = matrix_sdk::ruma::OwnedDeviceId::from(device_id_clone.as_ref());
                             let device = client
                                 .encryption()
                                 .get_device(user_id, &device_id_typed)
@@ -621,28 +623,28 @@ impl State {
                 self.device_delete_password = pw;
                 Task::none()
             }
-            Message::StartRenameDevice(device_id) => {
-                if let Some(device) = self.devices.iter_mut().find(|d| d.device_id == device_id) {
+            Message::StartRenameDevice(ref device_id) => {
+                if let Some(device) = self.devices.iter_mut().find(|d| d.device_id == *device_id) {
                     device.is_renaming = true;
                     device.edit_name = device.display_name.clone().unwrap_or_default();
                 }
                 Task::none()
             }
-            Message::CancelRenameDevice(device_id) => {
-                if let Some(device) = self.devices.iter_mut().find(|d| d.device_id == device_id) {
+            Message::CancelRenameDevice(ref device_id) => {
+                if let Some(device) = self.devices.iter_mut().find(|d| d.device_id == *device_id) {
                     device.is_renaming = false;
                 }
                 Task::none()
             }
-            Message::EditDeviceNameChanged(device_id, new_name) => {
-                if let Some(device) = self.devices.iter_mut().find(|d| d.device_id == device_id) {
+            Message::EditDeviceNameChanged(ref device_id, new_name) => {
+                if let Some(device) = self.devices.iter_mut().find(|d| d.device_id == *device_id) {
                     device.edit_name = new_name;
                 }
                 Task::none()
             }
-            Message::SaveDeviceName(device_id) => {
+            Message::SaveDeviceName(ref device_id) => {
                 if let Some(matrix) = matrix {
-                    if let Some(device) = self.devices.iter_mut().find(|d| d.device_id == device_id)
+                    if let Some(device) = self.devices.iter_mut().find(|d| d.device_id == *device_id)
                     {
                         device.is_renaming = false;
                         let new_name = device.edit_name.clone();
@@ -652,7 +654,7 @@ impl State {
                         return Task::perform(
                             async move {
                                 let did =
-                                    matrix_sdk::ruma::OwnedDeviceId::from(device_id_str.as_str());
+                                    matrix_sdk::ruma::OwnedDeviceId::from(device_id_str.as_ref());
                                 matrix
                                     .client()
                                     .await
@@ -672,7 +674,7 @@ impl State {
                 }
                 Task::none()
             }
-            Message::DeviceRenamed(device_id, res) => {
+            Message::DeviceRenamed(ref device_id, res) => {
                 match res {
                     Ok(_) => {
                         if let Some(device) =
@@ -687,9 +689,9 @@ impl State {
                 }
                 Task::none()
             }
-            Message::DeleteDevice(device_id) => {
+            Message::DeleteDevice(ref device_id) => {
                 if let Some(matrix) = matrix {
-                    if let Some(device) = self.devices.iter_mut().find(|d| d.device_id == device_id)
+                    if let Some(device) = self.devices.iter_mut().find(|d| d.device_id == *device_id)
                     {
                         device.is_deleting = true;
                         let matrix = matrix.clone();
@@ -701,7 +703,7 @@ impl State {
                                 let client = matrix.client().await;
                                 let user_id = client.user_id().ok_or("No user ID")?.to_string();
                                 let did =
-                                    matrix_sdk::ruma::OwnedDeviceId::from(device_id_str.as_str());
+                                    matrix_sdk::ruma::OwnedDeviceId::from(device_id_str.as_ref());
 
                                 if let Err(e) = client
                                     .delete_devices(std::slice::from_ref(&did), None)
@@ -739,13 +741,13 @@ impl State {
                 }
                 Task::none()
             }
-            Message::DeviceDeleted(device_id, res) => {
-                if let Some(device) = self.devices.iter_mut().find(|d| d.device_id == device_id) {
+            Message::DeviceDeleted(ref device_id, res) => {
+                if let Some(device) = self.devices.iter_mut().find(|d| d.device_id == *device_id) {
                     device.is_deleting = false;
                 }
                 match res {
                     Ok(_) => {
-                        self.devices.retain(|d| d.device_id != device_id);
+                        self.devices.retain(|d| d.device_id != *device_id);
                         self.device_delete_password.clear();
                     }
                     Err(e) => {
@@ -890,7 +892,7 @@ impl State {
                         .push(
                             text_input("New device name", &device.edit_name)
                                 .on_input({
-                                    let id = device.device_id.clone();
+                                    let id = Arc::clone(&device.device_id);
                                     move |v| Message::EditDeviceNameChanged(id.clone(), v)
                                 })
                                 .on_submit(|_| Message::SaveDeviceName(device.device_id.clone())),
@@ -906,7 +908,7 @@ impl State {
                 } else {
                     row = row
                         .push(text::body(name).size(14))
-                        .push(text::body(format!("({})", device.device_id)).size(12))
+                        .push(text::body(format!("({})", device.device_id.as_ref())).size(12))
                         .push(tooltip(
                             button::icon(Named::new("document-edit-symbolic"))
                                 .on_press(Message::StartRenameDevice(device.device_id.clone())),
