@@ -517,7 +517,10 @@ mod tests {
         );
 
         // Verify the error state is set correctly
-        assert_eq!(app.error, Some("Failed to fetch media: network timeout".to_string()));
+        assert_eq!(
+            app.error,
+            Some("Failed to fetch media: network timeout".to_string())
+        );
 
         // Ensure nothing was inserted into the cache
         assert!(app.media_cache.is_empty());
