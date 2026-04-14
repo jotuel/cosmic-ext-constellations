@@ -13,3 +13,6 @@
 ## 2024-05-18 - Replacing Emojis with Symbolic Icons
 **Learning:** Using raw emojis for UI actions (like '✏️' or '🗑️') can break visual consistency with the system theme and lacks accessible tooltips if not explicitly wrapped.
 **Action:** When designing UI elements in `libcosmic`, prefer semantic widgets over generic text buttons: use `button::icon` with standard freedesktop icons (e.g., `Named::new("document-edit-symbolic")`) and ensure they are wrapped in a `cosmic::widget::tooltip` to provide correct visual affordances and accessibility.
+## 2026-04-14 - Disabled States for Primary Actions
+**Learning:** Users can accidentally trigger empty or invalid actions (like sending an empty message or creating an unnamed room) if primary action buttons remain enabled when input is missing. This leads to phantom submissions and user confusion.
+**Action:** Always disable primary action buttons (like 'Send' or 'Create') and block form submission when the required input fields are empty or contain only whitespace to provide immediate visual feedback and prevent invalid states.
