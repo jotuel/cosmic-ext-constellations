@@ -76,6 +76,9 @@ mod tests {
         }
 
         // The function should return an error since the session bus is unreachable
-        assert!(result.is_err(), "Expected an error when DBUS_SESSION_BUS_ADDRESS is invalid");
+        assert!(
+            result.is_err(),
+            "Expected an error when DBUS_SESSION_BUS_ADDRESS is invalid"
+        );
     }
 }
