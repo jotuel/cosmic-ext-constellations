@@ -51,7 +51,7 @@ impl Constellations {
                         }
                         _ => {
                             bubble_col =
-                                bubble_col.push(self.view_message_text(message, &item.markdown));
+                                bubble_col.push(self.view_message_text(message.msgtype(), &item.markdown));
                         }
                     }
 
@@ -96,15 +96,19 @@ impl Constellations {
 
     fn view_reactions<'a>(
         &'a self,
-        event: &'a matrix_sdk::ruma::events::AnySyncTimelineEvent,
-    ) -> Row<'a, Message> {
+        event: &'a matrix_sdk_ui::timeline::EventTimelineItem,
+    ) -> Row<'a, Message, cosmic::Theme> {
         let mut reaction_row = Row::new().spacing(5);
-        if let Some(reactions) = event.content().reactions() {
-            for (reaction, details) in reactions.iter() {
-                let count = details.len();
-                reaction_row = reaction_row.push(
-                    container(text::body(format!("{} {}", reaction, count)).size(10)).padding(2),
-                );
+        let reactions = event.content().reactions();
+        {
+            if let Some(reaction) = reactions {
+                for key in reaction.keys() {
+                    let people = reaction.get_key_value(key);
+                    let count = people.iter().count();
+                    reaction_row = reaction_row.push(
+                        container(text::body(format!("{} {}", key, count)).size(10)).padding(2),
+                    );
+                }
             }
         }
         reaction_row
@@ -115,7 +119,7 @@ impl Constellations {
         avatar_url: Option<&'a str>,
         sender_name: &'a str,
         timestamp: &'a str,
-    ) -> Row<'a, Message> {
+    ) -> Row<'a, Message, cosmic::Theme> {
         let mut sender_info = Row::new().spacing(5).align_y(Alignment::Center);
 
         if let Some(mxc_url) = avatar_url {
@@ -144,7 +148,7 @@ impl Constellations {
     fn view_message_image<'a>(
         &'a self,
         image: &'a matrix_sdk::ruma::events::room::message::ImageMessageEventContent,
-    ) -> Column<'a, Message> {
+    ) -> Column<'a, Message, cosmic::Theme> {
         let mut bubble_col = Column::new();
         let mxc_url = match &image.source {
             MediaSource::Plain(uri) => uri.to_string(),
@@ -176,7 +180,7 @@ impl Constellations {
     fn view_message_file<'a>(
         &'a self,
         file: &'a matrix_sdk::ruma::events::room::message::FileMessageEventContent,
-    ) -> Column<'a, Message> {
+    ) -> Column<'a, Message, cosmic::Theme> {
         let mut bubble_col = Column::new();
         let mxc_url = match &file.source {
             MediaSource::Plain(uri) => uri.to_string(),
@@ -203,7 +207,7 @@ impl Constellations {
         &'a self,
         message: &'a matrix_sdk::ruma::events::room::message::MessageType,
         markdown: &'a [PreviewEvent],
-    ) -> Column<'a, Message> {
+    ) -> Column<'a, Message, cosmic::Theme> {
         let mut bubble_col = Column::new();
         if self.app_settings.render_markdown {
             let mut md_col =

@@ -225,7 +225,6 @@ impl<T: Clone> ApplyVectorDiffExt<T> for Vec<T> {
 #[derive(Clone, Debug)]
 struct ConstellationsItem {
     pub item: Arc<matrix::TimelineItem>,
-    pub sender: String,
     pub sender_name: String,
     pub avatar_url: Option<String>,
     pub timestamp: String,
@@ -235,7 +234,6 @@ struct ConstellationsItem {
 
 impl ConstellationsItem {
     fn new(item: Arc<matrix::TimelineItem>, user_id: Option<&str>) -> Self {
-        let mut sender = String::new();
         let mut sender_name = String::new();
         let mut avatar_url = None;
         let mut timestamp = String::new();
@@ -246,17 +244,16 @@ impl ConstellationsItem {
             if let Some(msg) = event.content().as_message() {
                 markdown = crate::parse_markdown(msg.body());
             }
-            sender = event.sender().to_string();
             let (name, url) = match event.sender_profile() {
                 matrix_sdk_ui::timeline::TimelineDetails::Ready(profile) => (
                     profile
                         .display_name
                         .as_deref()
-                        .unwrap_or(&sender)
+                        .unwrap_or(&event.sender().to_string())
                         .to_string(),
                     profile.avatar_url.as_ref().map(|uri| uri.to_string()),
                 ),
-                _ => (sender.clone(), None),
+                _ => (event.sender().to_string(), None),
             };
             sender_name = name;
             avatar_url = url;
@@ -269,12 +266,11 @@ impl ConstellationsItem {
                 .format("%Y-%m-%d %H:%M:%S")
                 .to_string();
 
-            is_me = user_id == Some(&sender);
+            is_me = user_id == Some(&sender_name);
         }
 
         Self {
             item,
-            sender,
             sender_name,
             avatar_url,
             timestamp,
