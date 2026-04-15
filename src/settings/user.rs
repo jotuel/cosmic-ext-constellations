@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use crate::matrix::MatrixEngine;
 use cosmic::iced::Alignment;
 use cosmic::widget::{
@@ -8,6 +7,7 @@ use cosmic::{Action, Element, Task};
 use matrix_sdk::encryption::verification::{
     SasState, SasVerification, VerificationRequest, VerificationRequestState,
 };
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub struct DeviceInfo {
@@ -404,8 +404,7 @@ impl State {
                         async move {
                             let client = matrix.client().await;
                             let user_id = client.user_id().ok_or("No user ID")?;
-                            let current_device_id =
-                                client.device_id().ok_or("No device ID")?;
+                            let current_device_id = client.device_id().ok_or("No device ID")?;
                             let user_devices = client
                                 .encryption()
                                 .get_user_devices(user_id)
@@ -455,7 +454,8 @@ impl State {
                         async move {
                             let client = matrix.client().await;
                             let user_id = client.user_id().ok_or("No user ID")?;
-                            let device_id_typed = matrix_sdk::ruma::OwnedDeviceId::from(device_id_clone.as_ref());
+                            let device_id_typed =
+                                matrix_sdk::ruma::OwnedDeviceId::from(device_id_clone.as_ref());
                             let device = client
                                 .encryption()
                                 .get_device(user_id, &device_id_typed)
@@ -644,7 +644,8 @@ impl State {
             }
             Message::SaveDeviceName(ref device_id) => {
                 if let Some(matrix) = matrix {
-                    if let Some(device) = self.devices.iter_mut().find(|d| d.device_id == *device_id)
+                    if let Some(device) =
+                        self.devices.iter_mut().find(|d| d.device_id == *device_id)
                     {
                         device.is_renaming = false;
                         let new_name = device.edit_name.clone();
@@ -691,7 +692,8 @@ impl State {
             }
             Message::DeleteDevice(ref device_id) => {
                 if let Some(matrix) = matrix {
-                    if let Some(device) = self.devices.iter_mut().find(|d| d.device_id == *device_id)
+                    if let Some(device) =
+                        self.devices.iter_mut().find(|d| d.device_id == *device_id)
                     {
                         device.is_deleting = true;
                         let matrix = matrix.clone();
