@@ -311,6 +311,73 @@ impl Constellations {
         Task::none()
     }
 
+    pub fn handle_toggle_login_mode(
+        &mut self,
+    ) -> Task<Action<<Constellations as Application>::Message>> {
+        self.is_registering_mode = !self.is_registering_mode;
+        self.error = None;
+        Task::none()
+    }
+
+    pub fn handle_submit_register(
+        &mut self,
+    ) -> Task<Action<<Constellations as Application>::Message>> {
+        if let Some(matrix) = &self.matrix {
+            self.is_registering = true;
+            self.error = None;
+            self.sync_status = matrix::SyncStatus::Disconnected;
+            let matrix = matrix.clone();
+            let homeserver = self.login_homeserver.clone();
+            let username = self.login_username.clone();
+            let password = self.login_password.clone();
+            self.login_password.clear();
+
+            Task::perform(
+                async move {
+                    matrix.register(&homeserver, &username, &password).await?;
+                    let user_id = matrix
+                        .client()
+                        .await
+                        .user_id()
+                        .map(|u| u.to_string())
+                        .ok_or_else(|| {
+                            anyhow::anyhow!("Failed to get user ID after registration")
+                        })?;
+                    matrix.start_sync().await?;
+                    Ok(user_id)
+                },
+                |res: Result<String, anyhow::Error>| {
+                    Action::from(Message::RegisterFinished(
+                        res.map_err(matrix::SyncError::from),
+                    ))
+                },
+            )
+        } else {
+            Task::none()
+        }
+    }
+
+    pub fn handle_register_finished(
+        &mut self,
+        res: Result<String, matrix::SyncError>,
+    ) -> Task<Action<<Constellations as Application>::Message>> {
+        self.is_registering = false;
+        match res {
+            Ok(user_id) => {
+                self.user_id = Some(user_id);
+                self.login_homeserver.clear();
+                self.login_username.clear();
+                self.login_password.clear();
+                self.error = None;
+                self.update_title()
+            }
+            Err(e) => {
+                self.error = Some(format!("Registration failed: {}", e));
+                Task::none()
+            }
+        }
+    }
+
     pub fn handle_submit_login(
         &mut self,
     ) -> Task<Action<<Constellations as Application>::Message>> {
@@ -492,6 +559,8 @@ mod tests {
             login_password: String::new(),
             is_logging_in: false,
             is_oidc_logging_in: false,
+            is_registering: false,
+            is_registering_mode: false,
             is_initializing: false,
             is_sync_indicator_active: false,
             selected_space: None,

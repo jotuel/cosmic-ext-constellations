@@ -452,6 +452,76 @@ impl MatrixEngine {
         );
     }
 
+    pub async fn register(&self, homeserver: &str, username: &str, password: &str) -> Result<()> {
+        let homeserver_url = if homeserver.starts_with("https://")
+            || homeserver.starts_with("http://localhost")
+            || homeserver.starts_with("http://127.0.0.1")
+            || homeserver.starts_with("http://[::1]")
+        {
+            homeserver.to_string()
+        } else {
+            let stripped = homeserver.strip_prefix("http://").unwrap_or(homeserver);
+            format!("https://{}", stripped)
+        };
+
+        let client = {
+            let mut inner = self.inner.write().await;
+            if let Some(handle) = inner.sync_handle.take() {
+                handle.abort();
+            }
+            if let Some(handle) = inner.session_change_handle.take() {
+                handle.abort();
+            }
+            let data_dir = inner.data_dir.clone();
+            let new_client = Self::setup_client(data_dir, &homeserver_url).await?;
+            inner.client = new_client.clone();
+            new_client
+        };
+
+        use matrix_sdk::ruma::api::client::account::register::v3::Request as RegisterRequest;
+        let mut request = RegisterRequest::new();
+        request.username = Some(username.to_string());
+        request.password = Some(password.to_string());
+        request.initial_device_display_name = Some("Constellations Matrix Client".to_string());
+
+        client
+            .matrix_auth()
+            .register(request)
+            .await
+            .context("Failed to register")?;
+
+        let sync_service: Arc<SyncService> =
+            Arc::new(SyncService::builder(client.clone()).build().await?);
+        let room_list_service = sync_service.room_list_service();
+
+        // Save session to oo7
+        if let Some(session) = client.matrix_auth().session() {
+            let session_data = SessionData {
+                homeserver: homeserver_url,
+                user_id: session.meta.user_id.to_string(),
+                access_token: session.tokens.access_token.to_string(),
+                refresh_token: session.tokens.refresh_token.clone(),
+                id_token: None,
+                device_id: session.meta.device_id.to_string(),
+                is_oidc: false,
+            };
+
+            Self::save_session_to_keyring(&session_data).await?;
+        }
+
+        self.setup_event_handlers(&client);
+
+        let mut inner = self.inner.write().await;
+        inner.client = client.clone();
+        inner.sync_service = Some(sync_service);
+        inner.room_list_service = Some(room_list_service);
+
+        drop(inner);
+        self.spawn_session_change_handler(client).await;
+
+        Ok(())
+    }
+
     pub async fn login(&self, homeserver: &str, username: &str, password: &str) -> Result<()> {
         let homeserver_url = if homeserver.starts_with("https://")
             || homeserver.starts_with("http://localhost")
