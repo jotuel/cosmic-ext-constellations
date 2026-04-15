@@ -4,7 +4,8 @@ use cosmic::{
         Alignment,
     },
     widget::{
-        button, container, menu, text, text_input, tooltip::Position, Column, RcElementWrapper, Row,
+        button, container, icon::Named, menu, text, text_input, tooltip::Position, Column,
+        RcElementWrapper, Row,
     },
     Action, Element, Task,
 };
@@ -413,14 +414,12 @@ impl Constellations {
 
         // Global icon (All Rooms)
         let is_global_selected = self.selected_space.is_none();
-        let global_container = container(text::body("🌐").size(24))
-            .padding(8)
-            .align_x(Alignment::Center);
 
         let global_btn = if is_global_selected {
-            button::custom(global_container)
+            button::icon(Named::new("applications-internet-symbolic"))
         } else {
-            button::custom(global_container).on_press(Message::SelectSpace(None))
+            button::icon(Named::new("applications-internet-symbolic"))
+                .on_press(Message::SelectSpace(None))
         };
 
         let global_tooltip = tooltip(global_btn, text::body("All Rooms"), Position::Right);
