@@ -856,22 +856,22 @@ impl Application for Constellations {
         let mut room_list = Column::new().spacing(5);
 
         let create_room_ui = if self.creating_room {
-            Column::new()
-                .spacing(5)
-                .push(
-                    text_input("Room Name", &self.new_room_name)
-                        .on_input(Message::NewRoomNameChanged)
-                        .on_submit(|_| Message::CreateRoom(self.new_room_name.clone())),
-                )
-                .push(
-                    Row::new()
-                        .spacing(5)
-                        .push(
-                            button::text("Create")
-                                .on_press(Message::CreateRoom(self.new_room_name.clone())),
-                        )
-                        .push(button::text("Cancel").on_press(Message::ToggleCreateRoom)),
-                )
+            let mut name_input =
+                text_input("Room Name", &self.new_room_name).on_input(Message::NewRoomNameChanged);
+
+            let mut create_btn = button::text("Create");
+            if !self.new_room_name.trim().is_empty() {
+                name_input =
+                    name_input.on_submit(|_| Message::CreateRoom(self.new_room_name.clone()));
+                create_btn = create_btn.on_press(Message::CreateRoom(self.new_room_name.clone()));
+            }
+
+            Column::new().spacing(5).push(name_input).push(
+                Row::new()
+                    .spacing(5)
+                    .push(create_btn)
+                    .push(button::text("Cancel").on_press(Message::ToggleCreateRoom)),
+            )
         } else {
             Column::new().push(button::text("+ Create Room").on_press(Message::ToggleCreateRoom))
         };
@@ -989,6 +989,11 @@ impl Application for Constellations {
                 .into()
             };
 
+            let mut send_btn = button::text("Send");
+            if !self.composer_text.trim().is_empty() {
+                send_btn = send_btn.on_press(Message::SendMessage);
+            }
+
             let controls = Row::new()
                 .spacing(10)
                 .push(
@@ -999,7 +1004,7 @@ impl Application for Constellations {
                     })
                     .on_press(Message::TogglePreview),
                 )
-                .push(button::text("Send").on_press(Message::SendMessage));
+                .push(send_btn);
 
             content = content.push(Column::new().spacing(10).push(composer).push(controls));
         } else {

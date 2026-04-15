@@ -4,7 +4,8 @@ use cosmic::{
         Alignment,
     },
     widget::{
-        button, container, menu, text, text_input, tooltip::Position, Column, RcElementWrapper, Row,
+        button, container, icon::Named, menu, text, text_input, tooltip::Position, Column,
+        RcElementWrapper, Row,
     },
     Action, Element, Task,
 };
@@ -28,50 +29,14 @@ impl Constellations {
         for item in &self.timeline_items {
             if let Some(event) = item.item.as_event() {
                 if let Some(message) = event.content().as_message() {
-                    let _sender = &item.sender;
-                    let sender_name = &item.sender_name;
-                    let avatar_url = &item.avatar_url;
-                    let timestamp = &item.timestamp;
                     let is_me = item.is_me;
 
-                    let mut reaction_row = Row::new().spacing(5);
-                    if let Some(reactions) = event.content().reactions() {
-                        for (reaction, details) in reactions.iter() {
-                            let count = details.len();
-                            reaction_row = reaction_row.push(
-                                container(text::body(format!("{} {}", reaction, count)).size(10))
-                                    .padding(2),
-                            );
-                        }
-                    }
-
-                    let mut sender_info = Row::new().spacing(5).align_y(Alignment::Center);
-
-                    if let Some(mxc_url) = avatar_url {
-                        if let Some(handle) = self.media_cache.get(mxc_url) {
-                            sender_info = sender_info
-                                .push(cosmic::widget::image(handle.clone()).width(20).height(20));
-                        } else {
-                            sender_info = sender_info.push(
-                                container(
-                                    cosmic::widget::icon::from_name("avatar-default-symbolic")
-                                        .size(12),
-                                )
-                                .padding(2),
-                            );
-                        }
-                    } else {
-                        sender_info = sender_info.push(
-                            container(
-                                cosmic::widget::icon::from_name("avatar-default-symbolic").size(12),
-                            )
-                            .padding(2),
-                        );
-                    }
-
-                    // Optimization: Avoid allocating a new String on every render frame by using a reference
-                    sender_info = sender_info.push(text::body(sender_name.as_str()).size(10));
-                    sender_info = sender_info.push(text::body(timestamp.as_str()).size(10));
+                    let reaction_row = self.view_reactions(event);
+                    let sender_info = self.view_sender_info(
+                        item.avatar_url.as_deref(),
+                        item.sender_name.as_str(),
+                        item.timestamp.as_str(),
+                    );
 
                     let mut bubble_col = Column::new()
                         .spacing(if self.app_settings.compact_mode { 0 } else { 2 })
@@ -79,134 +44,14 @@ impl Constellations {
 
                     match message.msgtype() {
                         MessageType::Image(image) => {
-                            let mxc_url = match &image.source {
-                                MediaSource::Plain(uri) => uri.to_string(),
-                                MediaSource::Encrypted(file) => file.url.to_string(),
-                            };
-                            bubble_col = bubble_col.push(
-                                text::body(format!("📷 Image: {}", image.body)).size(
-                                    if self.app_settings.compact_mode {
-                                        12
-                                    } else {
-                                        14
-                                    },
-                                ),
-                            );
-                            if let Some(handle) = self.media_cache.get(&mxc_url) {
-                                bubble_col =
-                                    bubble_col.push(cosmic::widget::image(handle.clone()).width(
-                                        if self.app_settings.compact_mode {
-                                            150
-                                        } else {
-                                            300
-                                        },
-                                    ));
-                            } else {
-                                bubble_col = bubble_col.push(
-                                    button::text("Download Image")
-                                        .on_press(Message::FetchMedia(image.source.clone())),
-                                );
-                            }
+                            bubble_col = bubble_col.push(self.view_message_image(image));
                         }
                         MessageType::File(file) => {
-                            let mxc_url = match &file.source {
-                                MediaSource::Plain(uri) => uri.to_string(),
-                                MediaSource::Encrypted(file) => file.url.to_string(),
-                            };
-                            bubble_col = bubble_col.push(
-                                text::body(format!("📁 File: {}", file.body)).size(
-                                    if self.app_settings.compact_mode {
-                                        12
-                                    } else {
-                                        14
-                                    },
-                                ),
-                            );
-                            if self.media_cache.contains_key(&mxc_url) {
-                                bubble_col = bubble_col.push(text::body("[Downloaded]"));
-                            } else {
-                                bubble_col = bubble_col.push(
-                                    button::text("Download File")
-                                        .on_press(Message::FetchMedia(file.source.clone())),
-                                );
-                            }
+                            bubble_col = bubble_col.push(self.view_message_file(file));
                         }
                         _ => {
-                            if self.app_settings.render_markdown {
-                                let mut md_col = Column::new()
-                                    .spacing(if self.app_settings.compact_mode { 2 } else { 5 });
-                                let mut current_row =
-                                    Row::new().spacing(0).align_y(Alignment::Center);
-                                let mut row_has_content = false;
-
-                                for event in &item.markdown {
-                                    match event {
-                                        PreviewEvent::StartHeading => {
-                                            if row_has_content {
-                                                md_col = md_col.push(current_row);
-                                                current_row = Row::new()
-                                                    .spacing(0)
-                                                    .align_y(Alignment::Center);
-                                                row_has_content = false;
-                                            }
-                                        }
-                                        PreviewEvent::EndBlock => {
-                                            if row_has_content {
-                                                md_col = md_col.push(current_row);
-                                                current_row = Row::new()
-                                                    .spacing(0)
-                                                    .align_y(Alignment::Center);
-                                                row_has_content = false;
-                                            }
-                                        }
-                                        PreviewEvent::Text(t) => {
-                                            current_row =
-                                                current_row.push(text::body(t.as_str()).size(
-                                                    if self.app_settings.compact_mode {
-                                                        12
-                                                    } else {
-                                                        14
-                                                    },
-                                                ));
-                                            row_has_content = true;
-                                        }
-                                        PreviewEvent::Code(c) => {
-                                            current_row = current_row.push(
-                                                container(text::body(c.as_str()).size(
-                                                    if self.app_settings.compact_mode {
-                                                        10
-                                                    } else {
-                                                        12
-                                                    },
-                                                ))
-                                                .padding(2),
-                                            );
-                                            row_has_content = true;
-                                        }
-                                        PreviewEvent::Break => {
-                                            if row_has_content {
-                                                md_col = md_col.push(current_row);
-                                                current_row = Row::new()
-                                                    .spacing(0)
-                                                    .align_y(Alignment::Center);
-                                                row_has_content = false;
-                                            }
-                                        }
-                                    }
-                                }
-                                if row_has_content {
-                                    md_col = md_col.push(current_row);
-                                }
-                                bubble_col = bubble_col.push(md_col);
-                            } else {
-                                bubble_col = bubble_col.push(text::body(message.body()).size(
-                                    if self.app_settings.compact_mode {
-                                        12
-                                    } else {
-                                        14
-                                    },
-                                ));
-                            }
+                            bubble_col =
+                                bubble_col.push(self.view_message_text(message, &item.markdown));
                         }
                     }
 
@@ -247,6 +92,187 @@ impl Constellations {
         scrollable(timeline)
             .height(cosmic::iced::Length::Fill)
             .into()
+    }
+
+    fn view_reactions<'a>(
+        &'a self,
+        event: &'a matrix_sdk::ruma::events::AnySyncTimelineEvent,
+    ) -> Row<'a, Message> {
+        let mut reaction_row = Row::new().spacing(5);
+        if let Some(reactions) = event.content().reactions() {
+            for (reaction, details) in reactions.iter() {
+                let count = details.len();
+                reaction_row = reaction_row.push(
+                    container(text::body(format!("{} {}", reaction, count)).size(10)).padding(2),
+                );
+            }
+        }
+        reaction_row
+    }
+
+    fn view_sender_info<'a>(
+        &'a self,
+        avatar_url: Option<&'a str>,
+        sender_name: &'a str,
+        timestamp: &'a str,
+    ) -> Row<'a, Message> {
+        let mut sender_info = Row::new().spacing(5).align_y(Alignment::Center);
+
+        if let Some(mxc_url) = avatar_url {
+            if let Some(handle) = self.media_cache.get(mxc_url) {
+                sender_info =
+                    sender_info.push(cosmic::widget::image(handle.clone()).width(20).height(20));
+            } else {
+                sender_info = sender_info.push(
+                    container(cosmic::widget::icon::from_name("avatar-default-symbolic").size(12))
+                        .padding(2),
+                );
+            }
+        } else {
+            sender_info = sender_info.push(
+                container(cosmic::widget::icon::from_name("avatar-default-symbolic").size(12))
+                    .padding(2),
+            );
+        }
+
+        sender_info = sender_info.push(text::body(sender_name).size(10));
+        sender_info = sender_info.push(text::body(timestamp).size(10));
+
+        sender_info
+    }
+
+    fn view_message_image<'a>(
+        &'a self,
+        image: &'a matrix_sdk::ruma::events::room::message::ImageMessageEventContent,
+    ) -> Column<'a, Message> {
+        let mut bubble_col = Column::new();
+        let mxc_url = match &image.source {
+            MediaSource::Plain(uri) => uri.to_string(),
+            MediaSource::Encrypted(file) => file.url.to_string(),
+        };
+        bubble_col = bubble_col.push(text::body(format!("📷 Image: {}", image.body)).size(
+            if self.app_settings.compact_mode {
+                12
+            } else {
+                14
+            },
+        ));
+        if let Some(handle) = self.media_cache.get(&mxc_url) {
+            bubble_col = bubble_col.push(cosmic::widget::image(handle.clone()).width(
+                if self.app_settings.compact_mode {
+                    150
+                } else {
+                    300
+                },
+            ));
+        } else {
+            bubble_col = bubble_col.push(
+                button::text("Download Image").on_press(Message::FetchMedia(image.source.clone())),
+            );
+        }
+        bubble_col
+    }
+
+    fn view_message_file<'a>(
+        &'a self,
+        file: &'a matrix_sdk::ruma::events::room::message::FileMessageEventContent,
+    ) -> Column<'a, Message> {
+        let mut bubble_col = Column::new();
+        let mxc_url = match &file.source {
+            MediaSource::Plain(uri) => uri.to_string(),
+            MediaSource::Encrypted(file) => file.url.to_string(),
+        };
+        bubble_col = bubble_col.push(text::body(format!("📁 File: {}", file.body)).size(
+            if self.app_settings.compact_mode {
+                12
+            } else {
+                14
+            },
+        ));
+        if self.media_cache.contains_key(&mxc_url) {
+            bubble_col = bubble_col.push(text::body("[Downloaded]"));
+        } else {
+            bubble_col = bubble_col.push(
+                button::text("Download File").on_press(Message::FetchMedia(file.source.clone())),
+            );
+        }
+        bubble_col
+    }
+
+    fn view_message_text<'a>(
+        &'a self,
+        message: &'a matrix_sdk::ruma::events::room::message::MessageType,
+        markdown: &'a [PreviewEvent],
+    ) -> Column<'a, Message> {
+        let mut bubble_col = Column::new();
+        if self.app_settings.render_markdown {
+            let mut md_col =
+                Column::new().spacing(if self.app_settings.compact_mode { 2 } else { 5 });
+            let mut current_row = Row::new().spacing(0).align_y(Alignment::Center);
+            let mut row_has_content = false;
+
+            for event in markdown {
+                match event {
+                    PreviewEvent::StartHeading => {
+                        if row_has_content {
+                            md_col = md_col.push(current_row);
+                            current_row = Row::new().spacing(0).align_y(Alignment::Center);
+                            row_has_content = false;
+                        }
+                    }
+                    PreviewEvent::EndBlock => {
+                        if row_has_content {
+                            md_col = md_col.push(current_row);
+                            current_row = Row::new().spacing(0).align_y(Alignment::Center);
+                            row_has_content = false;
+                        }
+                    }
+                    PreviewEvent::Text(t) => {
+                        current_row = current_row.push(text::body(t.as_str()).size(
+                            if self.app_settings.compact_mode {
+                                12
+                            } else {
+                                14
+                            },
+                        ));
+                        row_has_content = true;
+                    }
+                    PreviewEvent::Code(c) => {
+                        current_row = current_row.push(
+                            container(text::body(c.as_str()).size(
+                                if self.app_settings.compact_mode {
+                                    10
+                                } else {
+                                    12
+                                },
+                            ))
+                            .padding(2),
+                        );
+                        row_has_content = true;
+                    }
+                    PreviewEvent::Break => {
+                        if row_has_content {
+                            md_col = md_col.push(current_row);
+                            current_row = Row::new().spacing(0).align_y(Alignment::Center);
+                            row_has_content = false;
+                        }
+                    }
+                }
+            }
+            if row_has_content {
+                md_col = md_col.push(current_row);
+            }
+            bubble_col = bubble_col.push(md_col);
+        } else {
+            bubble_col = bubble_col.push(text::body(message.body()).size(
+                if self.app_settings.compact_mode {
+                    12
+                } else {
+                    14
+                },
+            ));
+        }
+        bubble_col
     }
 
     pub fn view_preview(&self) -> Element<'_, Message> {
@@ -388,14 +414,12 @@ impl Constellations {
 
         // Global icon (All Rooms)
         let is_global_selected = self.selected_space.is_none();
-        let global_container = container(text::body("🌐").size(24))
-            .padding(8)
-            .align_x(Alignment::Center);
 
         let global_btn = if is_global_selected {
-            button::custom(global_container)
+            button::icon(Named::new("applications-internet-symbolic"))
         } else {
-            button::custom(global_container).on_press(Message::SelectSpace(None))
+            button::icon(Named::new("applications-internet-symbolic"))
+                .on_press(Message::SelectSpace(None))
         };
 
         let global_tooltip = tooltip(global_btn, text::body("All Rooms"), Position::Right);
