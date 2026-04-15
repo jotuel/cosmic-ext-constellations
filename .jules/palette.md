@@ -16,3 +16,6 @@
 ## 2026-04-14 - Disabled States for Primary Actions
 **Learning:** Users can accidentally trigger empty or invalid actions (like sending an empty message or creating an unnamed room) if primary action buttons remain enabled when input is missing. This leads to phantom submissions and user confusion.
 **Action:** Always disable primary action buttons (like 'Send' or 'Create') and block form submission when the required input fields are empty or contain only whitespace to provide immediate visual feedback and prevent invalid states.
+## 2024-04-15 - Replace Text Buttons with Semantic Icons
+**Learning:** Found that the "All Rooms" switch in the space switcher uses a text button containing a globe emoji (`"🌐"`). `libcosmic` specifies that semantic widgets should be preferred over generic text buttons with emojis. Using `button::icon` wrapped in `cosmic::widget::tooltip` provides better visual affordance, native styling consistency with the COSMIC desktop environment, and improved accessibility.
+**Action:** Replaced the `"🌐"` text button with `button::icon(Named::new("applications-internet-symbolic"))` or `"network-workgroup-symbolic"` to align with the `libcosmic` UI guidelines.
