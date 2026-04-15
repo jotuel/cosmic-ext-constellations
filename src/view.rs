@@ -327,6 +327,12 @@ impl Constellations {
     }
 
     pub fn view_login(&self) -> Element<'_, Message> {
+        let title = if self.is_registering_mode {
+            "Create Matrix Account"
+        } else {
+            "Login to Matrix"
+        };
+
         let mut content = Column::new()
             .spacing(10)
             .padding(20)
