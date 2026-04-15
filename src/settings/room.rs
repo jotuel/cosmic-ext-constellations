@@ -5,10 +5,11 @@ use cosmic::{Action, Element, Task};
 use matrix_sdk::ruma::events::room::MediaSource;
 use matrix_sdk::ruma::RoomId;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Default)]
 pub struct State {
-    pub room_id: Option<String>,
+    pub room_id: Option<Arc<str>>,
     pub name: String,
     pub original_name: String,
     pub topic: String,

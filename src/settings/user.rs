@@ -678,7 +678,7 @@ impl State {
                 match res {
                     Ok(_) => {
                         if let Some(device) =
-                            self.devices.iter_mut().find(|d| d.device_id == device_id)
+                            self.devices.iter_mut().find(|d| d.device_id == *device_id)
                         {
                             device.display_name = Some(device.edit_name.clone());
                         }

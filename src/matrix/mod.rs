@@ -15,6 +15,7 @@ pub use matrix_sdk_ui::room_list_service::{RoomListDynamicEntriesController, Roo
 use matrix_sdk_ui::sync_service::SyncService;
 pub use matrix_sdk_ui::timeline::{RoomExt, Timeline, TimelineItem, VirtualTimelineItem};
 use oo7::Keyring;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -1230,8 +1231,7 @@ impl MatrixEngine {
             }
         }
 
-        // Securely generate passphrase using rand
-        use rand::RngCore;
+
         let mut buf = [0u8; 32];
         rand::rng().fill_bytes(&mut buf);
 

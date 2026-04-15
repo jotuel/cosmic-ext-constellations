@@ -10,7 +10,7 @@ use cosmic::{
 };
 use matrix_sdk::ruma::events::room::{message::MessageType, MediaSource};
 
-use crate::{matrix, parse_markdown, Constellations, MenuAct, Message, PreviewEvent};
+use crate::{matrix, Constellations, MenuAct, Message, PreviewEvent};
 
 impl Constellations {
     pub fn view_timeline(&self) -> Element<'_, Message> {

@@ -31,7 +31,7 @@ fn test_markdown_to_html() {
 #[test]
 fn test_room_data_serialization() {
     let room_data = RoomData {
-        id: "!room:example.com".to_string(),
+        id: "!room:example.com".into(),
         name: Some("Example Room".to_string()),
         last_message: Some("Hello".to_string()),
         unread_count: 5,
@@ -117,7 +117,7 @@ fn test_space_hierarchy_multiple_parents() {
 #[test]
 fn test_room_data_space_serialization() {
     let room_data = RoomData {
-        id: "!room:example.com".to_string(),
+        id: "!room:example.com".into(),
         name: Some("Example Room".to_string()),
         last_message: Some("Hello".to_string()),
         unread_count: 5,
@@ -153,7 +153,7 @@ fn test_matrix_event_variants() {
     }
 
     let room_data = RoomData {
-        id: "1".to_string(),
+        id: "1".into(),
         name: None,
         last_message: None,
         unread_count: 0,
@@ -169,7 +169,7 @@ fn test_matrix_event_variants() {
     });
     if let MatrixEvent::RoomDiff(VectorDiff::Insert { index, value }) = event {
         assert_eq!(index, 0);
-        assert_eq!(value.id, "1");
+        assert_eq!(value.id, "1".into());
     } else {
         panic!("Expected RoomDiff(Insert) variant");
     }
