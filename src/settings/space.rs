@@ -488,7 +488,7 @@ impl State {
                         .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
                         .push(
                             button::destructive("Remove")
-                                .on_press(Message::RemoveChild(child.id.clone())),
+                                .on_press(Message::RemoveChild(child.id.to_string())),
                         ),
                 );
             }

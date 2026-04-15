@@ -529,7 +529,7 @@ impl Constellations {
     fn timeline_subscription(
         &self,
         matrix: &matrix::MatrixEngine,
-        room_id: String,
+        room_id: Arc<str>,
     ) -> Subscription<Message> {
         Subscription::run_with(
             (MatrixEngineWrapper(matrix.clone()), room_id.clone()),
@@ -893,7 +893,7 @@ impl Application for Constellations {
             let space_name = self
                 .room_list
                 .iter()
-                .find(|r| r.id == selected_space.as_str())
+                .find(|r| r.id.as_ref() == selected_space.as_str())
                 .and_then(|r| r.name.as_deref())
                 .unwrap_or("Space");
             let space_header = Row::new()
