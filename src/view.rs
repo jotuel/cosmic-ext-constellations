@@ -332,7 +332,7 @@ impl Constellations {
             .padding(20)
             .max_width(400)
             .align_x(Alignment::Center)
-            .push(text::title1("Login to Matrix"));
+            .push(text::title1(title));
 
         let status_error = match &self.sync_status {
             matrix::SyncStatus::Error(e) => Some(format!("⚠️ Sync Error: {}", e)),
@@ -349,7 +349,7 @@ impl Constellations {
         let password_input = text_input("Password", &self.login_password).password();
 
         let (homeserver_input, username_input, password_input) =
-            if self.is_logging_in || self.is_oidc_logging_in {
+            if self.is_logging_in || self.is_oidc_logging_in || self.is_registering {
                 (homeserver_input, username_input, password_input)
             } else {
                 (
@@ -357,7 +357,13 @@ impl Constellations {
                     username_input.on_input(Message::LoginUsernameChanged),
                     password_input
                         .on_input(Message::LoginPasswordChanged)
-                        .on_submit(|_| Message::SubmitLogin),
+                        .on_submit(|_| {
+                            if self.is_registering_mode {
+                                Message::SubmitRegister
+                            } else {
+                                Message::SubmitLogin
+                            }
+                        }),
                 )
             };
 
@@ -366,7 +372,20 @@ impl Constellations {
             .push(username_input)
             .push(password_input);
 
-        let login_button = if self.is_logging_in {
+        let main_button = if self.is_registering_mode {
+            if self.is_registering {
+                button::text("Creating account...")
+            } else {
+                let mut btn = button::text("Create Account");
+                if !self.login_homeserver.is_empty()
+                    && !self.login_username.is_empty()
+                    && !self.login_password.is_empty()
+                {
+                    btn = btn.on_press(Message::SubmitRegister);
+                }
+                btn
+            }
+        } else if self.is_logging_in {
             button::text("Logging in...")
         } else {
             let mut btn = button::text("Login");
@@ -384,13 +403,33 @@ impl Constellations {
             button::text("Waiting for browser...")
         } else {
             let mut btn = button::text("Login with OIDC");
-            if !self.login_homeserver.is_empty() && !self.is_logging_in {
+            if !self.login_homeserver.is_empty() && !self.is_logging_in && !self.is_registering_mode
+            {
                 btn = btn.on_press(Message::SubmitOidcLogin);
             }
             btn
         };
 
-        content = content.push(login_button).push(oidc_button);
+        let toggle_mode_button = if self.is_registering_mode {
+            button::text("Already have an account? Login")
+        } else {
+            button::text("Need an account? Register")
+        };
+
+        let toggle_mode_button =
+            if self.is_logging_in || self.is_registering || self.is_oidc_logging_in {
+                toggle_mode_button
+            } else {
+                toggle_mode_button.on_press(Message::ToggleLoginMode)
+            };
+
+        content = content.push(main_button);
+
+        if !self.is_registering_mode {
+            content = content.push(oidc_button);
+        }
+
+        content = content.push(toggle_mode_button);
 
         container(content)
             .width(cosmic::iced::Length::Fill)
