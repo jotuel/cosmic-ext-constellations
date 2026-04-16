@@ -118,7 +118,7 @@ pub enum Message {
     SubmitRegister,
     RegisterFinished(Result<String, matrix::SyncError>),
     SelectSpace(Option<OwnedRoomId>),
-    SpaceChildrenFetched(Result<Vec<matrix::RoomData>, String>),
+    SpaceChildrenFetched(OwnedRoomId, Result<Vec<matrix::RoomData>, String>),
     NoOp,
     SubmitOidcLogin,
     OidcLoginStarted(Result<Url, String>),
@@ -813,7 +813,9 @@ impl Application for Constellations {
             Message::SubmitRegister => self.handle_submit_register(),
             Message::RegisterFinished(res) => self.handle_register_finished(res),
             Message::SelectSpace(space_id) => self.handle_select_space(space_id),
-            Message::SpaceChildrenFetched(res) => self.handle_space_children_fetched(res),
+            Message::SpaceChildrenFetched(space_id, res) => {
+                self.handle_space_children_fetched(space_id, res)
+            }
             Message::NoOp => Task::none(),
             Message::SubmitOidcLogin => self.handle_submit_oidc_login(),
             Message::OidcLoginStarted(res) => self.handle_oidc_login_started(res),
@@ -840,11 +842,12 @@ impl Application for Constellations {
                         if let (Some(matrix), Some(space_id)) = (&self.matrix, &self.selected_space) {
                              let matrix = matrix.clone();
                              let sid = space_id.clone();
+                             let sid_clone = sid.clone();
                              return Task::perform(
                                  async move {
-                                     matrix.get_space_children(sid.as_str()).await.map_err(|e| e.to_string())
+                                     matrix.get_space_children(sid_clone.as_str()).await.map_err(|e| e.to_string())
                                  },
-                                 |res| Message::SpaceChildrenFetched(res).into(),
+                                 move |res| Message::SpaceChildrenFetched(sid, res).into(),
                              );
                         }
                     }
@@ -998,7 +1001,33 @@ impl Application for Constellations {
             let mut room_content = Column::new().spacing(2);
 
             let mut header = Row::new().spacing(10).align_y(Alignment::Center);
-            header = header.push(text::body("#"));
+
+            if let Some(avatar_url) = &room.avatar_url {
+                if let Some(handle) = self.media_cache.get(avatar_url) {
+                    header = header.push(
+                        cosmic::widget::image(handle.clone())
+                            .width(24)
+                            .height(24),
+                    );
+                } else {
+                    header = header.push(
+                        container(text::body("#"))
+                            .width(24)
+                            .height(24)
+                            .align_x(Alignment::Center)
+                            .align_y(Alignment::Center),
+                    );
+                }
+            } else {
+                header = header.push(
+                    container(text::body("#"))
+                        .width(24)
+                        .height(24)
+                        .align_x(Alignment::Center)
+                        .align_y(Alignment::Center),
+                );
+            }
+
             header = header.push(text::body(name));
 
             if let Some(unread_str) = &room.unread_count_str {
@@ -1038,7 +1067,33 @@ impl Application for Constellations {
                 let mut room_content = Column::new().spacing(2);
 
                 let mut header = Row::new().spacing(10).align_y(Alignment::Center);
-                header = header.push(text::body("#"));
+
+                if let Some(avatar_url) = &room.avatar_url {
+                    if let Some(handle) = self.media_cache.get(avatar_url) {
+                        header = header.push(
+                            cosmic::widget::image(handle.clone())
+                                .width(24)
+                                .height(24),
+                        );
+                    } else {
+                        header = header.push(
+                            container(text::body("#"))
+                                .width(24)
+                                .height(24)
+                                .align_x(Alignment::Center)
+                                .align_y(Alignment::Center),
+                        );
+                    }
+                } else {
+                    header = header.push(
+                        container(text::body("#"))
+                            .width(24)
+                            .height(24)
+                            .align_x(Alignment::Center)
+                            .align_y(Alignment::Center),
+                    );
+                }
+
                 header = header.push(text::body(name));
 
                 if let Some(unread_str) = &room.unread_count_str {
