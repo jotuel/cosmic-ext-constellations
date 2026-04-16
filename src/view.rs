@@ -487,13 +487,34 @@ impl Constellations {
             };
             let is_selected = self.selected_space.as_ref() == Some(&space_id);
 
-            let avatar: Element<'_, Message> = if let Some(url) = &space.avatar_url {
+            let avatar_element: Element<'_, Message> = if let Some(url) = &space.avatar_url {
                 if let Some(handle) = self.media_cache.get(url) {
                     cosmic::widget::image(handle.clone())
                         .width(32)
                         .height(32)
                         .into()
                 } else {
+                    container(
+                        text::body(
+                            space
+                                .name
+                                .as_deref()
+                                .unwrap_or("S")
+                                .chars()
+                                .next()
+                                .unwrap_or('S')
+                                .to_string(),
+                        )
+                        .size(24),
+                    )
+                    .width(32)
+                    .height(32)
+                    .align_x(Alignment::Center)
+                    .align_y(Alignment::Center)
+                    .into()
+                }
+            } else {
+                container(
                     text::body(
                         space
                             .name
@@ -504,25 +525,19 @@ impl Constellations {
                             .unwrap_or('S')
                             .to_string(),
                     )
-                    .size(24)
-                    .into()
-                }
-            } else {
-                text::body(
-                    space
-                        .name
-                        .as_deref()
-                        .unwrap_or("S")
-                        .chars()
-                        .next()
-                        .unwrap_or('S')
-                        .to_string(),
+                    .size(24),
                 )
-                .size(24)
+                .width(32)
+                .height(32)
+                .align_x(Alignment::Center)
+                .align_y(Alignment::Center)
                 .into()
             };
 
-            let space_container = container(avatar).padding(8).align_x(Alignment::Center);
+            let space_container = container(avatar_element)
+                .padding(8)
+                .align_x(Alignment::Center)
+                .align_y(Alignment::Center);
 
             let btn = if is_selected {
                 button::custom(space_container)

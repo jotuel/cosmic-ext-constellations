@@ -66,7 +66,32 @@ impl Constellations {
                 self.sync_status = matrix::SyncStatus::Error(e.to_string());
             }
         }
-        title_task
+        let mut tasks = Vec::new();
+        tasks.push(title_task);
+
+        if let Some(matrix) = &self.matrix {
+            for room in self.room_list.iter() {
+                if let Some(avatar_url) = &room.avatar_url {
+                    if !self.media_cache.contains_key(avatar_url) {
+                        let matrix_clone = matrix.clone();
+                        let url_str = avatar_url.clone();
+                        let uri = matrix_sdk::ruma::OwnedMxcUri::from(avatar_url.as_str());
+                        let source = matrix_sdk::ruma::events::room::MediaSource::Plain(uri);
+                        tasks.push(Task::perform(
+                            async move {
+                                matrix_clone
+                                    .fetch_media(source)
+                                    .await
+                                    .map_err(|e| e.to_string())
+                            },
+                            move |res| Message::MediaFetched(url_str.clone(), res).into(),
+                        ));
+                    }
+                }
+            }
+        }
+
+        Task::batch(tasks)
     }
 
     pub fn handle_timeline_diff(
@@ -261,6 +286,8 @@ impl Constellations {
         space_id: Option<OwnedRoomId>,
     ) -> Task<Action<<Constellations as Application>::Message>> {
         self.selected_space = space_id.clone();
+        // Clear other_rooms immediately when switching to avoid stale data from previous space
+        self.other_rooms.clear();
 
         let mut tasks = Vec::new();
 
@@ -276,14 +303,16 @@ impl Constellations {
 
             if let Some(space_id) = space_id {
                 let matrix_clone = matrix.clone();
+                let sid_inner = space_id.clone();
+                let sid_res = space_id.clone();
                 tasks.push(Task::perform(
                     async move {
                         matrix_clone
-                            .get_space_children(space_id.as_str())
+                            .get_space_children(sid_inner.as_str())
                             .await
                             .map_err(|e| e.to_string())
                     },
-                    |res| Action::from(Message::SpaceChildrenFetched(res)),
+                    move |res| Action::from(Message::SpaceChildrenFetched(sid_res.clone(), res)),
                 ));
             } else {
                 self.other_rooms.clear();
@@ -300,8 +329,16 @@ impl Constellations {
 
     pub fn handle_space_children_fetched(
         &mut self,
+        space_id: OwnedRoomId,
         res: Result<Vec<matrix::RoomData>, String>,
     ) -> Task<Action<<Constellations as Application>::Message>> {
+        // Only update if the fetched children are for the currently selected space
+        if Some(&space_id) != self.selected_space.as_ref() {
+            return Task::none();
+        }
+
+        let mut tasks = Vec::new();
+
         match res {
             Ok(children) => {
                 // First, update the filtered_room_list because the hierarchy in matrix engine was updated
@@ -310,6 +347,29 @@ impl Constellations {
                 // Now filter out rooms that are already in room_list (i.e. joined rooms)
                 let joined_ids: std::collections::HashSet<String> =
                     self.room_list.iter().map(|r| r.id.to_string()).collect();
+
+                for child in &children {
+                    if let Some(avatar_url) = &child.avatar_url {
+                        if !self.media_cache.contains_key(avatar_url) {
+                            if let Some(matrix) = &self.matrix {
+                                let matrix_clone = matrix.clone();
+                                let url_str = avatar_url.clone();
+                                let uri = matrix_sdk::ruma::OwnedMxcUri::from(avatar_url.as_str());
+                                let source = matrix_sdk::ruma::events::room::MediaSource::Plain(uri);
+                                tasks.push(Task::perform(
+                                    async move {
+                                        matrix_clone
+                                            .fetch_media(source)
+                                            .await
+                                            .map_err(|e| e.to_string())
+                                    },
+                                    move |res| Message::MediaFetched(url_str.clone(), res).into(),
+                                ));
+                            }
+                        }
+                    }
+                }
+
                 self.other_rooms = children
                     .into_iter()
                     .filter(|r| !joined_ids.contains(r.id.as_ref()) && !r.is_space)
@@ -319,7 +379,12 @@ impl Constellations {
                 self.error = Some(format!("Failed to fetch space children: {}", e));
             }
         }
-        Task::none()
+
+        if tasks.is_empty() {
+            Task::none()
+        } else {
+            Task::batch(tasks)
+        }
     }
 
     pub fn handle_fetch_media(

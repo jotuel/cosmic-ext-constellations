@@ -1116,15 +1116,23 @@ impl MatrixEngine {
                         _ => continue,
                     };
 
-                    if !via_empty {
-                        let child_id_parsed = match RoomId::parse(child_id.as_str()) {
-                            Ok(id) => id,
-                            Err(_) => continue,
-                        };
+                        if !via_empty {
+                            let child_id_parsed = match RoomId::parse(child_id.as_str()) {
+                                Ok(id) => id,
+                                Err(_) => continue,
+                            };
 
-                        if let Some(child_room) = client.get_room(&child_id_parsed) {
-                            rooms.push(self.fetch_room_data(&child_room).await?);
-                        } else {
+                            {
+                                let mut inner = self.inner.write().await;
+                                inner.space_hierarchy.add_child(
+                                    space_id_parsed.clone(),
+                                    child_id_parsed.clone(),
+                                );
+                            }
+
+                            if let Some(child_room) = client.get_room(&child_id_parsed) {
+                                rooms.push(self.fetch_room_data(&child_room).await?);
+                            } else {
                             rooms.push(RoomData {
                                 id: child_id.as_str().into(),
                                 name: None,
@@ -1237,10 +1245,15 @@ impl MatrixEngine {
     }
 
     pub fn is_in_space_sync(&self, room_id: &RoomId, space_id: &RoomId) -> bool {
-        if let Ok(inner) = self.inner.try_read() {
-            inner.space_hierarchy.is_in_space(room_id, space_id)
-        } else {
-            false
+        match self.inner.try_read() {
+            Ok(inner) => inner.space_hierarchy.is_in_space(room_id, space_id),
+            Err(_) => {
+                // If we can't get a read lock, we fall back to assuming it might be in the space
+                // if we're currently selecting it, to avoid flickering. 
+                // But we don't have access to selected_space here.
+                // For now, just return false but log it.
+                false
+            }
         }
     }
 
