@@ -174,6 +174,7 @@ impl Constellations {
             }
             matrix::MatrixEvent::RoomDiff(diff) => {
                 self.room_list.apply_diff(diff);
+                self.update_filtered_rooms();
                 self.update_title()
             }
             matrix::MatrixEvent::TimelineDiff(diff) => self.handle_timeline_diff(diff),
@@ -260,6 +261,7 @@ impl Constellations {
         space_id: Option<OwnedRoomId>,
     ) -> Task<Action<<Constellations as Application>::Message>> {
         self.selected_space = space_id.clone();
+        self.update_filtered_rooms();
         if let Some(matrix) = &self.matrix {
             let matrix = matrix.clone();
             Task::perform(
@@ -544,6 +546,7 @@ mod tests {
             matrix: None,
             sync_status: matrix::SyncStatus::Disconnected,
             room_list: Vec::new(),
+            filtered_room_list: Vec::new(),
             selected_room: None,
             timeline_items: eyeball_im::Vector::new(),
             composer_text: String::new(),

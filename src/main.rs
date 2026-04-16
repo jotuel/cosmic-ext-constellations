@@ -11,7 +11,8 @@ use cosmic::iced::widget::image;
 use cosmic::iced::{Alignment, Subscription};
 use cosmic::widget::icon::Named;
 use cosmic::widget::menu::action::MenuAction;
-use cosmic::widget::{button, container, scrollable, text, text_input, Column, Row};
+use cosmic::iced::widget::tooltip;
+use cosmic::widget::{button, container, scrollable, text, text_input, tooltip::Position, Column, Row};
 use cosmic::{Action, Application, Core, Element, Task};
 use eyeball_im::Vector;
 use matrix_sdk::ruma::events::room::MediaSource;
@@ -60,6 +61,7 @@ struct Constellations {
     matrix: Option<matrix::MatrixEngine>,
     sync_status: matrix::SyncStatus,
     room_list: Vec<matrix::RoomData>,
+    filtered_room_list: Vec<matrix::RoomData>,
     selected_room: Option<std::sync::Arc<str>>,
     timeline_items: Vector<ConstellationsItem>,
     composer_text: String,
@@ -334,6 +336,24 @@ impl<T: Clone> ApplyVectorDiffExt<T> for eyeball_im::Vector<T> {
 }
 
 impl Constellations {
+    pub fn update_filtered_rooms(&mut self) {
+        if let Some(selected_space) = &self.selected_space {
+            let mut rooms = Vec::new();
+            if let Some(matrix) = &self.matrix {
+                for room in self.room_list.iter().filter(|r| !r.is_space) {
+                    if let Ok(room_id) = matrix_sdk::ruma::RoomId::parse(&*room.id) {
+                        if matrix.is_in_space_sync(&room_id, selected_space) {
+                            rooms.push(room.clone());
+                        }
+                    }
+                }
+            }
+            self.filtered_room_list = rooms;
+        } else {
+            self.filtered_room_list = self.room_list.iter().filter(|r| !r.is_space).cloned().collect();
+        }
+    }
+
     fn ipc_subscription(&self) -> Subscription<Message> {
         Subscription::run_with((), |_| {
             let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
@@ -611,6 +631,7 @@ impl Application for Constellations {
             matrix: None,
             sync_status: matrix::SyncStatus::Disconnected,
             room_list: Vec::new(),
+            filtered_room_list: Vec::new(),
             selected_room: None,
             timeline_items: Vector::new(),
             composer_text: String::new(),
@@ -865,17 +886,25 @@ impl Application for Constellations {
             let mut name_input =
                 text_input("Room Name", &self.new_room_name).on_input(Message::NewRoomNameChanged);
 
+            let is_empty = self.new_room_name.trim().is_empty();
+
             let mut create_btn = button::text("Create");
-            if !self.new_room_name.trim().is_empty() {
+            if !is_empty {
                 name_input =
                     name_input.on_submit(|_| Message::CreateRoom(self.new_room_name.clone()));
                 create_btn = create_btn.on_press(Message::CreateRoom(self.new_room_name.clone()));
             }
 
+            let create_btn_widget: Element<'_, Message> = if is_empty {
+                tooltip(create_btn, text::body("Enter a room name to create"), Position::Top).into()
+            } else {
+                create_btn.into()
+            };
+
             Column::new().spacing(5).push(name_input).push(
                 Row::new()
                     .spacing(5)
-                    .push(create_btn)
+                    .push(create_btn_widget)
                     .push(button::text("Cancel").on_press(Message::ToggleCreateRoom)),
             )
         } else {
@@ -884,18 +913,7 @@ impl Application for Constellations {
 
         room_list = room_list.push(container(create_room_ui).padding(5));
 
-        let filtered_rooms = if let Some(selected_space) = &self.selected_space {
-            let mut rooms = Vec::new();
-            if let Some(matrix) = &self.matrix {
-                for room in self.room_list.iter().filter(|r| !r.is_space) {
-                    if let Ok(room_id) = matrix_sdk::ruma::RoomId::parse(&room.id) {
-                        if matrix.is_in_space_sync(&room_id, selected_space) {
-                            rooms.push(room);
-                        }
-                    }
-                }
-            }
-
+        if let Some(selected_space) = &self.selected_space {
             let space_name = self
                 .room_list
                 .iter()
@@ -912,13 +930,9 @@ impl Application for Constellations {
                         .on_press(Message::OpenSettings(SettingsPanel::Space)),
                 );
             room_list = room_list.push(container(space_header).padding(5));
+        }
 
-            rooms
-        } else {
-            self.room_list.iter().filter(|r| !r.is_space).collect()
-        };
-
-        for room in filtered_rooms {
+        for room in &self.filtered_room_list {
             let name = room.name.as_deref().unwrap_or("Unknown Room");
             let room_id = room.id.clone();
 
@@ -995,10 +1009,18 @@ impl Application for Constellations {
                 .into()
             };
 
+            let is_empty = self.composer_text.trim().is_empty();
+
             let mut send_btn = button::text("Send");
-            if !self.composer_text.trim().is_empty() {
+            if !is_empty {
                 send_btn = send_btn.on_press(Message::SendMessage);
             }
+
+            let send_btn_widget: Element<'_, Message> = if is_empty {
+                tooltip(send_btn, text::body("Type a message to send"), Position::Top).into()
+            } else {
+                send_btn.into()
+            };
 
             let controls = Row::new()
                 .spacing(10)
@@ -1010,7 +1032,7 @@ impl Application for Constellations {
                     })
                     .on_press(Message::TogglePreview),
                 )
-                .push(send_btn);
+                .push(send_btn_widget);
 
             content = content.push(Column::new().spacing(10).push(composer).push(controls));
         } else {
