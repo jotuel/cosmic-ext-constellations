@@ -11,7 +11,8 @@ use cosmic::iced::widget::image;
 use cosmic::iced::{Alignment, Subscription};
 use cosmic::widget::icon::Named;
 use cosmic::widget::menu::action::MenuAction;
-use cosmic::widget::{button, container, scrollable, text, text_input, Column, Row};
+use cosmic::iced::widget::tooltip;
+use cosmic::widget::{button, container, scrollable, text, text_input, tooltip::Position, Column, Row};
 use cosmic::{Action, Application, Core, Element, Task};
 use eyeball_im::Vector;
 use matrix_sdk::ruma::events::room::MediaSource;
@@ -865,17 +866,25 @@ impl Application for Constellations {
             let mut name_input =
                 text_input("Room Name", &self.new_room_name).on_input(Message::NewRoomNameChanged);
 
+            let is_empty = self.new_room_name.trim().is_empty();
+
             let mut create_btn = button::text("Create");
-            if !self.new_room_name.trim().is_empty() {
+            if !is_empty {
                 name_input =
                     name_input.on_submit(|_| Message::CreateRoom(self.new_room_name.clone()));
                 create_btn = create_btn.on_press(Message::CreateRoom(self.new_room_name.clone()));
             }
 
+            let create_btn_widget: Element<'_, Message> = if is_empty {
+                tooltip(create_btn, text::body("Enter a room name to create"), Position::Top).into()
+            } else {
+                create_btn.into()
+            };
+
             Column::new().spacing(5).push(name_input).push(
                 Row::new()
                     .spacing(5)
-                    .push(create_btn)
+                    .push(create_btn_widget)
                     .push(button::text("Cancel").on_press(Message::ToggleCreateRoom)),
             )
         } else {
@@ -995,10 +1004,18 @@ impl Application for Constellations {
                 .into()
             };
 
+            let is_empty = self.composer_text.trim().is_empty();
+
             let mut send_btn = button::text("Send");
-            if !self.composer_text.trim().is_empty() {
+            if !is_empty {
                 send_btn = send_btn.on_press(Message::SendMessage);
             }
+
+            let send_btn_widget: Element<'_, Message> = if is_empty {
+                tooltip(send_btn, text::body("Type a message to send"), Position::Top).into()
+            } else {
+                send_btn.into()
+            };
 
             let controls = Row::new()
                 .spacing(10)
@@ -1010,7 +1027,7 @@ impl Application for Constellations {
                     })
                     .on_press(Message::TogglePreview),
                 )
-                .push(send_btn);
+                .push(send_btn_widget);
 
             content = content.push(Column::new().spacing(10).push(composer).push(controls));
         } else {

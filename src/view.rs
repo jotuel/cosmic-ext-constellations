@@ -378,31 +378,36 @@ impl Constellations {
             .push(username_input)
             .push(password_input);
 
-        let main_button = if self.is_registering_mode {
+        let is_missing_fields = self.login_homeserver.trim().is_empty()
+            || self.login_username.trim().is_empty()
+            || self.login_password.is_empty();
+
+        let main_button: Element<'_, Message> = if self.is_registering_mode {
             if self.is_registering {
-                button::text("Creating account...")
+                button::text("Creating account...").into()
             } else {
                 let mut btn = button::text("Create Account");
-                if !self.login_homeserver.is_empty()
-                    && !self.login_username.is_empty()
-                    && !self.login_password.is_empty()
-                {
+                if !is_missing_fields {
                     btn = btn.on_press(Message::SubmitRegister);
                 }
-                btn
+                if is_missing_fields {
+                    tooltip(btn, text::body("Fill in all fields to create an account"), Position::Top).into()
+                } else {
+                    btn.into()
+                }
             }
         } else if self.is_logging_in {
-            button::text("Logging in...")
+            button::text("Logging in...").into()
         } else {
             let mut btn = button::text("Login");
-            if !self.login_homeserver.is_empty()
-                && !self.login_username.is_empty()
-                && !self.login_password.is_empty()
-                && !self.is_oidc_logging_in
-            {
+            if !is_missing_fields && !self.is_oidc_logging_in {
                 btn = btn.on_press(Message::SubmitLogin);
             }
-            btn
+            if is_missing_fields {
+                tooltip(btn, text::body("Fill in all fields to login"), Position::Top).into()
+            } else {
+                btn.into()
+            }
         };
 
         let oidc_button = if self.is_oidc_logging_in {
