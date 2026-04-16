@@ -1,17 +1,17 @@
 use cosmic::{
+    Action, Element, Task,
     iced::{
-        widget::{scrollable, tooltip},
         Alignment,
+        widget::{scrollable, tooltip},
     },
     widget::{
-        button, container, icon::Named, menu, text, text_input, tooltip::Position, Column,
-        RcElementWrapper, Row,
+        Column, RcElementWrapper, Row, button, container, icon::Named, menu, text, text_input,
+        tooltip::Position,
     },
-    Action, Element, Task,
 };
-use matrix_sdk::ruma::events::room::{message::MessageType, MediaSource};
+use matrix_sdk::ruma::events::room::{MediaSource, message::MessageType};
 
-use crate::{matrix, Constellations, MenuAct, Message, PreviewEvent};
+use crate::{Constellations, MenuAct, Message, PreviewEvent, matrix};
 
 impl Constellations {
     pub fn view_timeline(&self) -> Element<'_, Message> {
@@ -50,8 +50,8 @@ impl Constellations {
                             bubble_col = bubble_col.push(self.view_message_file(file));
                         }
                         _ => {
-                            bubble_col =
-                                bubble_col.push(self.view_message_text(message.msgtype(), &item.markdown));
+                            bubble_col = bubble_col
+                                .push(self.view_message_text(message.msgtype(), &item.markdown));
                         }
                     }
 
@@ -465,10 +465,9 @@ impl Constellations {
         let is_global_selected = self.selected_space.is_none();
 
         let global_btn = if is_global_selected {
-            button::icon(Named::new("applications-internet-symbolic"))
+            button::icon(Named::new("system-users"))
         } else {
-            button::icon(Named::new("applications-internet-symbolic"))
-                .on_press(Message::SelectSpace(None))
+            button::icon(Named::new("system-users")).on_press(Message::SelectSpace(None))
         };
 
         let global_tooltip = tooltip(global_btn, text::body("All Rooms"), Position::Right);
