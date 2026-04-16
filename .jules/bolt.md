@@ -28,3 +28,6 @@
 ## 2025-02-13 - [Avoid String allocations in hot UI loops]
 **Learning:** In libcosmic/iced `view` rendering loops, unnecessary `String::clone()` calls can significantly degrade performance, especially when filtering collections like `room_list`. `matrix_sdk::ruma` ID parsing methods accept `impl AsRef<str>`, allowing the use of string references directly.
 **Action:** Always prefer passing `&String` or `&str` references to parsing and lookup functions instead of cloning owned strings to eliminate redundant heap allocations.
+## 2025-03-02 - Caching Filtered Room Lists to Avoid Render-Loop Bottlenecks
+**Learning:** During immediate-mode UI rendering loops (like `view`), performing iterative filtering operations that involve string parsing (e.g., `RoomId::parse`) and lock acquisitions (e.g., `try_read()` on an `RwLock` inside `is_in_space_sync`) for every item creates a significant per-frame performance bottleneck.
+**Action:** Move expensive data filtering, string manipulation, and lock-dependent logic out of the immediate-mode render cycle. Cache the results in the application state (e.g., `filtered_room_list`) and update them only when the underlying data or selection changes via application messages.
