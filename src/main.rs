@@ -62,6 +62,7 @@ struct Constellations {
     sync_status: matrix::SyncStatus,
     room_list: Vec<matrix::RoomData>,
     filtered_room_list: Vec<matrix::RoomData>,
+    other_rooms: Vec<matrix::RoomData>,
     selected_room: Option<std::sync::Arc<str>>,
     timeline_items: Vector<ConstellationsItem>,
     composer_text: String,
@@ -117,10 +118,13 @@ pub enum Message {
     SubmitRegister,
     RegisterFinished(Result<String, matrix::SyncError>),
     SelectSpace(Option<OwnedRoomId>),
+    SpaceChildrenFetched(Result<Vec<matrix::RoomData>, String>),
     NoOp,
     SubmitOidcLogin,
     OidcLoginStarted(Result<Url, String>),
     OidcCallback(Url),
+    JoinRoom(OwnedRoomId),
+    RoomJoined(Result<OwnedRoomId, String>),
     Logout,
     LogoutFinished,
     OpenSettings(SettingsPanel),
@@ -349,8 +353,19 @@ impl Constellations {
                 }
             }
             self.filtered_room_list = rooms;
+
+            // Re-filter other_rooms to remove any that we've now joined
+            let all_joined_ids: std::collections::HashSet<String> =
+                self.room_list.iter().map(|r| r.id.to_string()).collect();
+            self.other_rooms.retain(|r| !all_joined_ids.contains(r.id.as_ref()));
         } else {
-            self.filtered_room_list = self.room_list.iter().filter(|r| !r.is_space).cloned().collect();
+            self.filtered_room_list = self
+                .room_list
+                .iter()
+                .filter(|r| !r.is_space)
+                .cloned()
+                .collect();
+            self.other_rooms.clear();
         }
     }
 
@@ -632,6 +647,7 @@ impl Application for Constellations {
             sync_status: matrix::SyncStatus::Disconnected,
             room_list: Vec::new(),
             filtered_room_list: Vec::new(),
+            other_rooms: Vec::new(),
             selected_room: None,
             timeline_items: Vector::new(),
             composer_text: String::new(),
@@ -797,10 +813,47 @@ impl Application for Constellations {
             Message::SubmitRegister => self.handle_submit_register(),
             Message::RegisterFinished(res) => self.handle_register_finished(res),
             Message::SelectSpace(space_id) => self.handle_select_space(space_id),
+            Message::SpaceChildrenFetched(res) => self.handle_space_children_fetched(res),
             Message::NoOp => Task::none(),
             Message::SubmitOidcLogin => self.handle_submit_oidc_login(),
             Message::OidcLoginStarted(res) => self.handle_oidc_login_started(res),
             Message::OidcCallback(url) => self.handle_oidc_callback(url),
+            Message::JoinRoom(room_id) => {
+                if let Some(matrix) = &self.matrix {
+                    let matrix = matrix.clone();
+                    let rid = room_id.clone();
+                    return Task::perform(
+                        async move {
+                            matrix.join_room(&rid).await.map(|_| rid).map_err(|e| e.to_string())
+                        },
+                        |res| Message::RoomJoined(res).into(),
+                    );
+                }
+                Task::none()
+            }
+            Message::RoomJoined(res) => {
+                match res {
+                    Ok(room_id) => {
+                        self.selected_room = Some(room_id.as_str().into());
+                        // Refresh both lists
+                        self.update_filtered_rooms();
+                        if let (Some(matrix), Some(space_id)) = (&self.matrix, &self.selected_space) {
+                             let matrix = matrix.clone();
+                             let sid = space_id.clone();
+                             return Task::perform(
+                                 async move {
+                                     matrix.get_space_children(sid.as_str()).await.map_err(|e| e.to_string())
+                                 },
+                                 |res| Message::SpaceChildrenFetched(res).into(),
+                             );
+                        }
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to join room: {}", e));
+                    }
+                }
+                Task::none()
+            }
             Message::Logout => self.handle_logout(),
             Message::LogoutFinished => self.handle_logout_finished(),
             Message::OpenSettings(panel) => {
@@ -930,6 +983,12 @@ impl Application for Constellations {
                         .on_press(Message::OpenSettings(SettingsPanel::Space)),
                 );
             room_list = room_list.push(container(space_header).padding(5));
+
+            if !self.other_rooms.is_empty() {
+                room_list = room_list.push(
+                    container(text::title3("Joined Rooms").size(14)).padding([10, 5, 5, 5]),
+                );
+            }
         }
 
         for room in &self.filtered_room_list {
@@ -961,6 +1020,52 @@ impl Application for Constellations {
             .on_press(Message::RoomSelected(room_id));
 
             room_list = room_list.push(btn);
+        }
+
+        if !self.other_rooms.is_empty() {
+            room_list = room_list.push(
+                container(text::title3("Other Rooms").size(14))
+                    .padding([10, 5, 5, 5])
+            );
+
+            for room in &self.other_rooms {
+                let name = room.name.as_deref().unwrap_or_else(|| {
+                    let id = &room.id;
+                    id.strip_prefix('!').and_then(|s| s.split(':').next()).unwrap_or(id)
+                });
+                let room_id = room.id.clone();
+
+                let mut room_content = Column::new().spacing(2);
+
+                let mut header = Row::new().spacing(10).align_y(Alignment::Center);
+                header = header.push(text::body("#"));
+                header = header.push(text::body(name));
+
+                if let Some(unread_str) = &room.unread_count_str {
+                    header = header.push(text::body(unread_str.as_str()).size(12));
+                }
+
+                room_content = room_content.push(header);
+
+                if let Some(last_msg) = &room.last_message {
+                    room_content = room_content.push(text::body(last_msg.as_str()).size(12));
+                }
+
+                let btn = button::custom(
+                    container(room_content)
+                        .padding(5)
+                        .width(cosmic::iced::Length::Fill),
+                );
+
+                let join_btn = button::text("Join").on_press(Message::JoinRoom(room_id.to_string().try_into().unwrap()));
+
+                room_list = room_list.push(
+                    Row::new()
+                        .align_y(Alignment::Center)
+                        .push(btn)
+                        .push(container(join_btn).padding([0, 5]))
+                );
+            }
         }
 
         let sidebar = container(scrollable(room_list)).width(250).padding(10);

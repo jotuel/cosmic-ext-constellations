@@ -132,12 +132,11 @@ impl SpaceHierarchy {
 
     pub fn is_in_space(&self, room_id: &RoomId, space_id: &RoomId) -> bool {
         let mut visited = HashSet::new();
-        self.is_in_space_recursive(room_id, space_id, &mut visited)
+        // Check if the room is a direct or indirect child of the space
+        self.is_child_of_recursive(room_id, space_id, &mut visited)
     }
 
-    // ⚡ Bolt Optimization:
-    // Use `HashSet<&RoomId>` to prevent string allocations (`.to_owned()`) during recursive traversal
-    fn is_in_space_recursive<'a>(
+    fn is_child_of_recursive<'a>(
         &'a self,
         current_id: &'a RoomId,
         target_space_id: &RoomId,
@@ -153,7 +152,7 @@ impl SpaceHierarchy {
 
         if let Some(parents) = self.parents.get(current_id) {
             for parent in parents {
-                if self.is_in_space_recursive(parent, target_space_id, visited) {
+                if self.is_child_of_recursive(parent, target_space_id, visited) {
                     return true;
                 }
             }
@@ -1042,55 +1041,107 @@ impl MatrixEngine {
         Ok(())
     }
 
+    pub async fn join_room(&self, room_id: &RoomId) -> Result<()> {
+        let client = self.client().await;
+        if let Some(room) = client.get_room(room_id) {
+            room.join().await?;
+        } else {
+            // If the room is unknown, try joining by ID directly
+            client.join_room_by_id(room_id).await?;
+        }
+        Ok(())
+    }
+
     pub async fn get_space_children(&self, space_id: &str) -> Result<Vec<RoomData>> {
         let space_id_parsed = RoomId::parse(space_id)?;
         let client = self.client().await;
-        let space = client
-            .get_room(&space_id_parsed)
-            .context("Space not found")?;
 
-        use matrix_sdk::ruma::events::space::child::SpaceChildEventContent;
-        use matrix_sdk::ruma::events::SyncStateEvent;
-        use matrix_sdk_base::deserialized_responses::SyncOrStrippedState;
-        let children_events = space
-            .get_state_events_static::<SpaceChildEventContent>()
-            .await?;
+        // Use the hierarchy API to get rich metadata for all rooms in the space
+        let mut rooms = Vec::new();
+        let mut request = matrix_sdk::ruma::api::client::space::get_hierarchy::v1::Request::new(
+            space_id_parsed.clone(),
+        );
+        request.limit = Some(matrix_sdk::ruma::UInt::new(100).unwrap());
 
-        let mut children = Vec::new();
-        for event in children_events {
-            if let Ok(event) = event.deserialize() {
-                let (child_id, via_empty) = match event {
-                    SyncOrStrippedState::Sync(SyncStateEvent::Original(ev)) => {
-                        (ev.state_key.to_owned(), ev.content.via.is_empty())
-                    }
-                    SyncOrStrippedState::Stripped(ev) => (
-                        ev.state_key.to_owned(),
-                        ev.content.via.map(|v| v.is_empty()).unwrap_or(true),
-                    ),
-                    _ => continue,
-                };
+        if let Ok(response) = client.send(request).await {
+            let mut inner = self.inner.write().await;
+            for room_summary in response.rooms {
+                let is_space = room_summary
+                    .summary
+                    .room_type
+                    .as_ref()
+                    .map(|t| t == &RoomType::Space)
+                    .unwrap_or(false);
 
-                if !via_empty {
-                    if let Some(child_room) = client.get_room(&child_id) {
-                        children.push(self.fetch_room_data(&child_room).await?);
-                    } else {
-                        // Minimal RoomData if we don't have the room joined
-                        children.push(RoomData {
-                            id: child_id.as_str().into(),
-                            name: None,
-                            last_message: None,
-                            unread_count: 0,
-                            unread_count_str: None,
-                            avatar_url: None,
-                            room_type: None,
-                            is_space: false,
-                            parent_space_id: Some(space_id.to_string()),
-                        });
+                // Update local hierarchy knowledge
+                inner.space_hierarchy.add_child(
+                    space_id_parsed.clone(),
+                    room_summary.summary.room_id.clone(),
+                );
+
+                rooms.push(RoomData {
+                    id: room_summary.summary.room_id.as_str().into(),
+                    name: room_summary.summary.name.clone(),
+                    last_message: None,
+                    unread_count: 0,
+                    unread_count_str: None,
+                    avatar_url: room_summary.summary.avatar_url.as_ref().map(|u| u.to_string()),
+                    room_type: room_summary.summary.room_type.clone(),
+                    is_space,
+                    parent_space_id: Some(space_id.to_string()),
+                });
+            }
+        } else {
+            // Fallback to state events if hierarchy API fails
+            let space = client
+                .get_room(&space_id_parsed)
+                .context("Space not found")?;
+
+            let children_events = space
+                .get_state_events_static::<SpaceChildEventContent>()
+                .await?;
+
+            for event in children_events {
+                if let Ok(event) = event.deserialize() {
+                    let (child_id, via_empty) = match event {
+                        matrix_sdk_base::deserialized_responses::SyncOrStrippedState::Sync(
+                            matrix_sdk::ruma::events::SyncStateEvent::Original(ev),
+                        ) => (ev.state_key.to_owned(), ev.content.via.is_empty()),
+                        matrix_sdk_base::deserialized_responses::SyncOrStrippedState::Stripped(
+                            ev,
+                        ) => (
+                            ev.state_key.to_owned(),
+                            ev.content.via.map(|v| v.is_empty()).unwrap_or(true),
+                        ),
+                        _ => continue,
+                    };
+
+                    if !via_empty {
+                        let child_id_parsed = match RoomId::parse(child_id.as_str()) {
+                            Ok(id) => id,
+                            Err(_) => continue,
+                        };
+
+                        if let Some(child_room) = client.get_room(&child_id_parsed) {
+                            rooms.push(self.fetch_room_data(&child_room).await?);
+                        } else {
+                            rooms.push(RoomData {
+                                id: child_id.as_str().into(),
+                                name: None,
+                                last_message: None,
+                                unread_count: 0,
+                                unread_count_str: None,
+                                avatar_url: None,
+                                room_type: None,
+                                is_space: false,
+                                parent_space_id: Some(space_id.to_string()),
+                            });
+                        }
                     }
                 }
             }
         }
-        Ok(children)
+        Ok(rooms)
     }
 
     pub async fn add_space_child(&self, space_id: &str, child_id: &str) -> Result<()> {

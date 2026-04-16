@@ -261,18 +261,65 @@ impl Constellations {
         space_id: Option<OwnedRoomId>,
     ) -> Task<Action<<Constellations as Application>::Message>> {
         self.selected_space = space_id.clone();
-        self.update_filtered_rooms();
+
+        let mut tasks = Vec::new();
+
         if let Some(matrix) = &self.matrix {
-            let matrix = matrix.clone();
-            Task::perform(
+            let matrix_clone = matrix.clone();
+            let sid = space_id.clone();
+            tasks.push(Task::perform(
                 async move {
-                    let _ = matrix.update_room_list_filter(space_id).await;
+                    let _ = matrix_clone.update_room_list_filter(sid).await;
                 },
                 |_| Action::from(Message::NoOp),
-            )
-        } else {
-            Task::none()
+            ));
+
+            if let Some(space_id) = space_id {
+                let matrix_clone = matrix.clone();
+                tasks.push(Task::perform(
+                    async move {
+                        matrix_clone
+                            .get_space_children(space_id.as_str())
+                            .await
+                            .map_err(|e| e.to_string())
+                    },
+                    |res| Action::from(Message::SpaceChildrenFetched(res)),
+                ));
+            } else {
+                self.other_rooms.clear();
+            }
         }
+
+        self.update_filtered_rooms();
+        if tasks.is_empty() {
+            Task::none()
+        } else {
+            Task::batch(tasks)
+        }
+    }
+
+    pub fn handle_space_children_fetched(
+        &mut self,
+        res: Result<Vec<matrix::RoomData>, String>,
+    ) -> Task<Action<<Constellations as Application>::Message>> {
+        match res {
+            Ok(children) => {
+                // First, update the filtered_room_list because the hierarchy in matrix engine was updated
+                self.update_filtered_rooms();
+
+                // Now filter out rooms that are already in room_list (i.e. joined rooms)
+                let joined_ids: std::collections::HashSet<String> =
+                    self.room_list.iter().map(|r| r.id.to_string()).collect();
+                self.other_rooms = children
+                    .into_iter()
+                    .filter(|r| !joined_ids.contains(r.id.as_ref()) && !r.is_space)
+                    .collect();
+            }
+            Err(e) => {
+                self.error = Some(format!("Failed to fetch space children: {}", e));
+            }
+        }
+        Task::none()
     }
 
     pub fn handle_fetch_media(
