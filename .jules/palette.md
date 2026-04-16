@@ -19,3 +19,6 @@
 ## 2024-04-15 - Replace Text Buttons with Semantic Icons
 **Learning:** Found that the "All Rooms" switch in the space switcher uses a text button containing a globe emoji (`"🌐"`). `libcosmic` specifies that semantic widgets should be preferred over generic text buttons with emojis. Using `button::icon` wrapped in `cosmic::widget::tooltip` provides better visual affordance, native styling consistency with the COSMIC desktop environment, and improved accessibility.
 **Action:** Replaced the `"🌐"` text button with `button::icon(Named::new("applications-internet-symbolic"))` or `"network-workgroup-symbolic"` to align with the `libcosmic` UI guidelines.
+## 2026-05-20 - Tooltips for Disabled Actions
+**Learning:** While disabling primary actions (like 'Send' or 'Login') prevents invalid states and phantom submissions, it can leave users confused as to *why* the button is unresponsive if the requirements aren't visually obvious.
+**Action:** When conditionally disabling primary action buttons, wrap them in a `cosmic::widget::tooltip` explaining the required state (e.g., "Type a message to send" or "Fill in all fields to login").
