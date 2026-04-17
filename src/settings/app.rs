@@ -1,5 +1,5 @@
 use cosmic::iced::Alignment;
-use cosmic::widget::{button, text, toggler, Column, Row};
+use cosmic::widget::{Column, Row, button, text, toggler};
 use cosmic::{Action, Element, Task};
 
 #[derive(Debug, Clone, Default)]

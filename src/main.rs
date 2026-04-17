@@ -8,15 +8,17 @@ mod view;
 
 use anyhow::Result;
 use cosmic::iced::widget::image;
+use cosmic::iced::widget::tooltip;
 use cosmic::iced::{Alignment, Subscription};
 use cosmic::widget::icon::Named;
 use cosmic::widget::menu::action::MenuAction;
-use cosmic::iced::widget::tooltip;
-use cosmic::widget::{button, container, scrollable, text, text_input, tooltip::Position, Column, Row};
+use cosmic::widget::{
+    Column, Row, button, container, scrollable, text, text_input, tooltip::Position,
+};
 use cosmic::{Action, Application, Core, Element, Task};
 use eyeball_im::Vector;
-use matrix_sdk::ruma::events::room::MediaSource;
 use matrix_sdk::ruma::OwnedRoomId;
+use matrix_sdk::ruma::events::room::MediaSource;
 use matrix_sdk_ui::sync_service::State as SyncServiceState;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -366,7 +368,8 @@ impl Constellations {
             // Re-filter other_rooms to remove any that we've now joined
             let all_joined_ids: std::collections::HashSet<&str> =
                 self.room_list.iter().map(|r| r.id.as_ref()).collect();
-            self.other_rooms.retain(|r| !all_joined_ids.contains(r.id.as_ref()));
+            self.other_rooms
+                .retain(|r| !all_joined_ids.contains(r.id.as_ref()));
         } else {
             self.filtered_room_list = self
                 .room_list
@@ -798,7 +801,11 @@ impl Application for Constellations {
                         // Successfully sent, could remove from ui if we were tracking it per-message
                     }
                     Err(e) => {
-                        self.error = Some(format!("Failed to send attachment {}: {}", path.display(), e));
+                        self.error = Some(format!(
+                            "Failed to send attachment {}: {}",
+                            path.display(),
+                            e
+                        ));
                     }
                 }
                 Task::none()
@@ -814,11 +821,12 @@ impl Application for Constellations {
                     let room_id_clone = room_id.clone();
                     return Task::perform(
                         async move {
-                            matrix_clone.toggle_reaction(&room_id_clone, &item_id, &key)
+                            matrix_clone
+                                .toggle_reaction(&room_id_clone, &item_id, &key)
                                 .await
                                 .map_err(|e| e.to_string())
                         },
-                        |res| Message::ReactionToggled(res).into()
+                        |res| Message::ReactionToggled(res).into(),
                     );
                 }
                 Task::none()
@@ -889,7 +897,11 @@ impl Application for Constellations {
                     let rid = room_id.clone();
                     return Task::perform(
                         async move {
-                            matrix.join_room(&rid).await.map(|_| rid).map_err(|e| e.to_string())
+                            matrix
+                                .join_room(&rid)
+                                .await
+                                .map(|_| rid)
+                                .map_err(|e| e.to_string())
                         },
                         |res| Message::RoomJoined(res).into(),
                     );
@@ -902,16 +914,20 @@ impl Application for Constellations {
                         self.selected_room = Some(room_id.as_str().into());
                         // Refresh both lists
                         self.update_filtered_rooms();
-                        if let (Some(matrix), Some(space_id)) = (&self.matrix, &self.selected_space) {
-                             let matrix = matrix.clone();
-                             let sid = space_id.clone();
-                             let sid_clone = sid.clone();
-                             return Task::perform(
-                                 async move {
-                                     matrix.get_space_children(sid_clone.as_str()).await.map_err(|e| e.to_string())
-                                 },
-                                 move |res| Message::SpaceChildrenFetched(sid, res).into(),
-                             );
+                        if let (Some(matrix), Some(space_id)) = (&self.matrix, &self.selected_space)
+                        {
+                            let matrix = matrix.clone();
+                            let sid = space_id.clone();
+                            let sid_clone = sid.clone();
+                            return Task::perform(
+                                async move {
+                                    matrix
+                                        .get_space_children(sid_clone.as_str())
+                                        .await
+                                        .map_err(|e| e.to_string())
+                                },
+                                move |res| Message::SpaceChildrenFetched(sid, res).into(),
+                            );
                         }
                     }
                     Err(e) => {
@@ -1015,7 +1031,12 @@ impl Application for Constellations {
             }
 
             let create_btn_widget: Element<'_, Message> = if is_empty {
-                tooltip(create_btn, text::body("Enter a room name to create"), Position::Top).into()
+                tooltip(
+                    create_btn,
+                    text::body("Enter a room name to create"),
+                    Position::Top,
+                )
+                .into()
             } else {
                 create_btn.into()
             };
@@ -1051,9 +1072,8 @@ impl Application for Constellations {
             room_list = room_list.push(container(space_header).padding(5));
 
             if !self.other_rooms.is_empty() {
-                room_list = room_list.push(
-                    container(text::title3("Joined Rooms").size(14)).padding([10, 5, 5, 5]),
-                );
+                room_list = room_list
+                    .push(container(text::title3("Joined Rooms").size(14)).padding([10, 5, 5, 5]));
             }
         }
 
@@ -1067,11 +1087,8 @@ impl Application for Constellations {
 
             if let Some(avatar_url) = &room.avatar_url {
                 if let Some(handle) = self.media_cache.get(avatar_url) {
-                    header = header.push(
-                        cosmic::widget::image(handle.clone())
-                            .width(24)
-                            .height(24),
-                    );
+                    header =
+                        header.push(cosmic::widget::image(handle.clone()).width(24).height(24));
                 } else {
                     header = header.push(
                         container(text::body("#"))
@@ -1115,15 +1132,15 @@ impl Application for Constellations {
         }
 
         if !self.other_rooms.is_empty() {
-            room_list = room_list.push(
-                container(text::title3("Other Rooms").size(14))
-                    .padding([10, 5, 5, 5])
-            );
+            room_list = room_list
+                .push(container(text::title3("Other Rooms").size(14)).padding([10, 5, 5, 5]));
 
             for room in &self.other_rooms {
                 let name = room.name.as_deref().unwrap_or_else(|| {
                     let id = &room.id;
-                    id.strip_prefix('!').and_then(|s| s.split(':').next()).unwrap_or(id)
+                    id.strip_prefix('!')
+                        .and_then(|s| s.split(':').next())
+                        .unwrap_or(id)
                 });
                 let room_id = room.id.clone();
 
@@ -1133,11 +1150,8 @@ impl Application for Constellations {
 
                 if let Some(avatar_url) = &room.avatar_url {
                     if let Some(handle) = self.media_cache.get(avatar_url) {
-                        header = header.push(
-                            cosmic::widget::image(handle.clone())
-                                .width(24)
-                                .height(24),
-                        );
+                        header =
+                            header.push(cosmic::widget::image(handle.clone()).width(24).height(24));
                     } else {
                         header = header.push(
                             container(text::body("#"))
@@ -1175,13 +1189,14 @@ impl Application for Constellations {
                         .width(cosmic::iced::Length::Fill),
                 );
 
-                let join_btn = button::text("Join").on_press(Message::JoinRoom(room_id.to_string().try_into().unwrap()));
+                let join_btn = button::text("Join")
+                    .on_press(Message::JoinRoom(room_id.to_string().try_into().unwrap()));
 
                 room_list = room_list.push(
                     Row::new()
                         .align_y(Alignment::Center)
                         .push(btn)
-                        .push(container(join_btn).padding([0, 5]))
+                        .push(container(join_btn).padding([0, 5])),
                 );
             }
         }
@@ -1246,7 +1261,8 @@ impl Application for Constellations {
                 }
             }
 
-            let is_empty = self.composer_text.trim().is_empty() && self.composer_attachments.is_empty();
+            let is_empty =
+                self.composer_text.trim().is_empty() && self.composer_attachments.is_empty();
 
             let mut send_btn = button::text("Send");
             if !is_empty {
@@ -1254,7 +1270,12 @@ impl Application for Constellations {
             }
 
             let send_btn_widget: Element<'_, Message> = if is_empty {
-                tooltip(send_btn, text::body("Type a message or attach a file to send"), Position::Top).into()
+                tooltip(
+                    send_btn,
+                    text::body("Type a message or attach a file to send"),
+                    Position::Top,
+                )
+                .into()
             } else {
                 send_btn.into()
             };
@@ -1272,7 +1293,13 @@ impl Application for Constellations {
                 )
                 .push(send_btn_widget);
 
-            content = content.push(Column::new().spacing(10).push(attachments_view).push(composer).push(controls));
+            content = content.push(
+                Column::new()
+                    .spacing(10)
+                    .push(attachments_view)
+                    .push(composer)
+                    .push(controls),
+            );
         } else {
             let empty_state = container(
                 Column::new()
