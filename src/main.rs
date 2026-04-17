@@ -13,7 +13,8 @@ use cosmic::iced::{Alignment, Subscription};
 use cosmic::widget::icon::Named;
 use cosmic::widget::menu::action::MenuAction;
 use cosmic::widget::{
-    Column, Row, button, container, scrollable, text, text_input, tooltip::Position,
+    Column, RcElementWrapper, Row, button, container, menu, scrollable, text, text_input,
+    tooltip::Position,
 };
 use cosmic::{Action, Application, Core, Element, Task};
 use eyeball_im::Vector;
@@ -85,6 +86,8 @@ struct Constellations {
     is_registering: bool,
     is_initializing: bool,
     is_sync_indicator_active: bool,
+    search_query: String,
+    is_search_active: bool,
     active_reaction_picker: Option<matrix::TimelineEventItemId>,
     selected_space: Option<OwnedRoomId>,
     current_settings_panel: Option<SettingsPanel>,
@@ -145,6 +148,8 @@ pub enum Message {
     SpaceSettings(settings::space::Message),
     AppSettings(settings::app::Message),
     AppSettingChanged,
+    ToggleSearch,
+    SearchQueryChanged(String),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -352,12 +357,27 @@ impl<T: Clone> ApplyVectorDiffExt<T> for eyeball_im::Vector<T> {
 
 impl Constellations {
     pub fn update_filtered_rooms(&mut self) {
+        let search_query = self.search_query.to_lowercase();
+        let filter_by_search = |room: &matrix::RoomData| {
+            if search_query.is_empty() {
+                true
+            } else {
+                room.name
+                    .as_ref()
+                    .map(|n| n.to_lowercase().contains(&search_query))
+                    .unwrap_or(false)
+                    || room.id.to_lowercase().contains(&search_query)
+            }
+        };
+
         if let Some(selected_space) = &self.selected_space {
             let mut rooms = Vec::new();
             if let Some(matrix) = &self.matrix {
                 for room in self.room_list.iter().filter(|r| !r.is_space) {
                     if let Ok(room_id) = matrix_sdk::ruma::RoomId::parse(&*room.id) {
-                        if matrix.is_in_space_sync(&room_id, selected_space) {
+                        if matrix.is_in_space_sync(&room_id, selected_space)
+                            && filter_by_search(room)
+                        {
                             rooms.push(room.clone());
                         }
                     }
@@ -374,7 +394,7 @@ impl Constellations {
             self.filtered_room_list = self
                 .room_list
                 .iter()
-                .filter(|r| !r.is_space)
+                .filter(|r| !r.is_space && filter_by_search(r))
                 .cloned()
                 .collect();
             self.other_rooms.clear();
@@ -631,6 +651,62 @@ impl Application for Constellations {
         &mut self.core
     }
 
+    fn header_start(&self) -> Vec<Element<'_, Self::Message>> {
+        let mut start = Vec::new();
+
+        if self.is_search_active {
+            let row = Row::new()
+                .align_y(Alignment::Center)
+                .push(
+                    button::icon(Named::new("edit-find-symbolic")).on_press(Message::ToggleSearch),
+                )
+                .push(
+                    text_input("Search...", &self.search_query)
+                        .on_input(Message::SearchQueryChanged)
+                        .width(200.0),
+                );
+            start.push(row.into());
+        } else {
+            start.push(
+                button::icon(Named::new("edit-find-symbolic"))
+                    .on_press(Message::ToggleSearch)
+                    .into(),
+            );
+        }
+
+        start
+    }
+
+    fn header_end(&self) -> Vec<Element<'_, Self::Message>> {
+        let mut end = Vec::new();
+
+        if self.user_id.is_some() {
+            let user_btn = button::icon(Named::new("user-available-symbolic"));
+            let key_binds = std::collections::HashMap::new();
+
+            let menu_tree = menu::Tree::with_children(
+                RcElementWrapper::new(Element::from(user_btn)),
+                menu::items(
+                    &key_binds,
+                    vec![
+                        menu::Item::Button("App Settings", None, MenuAct::AppSettings),
+                        menu::Item::Button("User Settings", None, MenuAct::UserSettings),
+                        menu::Item::Button("Logout", None, MenuAct::Logout),
+                    ],
+                ),
+            );
+
+            let user_menu = menu::bar(vec![menu_tree])
+                .item_height(menu::ItemHeight::Dynamic(40))
+                .item_width(menu::ItemWidth::Uniform(120))
+                .spacing(4.0);
+
+            end.push(user_menu.into());
+        }
+
+        end
+    }
+
     fn init(core: Core, flags: Self::Flags) -> (Self, Task<Action<Self::Message>>) {
         let data_dir = dirs::data_dir().map(|d| d.join("fi.joonastuomi.Constellations"));
 
@@ -680,6 +756,8 @@ impl Application for Constellations {
             is_registering: false,
             is_initializing: true,
             is_sync_indicator_active: false,
+            search_query: String::new(),
+            is_search_active: false,
             active_reaction_picker: None,
             selected_space: None,
             current_settings_panel: None,
@@ -978,6 +1056,19 @@ impl Application for Constellations {
                 _ => self.app_settings.update(msg),
             },
             Message::AppSettingChanged => Task::none(),
+            Message::ToggleSearch => {
+                self.is_search_active = !self.is_search_active;
+                if !self.is_search_active {
+                    self.search_query.clear();
+                    self.update_filtered_rooms();
+                }
+                Task::none()
+            }
+            Message::SearchQueryChanged(query) => {
+                self.search_query = query;
+                self.update_filtered_rooms();
+                Task::none()
+            }
         }
     }
 
