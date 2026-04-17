@@ -733,6 +733,8 @@ mod tests {
             is_registering_mode: false,
             is_initializing: false,
             is_sync_indicator_active: false,
+            search_query: String::new(),
+            is_search_active: false,
             selected_space: None,
             current_settings_panel: None,
             user_settings: crate::settings::user::State::default(),
