@@ -75,6 +75,7 @@ struct Constellations {
     user_id: Option<String>,
     media_cache: HashMap<String, image::Handle>,
     creating_room: bool,
+    creating_space: bool,
     new_room_name: String,
     error: Option<String>,
     login_homeserver: String,
@@ -120,8 +121,11 @@ pub enum Message {
     MediaFetched(String, Result<Vec<u8>, String>),
     CreateRoom(String),
     RoomCreated(Result<String, String>),
+    CreateSpace(String),
+    SpaceCreated(Result<String, String>),
     NewRoomNameChanged(String),
     ToggleCreateRoom,
+    ToggleCreateSpace,
     DismissError,
     LoginHomeserverChanged(String),
     LoginUsernameChanged(String),
@@ -165,6 +169,8 @@ pub enum MenuAct {
     AppSettings,
     UserSettings,
     Logout,
+    CreateRoom,
+    CreateSpace,
 }
 
 impl MenuAction for MenuAct {
@@ -174,6 +180,8 @@ impl MenuAction for MenuAct {
             MenuAct::AppSettings => Message::OpenSettings(SettingsPanel::App),
             MenuAct::UserSettings => Message::OpenSettings(SettingsPanel::User),
             MenuAct::Logout => Message::Logout,
+            MenuAct::CreateRoom => Message::ToggleCreateRoom,
+            MenuAct::CreateSpace => Message::ToggleCreateSpace,
         }
     }
 }
@@ -745,6 +753,7 @@ impl Application for Constellations {
             user_id: None,
             media_cache: HashMap::new(),
             creating_room: false,
+            creating_space: false,
             new_room_name: String::new(),
             error: None,
             login_homeserver: "https://matrix.org".to_string(),
@@ -923,6 +932,13 @@ impl Application for Constellations {
             }
             Message::ToggleCreateRoom => {
                 self.creating_room = !self.creating_room;
+                self.creating_space = false;
+                self.new_room_name.clear();
+                Task::none()
+            }
+            Message::ToggleCreateSpace => {
+                self.creating_space = !self.creating_space;
+                self.creating_room = false;
                 self.new_room_name.clear();
                 Task::none()
             }
@@ -940,6 +956,22 @@ impl Application for Constellations {
                     }
                     Err(e) => {
                         self.error = Some(format!("Failed to create room: {}", e));
+                    }
+                }
+                Task::none()
+            }
+            Message::CreateSpace(name) => self.handle_create_space(name),
+            Message::SpaceCreated(res) => {
+                match res {
+                    Ok(space_id) => {
+                        self.creating_space = false;
+                        self.new_room_name.clear();
+                        if let Ok(rid) = space_id.as_str().try_into() {
+                            return self.handle_select_space(Some(rid));
+                        }
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to create space: {}", e));
                     }
                 }
                 Task::none()
@@ -1108,23 +1140,40 @@ impl Application for Constellations {
 
         let mut room_list = Column::new().spacing(5);
 
-        let create_room_ui = if self.creating_room {
+        if self.creating_room || self.creating_space {
+            let label = if self.creating_room {
+                "Room Name"
+            } else {
+                "Space Name"
+            };
+
             let mut name_input =
-                text_input("Room Name", &self.new_room_name).on_input(Message::NewRoomNameChanged);
+                text_input(label, &self.new_room_name).on_input(Message::NewRoomNameChanged);
 
             let is_empty = self.new_room_name.trim().is_empty();
 
             let mut create_btn = button::text("Create");
             if !is_empty {
-                name_input =
-                    name_input.on_submit(|_| Message::CreateRoom(self.new_room_name.clone()));
-                create_btn = create_btn.on_press(Message::CreateRoom(self.new_room_name.clone()));
+                if self.creating_room {
+                    name_input =
+                        name_input.on_submit(|_| Message::CreateRoom(self.new_room_name.clone()));
+                    create_btn =
+                        create_btn.on_press(Message::CreateRoom(self.new_room_name.clone()));
+                } else {
+                    name_input =
+                        name_input.on_submit(|_| Message::CreateSpace(self.new_room_name.clone()));
+                    create_btn =
+                        create_btn.on_press(Message::CreateSpace(self.new_room_name.clone()));
+                }
             }
 
             let create_btn_widget: Element<'_, Message> = if is_empty {
                 tooltip(
                     create_btn,
-                    text::body("Enter a room name to create"),
+                    text::body(format!(
+                        "Enter a {} name to create",
+                        if self.creating_room { "room" } else { "space" }
+                    )),
                     Position::Top,
                 )
                 .into()
@@ -1132,17 +1181,21 @@ impl Application for Constellations {
                 create_btn.into()
             };
 
-            Column::new().spacing(5).push(name_input).push(
+            let cancel_msg = if self.creating_room {
+                Message::ToggleCreateRoom
+            } else {
+                Message::ToggleCreateSpace
+            };
+
+            let create_ui = Column::new().spacing(5).push(name_input).push(
                 Row::new()
                     .spacing(5)
                     .push(create_btn_widget)
-                    .push(button::text("Cancel").on_press(Message::ToggleCreateRoom)),
-            )
-        } else {
-            Column::new().push(button::text("+ Create Room").on_press(Message::ToggleCreateRoom))
-        };
+                    .push(button::text("Cancel").on_press(cancel_msg)),
+            );
 
-        room_list = room_list.push(container(create_room_ui).padding(5));
+            room_list = room_list.push(container(create_ui).padding(5));
+        }
 
         if let Some(selected_space) = &self.selected_space {
             let space_name = self
