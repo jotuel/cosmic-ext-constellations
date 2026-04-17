@@ -44,6 +44,8 @@ pub struct State {
     pub current_user_id: Option<String>,
     pub my_power_level: i64,
     pub member_filter: String,
+    pub notification_mode: Option<matrix_sdk::notification_settings::RoomNotificationMode>,
+    pub is_loading_notifications: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -80,6 +82,8 @@ pub enum Message {
     InviteUserIdChanged(String),
     ActionReasonChanged(String),
     MemberFilterChanged(String),
+    NotificationModeChanged(matrix_sdk::notification_settings::RoomNotificationMode),
+    NotificationModeSet(Result<(), String>),
 }
 
 #[derive(Debug, Clone)]
@@ -100,6 +104,7 @@ pub struct RoomInfo {
     pub kick_level: i64,
     pub redact_level: i64,
     pub current_user_id: Option<String>,
+    pub notification_mode: Option<matrix_sdk::notification_settings::RoomNotificationMode>,
 }
 
 impl State {
@@ -127,6 +132,11 @@ impl State {
 
                             let pl = room.power_levels().await.map_err(|e| e.to_string())?;
                             let current_user_id = client.user_id().map(|id| id.to_string());
+                            let notification_settings = client.notification_settings().await;
+                            let notification_mode = notification_settings
+                                .get_user_defined_room_notification_mode(&room_id_parsed)
+                                .await;
+
                             Ok(RoomInfo {
                                 name: room.name().unwrap_or_default(),
                                 topic: room.topic().unwrap_or_default(),
@@ -137,6 +147,7 @@ impl State {
                                 kick_level: pl.kick.into(),
                                 redact_level: pl.redact.into(),
                                 current_user_id,
+                                notification_mode,
                             })
                         },
                         |res| Action::from(crate::Message::RoomSettings(Message::RoomLoaded(res))),
@@ -168,6 +179,7 @@ impl State {
                         self.original_invite_level = info.invite_level;
                         self.invite_level_str = info.invite_level.to_string();
                         self.current_user_id = info.current_user_id;
+                        self.notification_mode = info.notification_mode;
                         self.error = None;
 
                         let mut tasks = Vec::new();
@@ -723,11 +735,78 @@ impl State {
                 }
                 Task::none()
             }
+            Message::NotificationModeChanged(mode) => {
+                if let Some(matrix) = matrix {
+                    if let Some(room_id) = &self.room_id {
+                        self.is_loading_notifications = true;
+                        self.notification_mode = Some(mode);
+                        let engine = matrix.clone();
+                        let room_id_clone = room_id.clone();
+                        return Task::perform(
+                            async move {
+                                let client = engine.client().await;
+                                let ns = client.notification_settings().await;
+                                let rid = RoomId::parse(&room_id_clone).map_err(|e| e.to_string())?;
+                                ns.set_room_notification_mode(&rid, mode)
+                                    .await
+                                    .map_err(|e| e.to_string())
+                            },
+                            |res| {
+                                Action::from(crate::Message::RoomSettings(
+                                    Message::NotificationModeSet(res),
+                                ))
+                            },
+                        );
+                    }
+                }
+                Task::none()
+            }
+            Message::NotificationModeSet(res) => {
+                self.is_loading_notifications = false;
+                if let Err(e) = res {
+                    self.error = Some(e);
+                }
+                Task::none()
+            }
             Message::DismissError => {
                 self.error = None;
                 Task::none()
             }
         }
+    }
+
+    fn view_notifications(&self) -> Element<'_, Message> {
+        use matrix_sdk::notification_settings::RoomNotificationMode;
+        let mut col = Column::new().spacing(10);
+        col = col.push(text::title3("Notifications"));
+
+        let mut row = Row::new().spacing(10);
+
+        for mode in [
+            RoomNotificationMode::AllMessages,
+            RoomNotificationMode::MentionsAndKeywordsOnly,
+            RoomNotificationMode::Mute,
+        ] {
+            let label = match mode {
+                RoomNotificationMode::AllMessages => "All Messages",
+                RoomNotificationMode::MentionsAndKeywordsOnly => "Mentions Only",
+                RoomNotificationMode::Mute => "Muted",
+            };
+
+            let mut btn = if self.notification_mode == Some(mode) {
+                button::suggested(label)
+            } else {
+                button::text(label)
+            };
+
+            if self.notification_mode != Some(mode) && !self.is_loading_notifications {
+                btn = btn.on_press(Message::NotificationModeChanged(mode));
+            }
+
+            row = row.push(btn);
+        }
+
+        col.push(row).into()
     }
 
     fn view_error(&self) -> Option<Element<'_, Message>> {
@@ -1010,6 +1089,7 @@ impl State {
         }
 
         col = col.push(self.view_profile());
+        col = col.push(self.view_notifications());
         col = col.push(self.view_permissions());
 
         if let Some(save_btn) = self.view_save_button() {
