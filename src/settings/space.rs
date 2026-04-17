@@ -1,6 +1,6 @@
 use crate::matrix::{MatrixEngine, RoomData};
 use cosmic::iced::Alignment;
-use cosmic::widget::{button, text, text_input, Column, Row};
+use cosmic::widget::{Column, Row, button, text, text_input, tooltip, tooltip::Position};
 use cosmic::{Action, Element, Task};
 use matrix_sdk::ruma::RoomId;
 
@@ -498,6 +498,23 @@ impl State {
 
         // Add Child
         col = col.push(text::body("Add room or subspace by ID").size(12));
+
+        let mut add_btn = button::text("Add Child");
+        let is_empty = self.new_child_id.trim().is_empty();
+        if !is_empty {
+            add_btn = add_btn.on_press(Message::AddChild);
+        }
+        let btn_widget: Element<'_, Message> = if is_empty {
+            tooltip(
+                add_btn,
+                text::body("Enter a room or space ID to add"),
+                Position::Top,
+            )
+            .into()
+        } else {
+            add_btn.into()
+        };
+
         col = col.push(
             Row::new()
                 .spacing(10)
@@ -505,7 +522,7 @@ impl State {
                     text_input::text_input("!room_id:server.com", &self.new_child_id)
                         .on_input(Message::NewChildIdChanged),
                 )
-                .push(button::text("Add Child").on_press(Message::AddChild)),
+                .push(btn_widget),
         );
 
         col.into()

@@ -22,3 +22,6 @@
 ## 2026-05-20 - Tooltips for Disabled Actions
 **Learning:** While disabling primary actions (like 'Send' or 'Login') prevents invalid states and phantom submissions, it can leave users confused as to *why* the button is unresponsive if the requirements aren't visually obvious.
 **Action:** When conditionally disabling primary action buttons, wrap them in a `cosmic::widget::tooltip` explaining the required state (e.g., "Type a message to send" or "Fill in all fields to login").
+## 2026-05-22 - Missing Disabled State on Add Child
+**Learning:** The "Add Child" button in the space settings did not have a disabled state when the input field was empty, violating our principles for primary actions.
+**Action:** Always conditionally disable primary action buttons like "Add Child" and wrap them in a `cosmic::widget::tooltip` explaining the required state (e.g., "Enter a room or space ID to add").
