@@ -113,8 +113,8 @@ impl Constellations {
                     }
                 });
 
-                let btn_content = container(text::body(format!("{} {}", key, count)).size(10))
-                    .padding([2, 4]);
+                let btn_content =
+                    container(text::body(format!("{} {}", key, count)).size(10)).padding([2, 4]);
 
                 // We can differentiate style if reacted, but for now we just wrap in button.
                 let btn = button::custom(btn_content)
@@ -138,17 +138,21 @@ impl Constellations {
                     .on_press(Message::ToggleReaction(item_id.clone(), emoji.to_string()));
                 reaction_row = reaction_row.push(btn);
             }
-            
+
             // A cancel button to close picker
-            let cancel_btn = button::custom(container(cosmic::widget::icon::from_name("window-close-symbolic").size(12)).padding([2, 4]))
-                .on_press(Message::OpenReactionPicker(None));
+            let cancel_btn = button::custom(
+                container(cosmic::widget::icon::from_name("window-close-symbolic").size(12))
+                    .padding([2, 4]),
+            )
+            .on_press(Message::OpenReactionPicker(None));
             reaction_row = reaction_row.push(cancel_btn);
         } else {
             // "Add reaction" button
             let btn = button::custom(
                 container(cosmic::widget::icon::from_name("face-smile-symbolic").size(12))
-                    .padding(2)
-            ).on_press(Message::OpenReactionPicker(Some(item_id.clone())));
+                    .padding(2),
+            )
+            .on_press(Message::OpenReactionPicker(Some(item_id.clone())));
             reaction_row = reaction_row.push(btn);
         }
 
@@ -432,7 +436,12 @@ impl Constellations {
                     btn = btn.on_press(Message::SubmitRegister);
                 }
                 if is_missing_fields {
-                    tooltip(btn, text::body("Fill in all fields to create an account"), Position::Top).into()
+                    tooltip(
+                        btn,
+                        text::body("Fill in all fields to create an account"),
+                        Position::Top,
+                    )
+                    .into()
                 } else {
                     btn.into()
                 }
@@ -445,7 +454,12 @@ impl Constellations {
                 btn = btn.on_press(Message::SubmitLogin);
             }
             if is_missing_fields {
-                tooltip(btn, text::body("Fill in all fields to login"), Position::Top).into()
+                tooltip(
+                    btn,
+                    text::body("Fill in all fields to login"),
+                    Position::Top,
+                )
+                .into()
             } else {
                 btn.into()
             }

@@ -1,7 +1,7 @@
 use std::error::Error;
 use tokio::sync::mpsc;
 use zbus::names::WellKnownName;
-use zbus::{interface, proxy, Connection};
+use zbus::{Connection, interface, proxy};
 
 pub const DBUS_NAME: &str = "fi.joonastuomi.CosmicExtConstellations";
 pub const DBUS_PATH: &str = "/fi/joonastuomi/CosmicExtConstellations";
@@ -76,7 +76,10 @@ mod tests {
                 env::remove_var("DBUS_SESSION_BUS_ADDRESS");
             }
             // The function should return an error since the session bus is unreachable
-            assert!(result.is_err(), "Expected an error when DBUS_SESSION_BUS_ADDRESS is invalid");
+            assert!(
+                result.is_err(),
+                "Expected an error when DBUS_SESSION_BUS_ADDRESS is invalid"
+            );
         }
     }
 }

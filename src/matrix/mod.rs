@@ -2,18 +2,20 @@ use anyhow::{Context, Result};
 use eyeball_im::VectorDiff;
 use matrix_sdk::authentication::matrix::MatrixSession;
 use matrix_sdk::media::MediaFormat;
-use matrix_sdk::ruma::events::room::message::RoomMessageEventContent;
 use matrix_sdk::ruma::events::room::MediaSource;
+use matrix_sdk::ruma::events::room::message::RoomMessageEventContent;
 use matrix_sdk::ruma::events::space::child::SpaceChildEventContent;
 use matrix_sdk::ruma::events::space::parent::SpaceParentEventContent;
 use matrix_sdk::ruma::events::{AnySyncMessageLikeEvent, AnySyncTimelineEvent, SyncStateEvent};
 use matrix_sdk::{
-    ruma::{room::RoomType, OwnedDeviceId, OwnedRoomId, RoomId, UserId},
     Client, Room, SessionChange, SessionTokens,
+    ruma::{OwnedDeviceId, OwnedRoomId, RoomId, UserId, room::RoomType},
 };
 pub use matrix_sdk_ui::room_list_service::{RoomListDynamicEntriesController, RoomListService};
 use matrix_sdk_ui::sync_service::SyncService;
-pub use matrix_sdk_ui::timeline::{RoomExt, Timeline, TimelineItem, VirtualTimelineItem, TimelineEventItemId};
+pub use matrix_sdk_ui::timeline::{
+    RoomExt, Timeline, TimelineEventItemId, TimelineItem, VirtualTimelineItem,
+};
 use oo7::Keyring;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -358,6 +360,78 @@ impl MatrixEngine {
     }
 
     fn setup_event_handlers(&self, client: &Client) {
+        client.add_event_handler(
+            |event: matrix_sdk::ruma::events::room::message::SyncRoomMessageEvent,
+             room: matrix_sdk::Room| {
+                async move {
+                    if let matrix_sdk::ruma::events::room::message::SyncRoomMessageEvent::Original(
+                        ev,
+                    ) = event
+                    {
+                        // Ignore our own messages
+                        if let Some(user_id) = room.client().user_id() {
+                            if ev.sender == user_id {
+                                return;
+                            }
+                        }
+
+                        // Avoid spamming during initial sync by checking if event is older than 5 minutes
+                        let now = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap()
+                            .as_millis();
+
+                        let event_time = ev.origin_server_ts.0.into();
+                        let diff = if now > event_time {
+                            now - event_time
+                        } else {
+                            event_time - now
+                        };
+
+                        if diff > 300_000 {
+                            return;
+                        }
+
+                        let room_name = room.name().unwrap_or_else(|| "Unknown Room".to_string());
+
+                        let sender = if let Ok(Some(member)) = room.get_member(&ev.sender).await {
+                            member
+                                .display_name()
+                                .map(|n| n.to_owned())
+                                .unwrap_or_else(|| ev.sender.as_str().to_string())
+                        } else {
+                            ev.sender.as_str().to_string()
+                        };
+
+                        let body = match &ev.content.msgtype {
+                            matrix_sdk::ruma::events::room::message::MessageType::Text(text) => {
+                                text.body.clone()
+                            }
+                            matrix_sdk::ruma::events::room::message::MessageType::Image(_) => {
+                                "📷 Image".to_string()
+                            }
+                            matrix_sdk::ruma::events::room::message::MessageType::Video(_) => {
+                                "🎥 Video".to_string()
+                            }
+                            matrix_sdk::ruma::events::room::message::MessageType::Audio(_) => {
+                                "🎵 Audio".to_string()
+                            }
+                            matrix_sdk::ruma::events::room::message::MessageType::File(_) => {
+                                "📎 File".to_string()
+                            }
+                            _ => "New message".to_string(),
+                        };
+
+                        let _ = notify_rust::Notification::new()
+                            .appname("Constellations")
+                            .summary(&format!("{} in {}", sender, room_name))
+                            .body(&body)
+                            .show();
+                    }
+                }
+            },
+        );
+
         let inner_clone = self.inner.clone();
         client.add_event_handler(
             move |event: SyncStateEvent<SpaceChildEventContent>, room: Room| {
@@ -1085,7 +1159,11 @@ impl MatrixEngine {
                     last_message: None,
                     unread_count: 0,
                     unread_count_str: None,
-                    avatar_url: room_summary.summary.avatar_url.as_ref().map(|u| u.to_string()),
+                    avatar_url: room_summary
+                        .summary
+                        .avatar_url
+                        .as_ref()
+                        .map(|u| u.to_string()),
                     room_type: room_summary.summary.room_type.clone(),
                     is_space,
                     parent_space_id: Some(space_id.to_string()),
@@ -1116,23 +1194,22 @@ impl MatrixEngine {
                         _ => continue,
                     };
 
-                        if !via_empty {
-                            let child_id_parsed = match RoomId::parse(child_id.as_str()) {
-                                Ok(id) => id,
-                                Err(_) => continue,
-                            };
+                    if !via_empty {
+                        let child_id_parsed = match RoomId::parse(child_id.as_str()) {
+                            Ok(id) => id,
+                            Err(_) => continue,
+                        };
 
-                            {
-                                let mut inner = self.inner.write().await;
-                                inner.space_hierarchy.add_child(
-                                    space_id_parsed.clone(),
-                                    child_id_parsed.clone(),
-                                );
-                            }
+                        {
+                            let mut inner = self.inner.write().await;
+                            inner
+                                .space_hierarchy
+                                .add_child(space_id_parsed.clone(), child_id_parsed.clone());
+                        }
 
-                            if let Some(child_room) = client.get_room(&child_id_parsed) {
-                                rooms.push(self.fetch_room_data(&child_room).await?);
-                            } else {
+                        if let Some(child_room) = client.get_room(&child_id_parsed) {
+                            rooms.push(self.fetch_room_data(&child_room).await?);
+                        } else {
                             rooms.push(RoomData {
                                 id: child_id.as_str().into(),
                                 name: None,
@@ -1213,21 +1290,22 @@ impl MatrixEngine {
         Ok(())
     }
 
-    pub async fn send_attachment(
-        &self,
-        room_id: &str,
-        path: &std::path::PathBuf,
-    ) -> Result<()> {
+    pub async fn send_attachment(&self, room_id: &str, path: &std::path::PathBuf) -> Result<()> {
         let room_id = RoomId::parse(room_id)?;
         let client = self.client().await;
         let room = client.get_room(&room_id).context("Room not found")?;
 
         let data = tokio::fs::read(path).await?;
-        let filename = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+        let filename = path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
         let mime_type = mime_guess::from_path(path).first_or_octet_stream();
         let config = matrix_sdk::attachment::AttachmentConfig::new();
 
-        room.send_attachment(&filename, &mime_type, data, config).await?;
+        room.send_attachment(&filename, &mime_type, data, config)
+            .await?;
         Ok(())
     }
 
@@ -1278,7 +1356,7 @@ impl MatrixEngine {
             Ok(inner) => inner.space_hierarchy.is_in_space(room_id, space_id),
             Err(_) => {
                 // If we can't get a read lock, we fall back to assuming it might be in the space
-                // if we're currently selecting it, to avoid flickering. 
+                // if we're currently selecting it, to avoid flickering.
                 // But we don't have access to selected_space here.
                 // For now, just return false but log it.
                 false
@@ -1394,7 +1472,6 @@ impl MatrixEngine {
             }
         }
 
-
         let mut buf = [0u8; 32];
         rand::rng().fill_bytes(&mut buf);
 
@@ -1431,7 +1508,10 @@ impl MatrixEngine {
         let client = match build_client(&store_path, &passphrase).build().await {
             Ok(c) => c,
             Err(e) => {
-                tracing::warn!("Failed to initialize stores (possibly corrupted cipher): {}. Recreating store.", e);
+                tracing::warn!(
+                    "Failed to initialize stores (possibly corrupted cipher): {}. Recreating store.",
+                    e
+                );
                 let _ = std::fs::remove_dir_all(&store_path);
                 build_client(&store_path, &passphrase).build().await?
             }

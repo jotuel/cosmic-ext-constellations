@@ -1,7 +1,7 @@
 use crate::matrix::MatrixEngine;
 use cosmic::iced::Alignment;
 use cosmic::widget::{
-    button, icon::Named, text, text_input, tooltip, tooltip::Position, Column, Row,
+    Column, Row, button, icon::Named, text, text_input, tooltip, tooltip::Position,
 };
 use cosmic::{Action, Element, Task};
 use matrix_sdk::encryption::verification::{
@@ -753,7 +753,10 @@ impl State {
                         self.device_delete_password.clear();
                     }
                     Err(e) => {
-                        self.error = Some(format!("Failed to delete device: {}. You might need to provide a password below.", e));
+                        self.error = Some(format!(
+                            "Failed to delete device: {}. You might need to provide a password below.",
+                            e
+                        ));
                     }
                 }
                 Task::none()

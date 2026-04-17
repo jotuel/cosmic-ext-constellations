@@ -1,9 +1,9 @@
 use crate::matrix::MatrixEngine;
 use cosmic::iced::Alignment;
-use cosmic::widget::{button, text, text_input, Column, Row};
+use cosmic::widget::{Column, Row, button, text, text_input};
 use cosmic::{Action, Element, Task};
-use matrix_sdk::ruma::events::room::MediaSource;
 use matrix_sdk::ruma::RoomId;
+use matrix_sdk::ruma::events::room::MediaSource;
 use std::collections::HashMap;
 use std::sync::Arc;
 

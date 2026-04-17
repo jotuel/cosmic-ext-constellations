@@ -1,8 +1,8 @@
 use cosmic::app::Core;
 use cosmic::iced::Alignment;
 use cosmic::widget::menu::action::MenuAction;
-use cosmic::widget::{button, container, menu, text};
 use cosmic::widget::{Column, RcElementWrapper};
+use cosmic::widget::{button, container, menu, text};
 use cosmic::{Action, Application, Element, Task};
 use std::collections::HashMap;
 
