@@ -232,29 +232,82 @@ impl Constellations {
         }
     }
 
+    pub fn handle_add_attachment(
+        &mut self,
+    ) -> Task<Action<<Constellations as Application>::Message>> {
+        Task::perform(
+            async move {
+                let dialog = rfd::AsyncFileDialog::new()
+                    .set_title("Select files to attach")
+                    .pick_files()
+                    .await;
+
+                let mut paths = Vec::new();
+                if let Some(files) = dialog {
+                    for file in files {
+                        paths.push(file.path().to_path_buf());
+                    }
+                }
+                paths
+            },
+            |paths| Action::from(Message::AttachmentsSelected(paths)),
+        )
+    }
+
     pub fn handle_send_message(
         &mut self,
     ) -> Task<Action<<Constellations as Application>::Message>> {
         if let (Some(matrix), Some(room_id)) = (&self.matrix, &self.selected_room) {
             let body = self.composer_text.clone();
-            if body.is_empty() {
+            let attachments = self.composer_attachments.clone();
+
+            if body.is_empty() && attachments.is_empty() {
                 return Task::none();
             }
 
-            let html_body = matrix::markdown_to_html(&body);
+            let mut tasks = Vec::new();
 
-            let matrix = matrix.clone();
-            let room_id = room_id.clone();
+            if !body.is_empty() {
+                let html_body = matrix::markdown_to_html(&body);
+                let matrix_clone = matrix.clone();
+                let room_id_clone = room_id.clone();
 
-            Task::perform(
-                async move {
-                    matrix
-                        .send_message(&room_id, body, Some(html_body))
-                        .await
-                        .map_err(|e| e.to_string())
-                },
-                |res| Action::from(Message::MessageSent(res)),
-            )
+                tasks.push(Task::perform(
+                    async move {
+                        matrix_clone
+                            .send_message(&room_id_clone, body, Some(html_body))
+                            .await
+                            .map_err(|e| e.to_string())
+                    },
+                    |res| Action::from(Message::MessageSent(res)),
+                ));
+            } else {
+                // If only sending attachments, we clear the composer text state manually
+                // because MessageSent clears it but might not run for empty body
+                self.composer_text.clear();
+                self.composer_preview_events.clear();
+                self.composer_is_preview = false;
+            }
+
+            for path in attachments {
+                let matrix_clone = matrix.clone();
+                let room_id_clone = room_id.clone();
+                let path_clone = path.clone();
+
+                tasks.push(Task::perform(
+                    async move {
+                        matrix_clone
+                            .send_attachment(&room_id_clone, &path_clone)
+                            .await
+                            .map_err(|e| e.to_string())
+                    },
+                    move |res| Action::from(Message::AttachmentSent(path.clone(), res)),
+                ));
+            }
+
+            self.composer_attachments.clear();
+
+            Task::batch(tasks)
         } else {
             Task::none()
         }
@@ -686,6 +739,8 @@ mod tests {
             room_settings: crate::settings::room::State::default(),
             space_settings: crate::settings::space::State::default(),
             app_settings: crate::settings::app::State::default(),
+            composer_attachments: Vec::new(),
+            active_reaction_picker: None,
         }
     }
 

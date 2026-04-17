@@ -55,9 +55,7 @@ impl Constellations {
                         }
                     }
 
-                    if event.content().reactions().is_some_and(|r| !r.is_empty()) {
-                        bubble_col = bubble_col.push(reaction_row);
-                    }
+                    bubble_col = bubble_col.push(reaction_row);
 
                     let bubble = container(bubble_col)
                         .padding(if self.app_settings.compact_mode {
@@ -98,19 +96,62 @@ impl Constellations {
         &'a self,
         event: &'a matrix_sdk_ui::timeline::EventTimelineItem,
     ) -> Row<'a, Message, cosmic::Theme> {
-        let mut reaction_row = Row::new().spacing(5);
+        let mut reaction_row = Row::new().spacing(5).align_y(Alignment::Center);
         let reactions = event.content().reactions();
-        {
-            if let Some(reaction) = reactions {
-                for key in reaction.keys() {
-                    let people = reaction.get_key_value(key);
-                    let count = people.iter().count();
-                    reaction_row = reaction_row.push(
-                        container(text::body(format!("{} {}", key, count)).size(10)).padding(2),
-                    );
+        let item_id = event.identifier();
+
+        if let Some(reaction) = reactions {
+            for key in reaction.keys() {
+                let people = reaction.get_key_value(key);
+                let count = people.iter().count();
+
+                let is_me_reacted = people.iter().any(|(user_id, _)| {
+                    if let Some(me) = &self.user_id {
+                        user_id.as_str() == me
+                    } else {
+                        false
+                    }
+                });
+
+                let btn_content = container(text::body(format!("{} {}", key, count)).size(10))
+                    .padding([2, 4]);
+
+                // We can differentiate style if reacted, but for now we just wrap in button.
+                let btn = button::custom(btn_content)
+                    .on_press(Message::ToggleReaction(item_id.clone(), key.clone()));
+
+                // If `is_me_reacted` is true, we could style it differently
+                if is_me_reacted {
+                    // Use standard button to give it some background highlight, or specific style
+                    // But custom button with standard background works nicely if we could pass theme
                 }
+
+                reaction_row = reaction_row.push(btn);
             }
         }
+
+        // Show picker if active
+        if self.active_reaction_picker.as_ref() == Some(&item_id) {
+            let emojis = ["👍", "❤️", "😂", "😮", "😢", "🙏", "👎", "🔥", "🎉", "👀"];
+            for emoji in emojis {
+                let btn = button::custom(container(text::body(emoji).size(12)).padding([2, 4]))
+                    .on_press(Message::ToggleReaction(item_id.clone(), emoji.to_string()));
+                reaction_row = reaction_row.push(btn);
+            }
+            
+            // A cancel button to close picker
+            let cancel_btn = button::custom(container(cosmic::widget::icon::from_name("window-close-symbolic").size(12)).padding([2, 4]))
+                .on_press(Message::OpenReactionPicker(None));
+            reaction_row = reaction_row.push(cancel_btn);
+        } else {
+            // "Add reaction" button
+            let btn = button::custom(
+                container(cosmic::widget::icon::from_name("face-smile-symbolic").size(12))
+                    .padding(2)
+            ).on_press(Message::OpenReactionPicker(Some(item_id.clone())));
+            reaction_row = reaction_row.push(btn);
+        }
+
         reaction_row
     }
 

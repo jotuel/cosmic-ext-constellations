@@ -2,7 +2,7 @@
 
 [x] Regression session not persisting between runs
 
-[ ] Regression Spaces no longer list even joined Rooms
+[x] Regression Spaces no longer list even joined Rooms
 
 [ ] After Logout can't Login again
 
@@ -20,9 +20,9 @@
 
 [ ] Frostmark for message rendering
 
-[ ] Rich Media Support: Sending images etc.
+[x] Rich Media Support: Sending images etc.
 
-[ ] Adding Emoji reactions
+[x] Adding Emoji reactions
 
 [ ] Threaded conversations
 
@@ -104,9 +104,6 @@ cannot be undone).
 
 [ ] Restricted Access: You can update a room's join rules to m.room.join_rules: restricted, allowing anyone who is a member of the Space to join the room without an explicit
  invite.
-
-[ ] Space-wide Bans: While the SDK doesn't have a singular "ban from Space and all rooms" button, you can iterate through the Space hierarchy to apply moderation actions
- across children.
 
  ### *3. Basic Profile (Same as Rooms)*
 
