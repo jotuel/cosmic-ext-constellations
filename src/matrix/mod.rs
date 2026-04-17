@@ -13,7 +13,7 @@ use matrix_sdk::{
 };
 pub use matrix_sdk_ui::room_list_service::{RoomListDynamicEntriesController, RoomListService};
 use matrix_sdk_ui::sync_service::SyncService;
-pub use matrix_sdk_ui::timeline::{RoomExt, Timeline, TimelineItem, VirtualTimelineItem};
+pub use matrix_sdk_ui::timeline::{RoomExt, Timeline, TimelineItem, VirtualTimelineItem, TimelineEventItemId};
 use oo7::Keyring;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -1213,11 +1213,40 @@ impl MatrixEngine {
         Ok(())
     }
 
+    pub async fn send_attachment(
+        &self,
+        room_id: &str,
+        path: &std::path::PathBuf,
+    ) -> Result<()> {
+        let room_id = RoomId::parse(room_id)?;
+        let client = self.client().await;
+        let room = client.get_room(&room_id).context("Room not found")?;
+
+        let data = tokio::fs::read(path).await?;
+        let filename = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+        let mime_type = mime_guess::from_path(path).first_or_octet_stream();
+        let config = matrix_sdk::attachment::AttachmentConfig::new();
+
+        room.send_attachment(&filename, &mime_type, data, config).await?;
+        Ok(())
+    }
+
     pub async fn typing_notice(&self, room_id: &str, typing: bool) -> Result<()> {
         let room_id = RoomId::parse(room_id)?;
         let client = self.client().await;
         let room = client.get_room(&room_id).context("Room not found")?;
         room.typing_notice(typing).await?;
+        Ok(())
+    }
+
+    pub async fn toggle_reaction(
+        &self,
+        room_id: &str,
+        item_id: &TimelineEventItemId,
+        reaction_key: &str,
+    ) -> Result<()> {
+        let timeline = self.timeline(room_id).await?;
+        timeline.toggle_reaction(item_id, reaction_key).await?;
         Ok(())
     }
 

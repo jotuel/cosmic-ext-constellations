@@ -68,6 +68,7 @@ struct Constellations {
     composer_text: String,
     composer_preview_events: Vec<PreviewEvent>,
     composer_is_preview: bool,
+    composer_attachments: Vec<std::path::PathBuf>,
     user_id: Option<String>,
     media_cache: HashMap<String, image::Handle>,
     creating_room: bool,
@@ -82,6 +83,7 @@ struct Constellations {
     is_registering: bool,
     is_initializing: bool,
     is_sync_indicator_active: bool,
+    active_reaction_picker: Option<matrix::TimelineEventItemId>,
     selected_space: Option<OwnedRoomId>,
     current_settings_panel: Option<SettingsPanel>,
     user_settings: settings::user::State,
@@ -99,6 +101,13 @@ pub enum Message {
     TogglePreview,
     SendMessage,
     MessageSent(Result<(), String>),
+    AddAttachment,
+    AttachmentsSelected(Vec<std::path::PathBuf>),
+    RemoveAttachment(usize),
+    AttachmentSent(std::path::PathBuf, Result<(), String>),
+    ToggleReaction(matrix::TimelineEventItemId, String),
+    ReactionToggled(Result<(), String>),
+    OpenReactionPicker(Option<matrix::TimelineEventItemId>),
     LoadMore,
     LoadMoreFinished(Result<(), String>),
     UserReady(Option<String>, Result<(), matrix::SyncError>),
@@ -653,6 +662,7 @@ impl Application for Constellations {
             composer_text: String::new(),
             composer_preview_events: Vec::new(),
             composer_is_preview: false,
+            composer_attachments: Vec::new(),
             user_id: None,
             media_cache: HashMap::new(),
             creating_room: false,
@@ -667,6 +677,7 @@ impl Application for Constellations {
             is_registering: false,
             is_initializing: true,
             is_sync_indicator_active: false,
+            active_reaction_picker: None,
             selected_space: None,
             current_settings_panel: None,
             user_settings: Default::default(),
@@ -763,6 +774,58 @@ impl Application for Constellations {
                     Err(e) => {
                         self.error = Some(format!("Failed to send message: {}", e));
                     }
+                }
+                Task::none()
+            }
+            Message::AddAttachment => self.handle_add_attachment(),
+            Message::AttachmentsSelected(paths) => {
+                for path in paths {
+                    if !self.composer_attachments.contains(&path) {
+                        self.composer_attachments.push(path);
+                    }
+                }
+                Task::none()
+            }
+            Message::RemoveAttachment(index) => {
+                if index < self.composer_attachments.len() {
+                    self.composer_attachments.remove(index);
+                }
+                Task::none()
+            }
+            Message::AttachmentSent(path, res) => {
+                match res {
+                    Ok(_) => {
+                        // Successfully sent, could remove from ui if we were tracking it per-message
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to send attachment {}: {}", path.display(), e));
+                    }
+                }
+                Task::none()
+            }
+            Message::OpenReactionPicker(item_id) => {
+                self.active_reaction_picker = item_id;
+                Task::none()
+            }
+            Message::ToggleReaction(item_id, key) => {
+                self.active_reaction_picker = None;
+                if let (Some(matrix), Some(room_id)) = (&self.matrix, &self.selected_room) {
+                    let matrix_clone = matrix.clone();
+                    let room_id_clone = room_id.clone();
+                    return Task::perform(
+                        async move {
+                            matrix_clone.toggle_reaction(&room_id_clone, &item_id, &key)
+                                .await
+                                .map_err(|e| e.to_string())
+                        },
+                        |res| Message::ReactionToggled(res).into()
+                    );
+                }
+                Task::none()
+            }
+            Message::ReactionToggled(res) => {
+                if let Err(e) = res {
+                    self.error = Some(format!("Failed to toggle reaction: {}", e));
                 }
                 Task::none()
             }
@@ -1169,7 +1232,21 @@ impl Application for Constellations {
                 .into()
             };
 
-            let is_empty = self.composer_text.trim().is_empty();
+            let mut attachments_view = Column::new().spacing(5);
+            if !self.composer_attachments.is_empty() {
+                attachments_view = attachments_view.push(text::body("Attachments:").size(12));
+                for (i, path) in self.composer_attachments.iter().enumerate() {
+                    let filename = path.file_name().unwrap_or_default().to_string_lossy();
+                    let attachment_row = Row::new()
+                        .spacing(10)
+                        .align_y(Alignment::Center)
+                        .push(text::body(filename).size(12))
+                        .push(button::text("Remove").on_press(Message::RemoveAttachment(i)));
+                    attachments_view = attachments_view.push(attachment_row);
+                }
+            }
+
+            let is_empty = self.composer_text.trim().is_empty() && self.composer_attachments.is_empty();
 
             let mut send_btn = button::text("Send");
             if !is_empty {
@@ -1177,13 +1254,14 @@ impl Application for Constellations {
             }
 
             let send_btn_widget: Element<'_, Message> = if is_empty {
-                tooltip(send_btn, text::body("Type a message to send"), Position::Top).into()
+                tooltip(send_btn, text::body("Type a message or attach a file to send"), Position::Top).into()
             } else {
                 send_btn.into()
             };
 
             let controls = Row::new()
                 .spacing(10)
+                .push(button::text("Attach").on_press(Message::AddAttachment))
                 .push(
                     button::text(if self.composer_is_preview {
                         "Edit"
@@ -1194,7 +1272,7 @@ impl Application for Constellations {
                 )
                 .push(send_btn_widget);
 
-            content = content.push(Column::new().spacing(10).push(composer).push(controls));
+            content = content.push(Column::new().spacing(10).push(attachments_view).push(composer).push(controls));
         } else {
             let empty_state = container(
                 Column::new()
