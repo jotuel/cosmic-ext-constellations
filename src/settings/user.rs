@@ -52,6 +52,11 @@ pub struct State {
     pub active_sas: Option<SasVerification>,
     pub verification_ui_state: VerificationUIState,
     pub device_delete_password: String,
+    pub global_notification_mode_dm:
+        Option<matrix_sdk::notification_settings::RoomNotificationMode>,
+    pub global_notification_mode_group:
+        Option<matrix_sdk::notification_settings::RoomNotificationMode>,
+    pub is_loading_global_notifications: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -91,6 +96,15 @@ pub enum Message {
     DeviceRenamed(Arc<str>, Result<(), String>),
     DeleteDevice(Arc<str>),
     DeviceDeleted(Arc<str>, Result<(), String>),
+    GlobalNotificationModeChanged(
+        bool,
+        matrix_sdk::notification_settings::RoomNotificationMode,
+    ),
+    GlobalNotificationModeLoaded(
+        bool,
+        matrix_sdk::notification_settings::RoomNotificationMode,
+    ),
+    GlobalNotificationModeSet(Result<(), String>),
 }
 
 impl State {
@@ -144,7 +158,43 @@ impl State {
                         Action::from(crate::Message::UserSettings(Message::LoadDevices))
                     });
 
-                    return Task::batch(vec![t_name, t_avatar, t_devices]);
+                    let matrix_dm = matrix.clone();
+                    let t_dm = Task::perform(
+                        async move {
+                            let client = matrix_dm.client().await;
+                            let ns = client.notification_settings().await;
+                            ns.get_default_room_notification_mode(
+                                matrix_sdk::notification_settings::IsEncrypted::Yes,
+                                matrix_sdk::notification_settings::IsOneToOne::Yes,
+                            )
+                            .await
+                        },
+                        |mode| {
+                            Action::from(crate::Message::UserSettings(
+                                Message::GlobalNotificationModeLoaded(true, mode),
+                            ))
+                        },
+                    );
+
+                    let matrix_group = matrix.clone();
+                    let t_group = Task::perform(
+                        async move {
+                            let client = matrix_group.client().await;
+                            let ns = client.notification_settings().await;
+                            ns.get_default_room_notification_mode(
+                                matrix_sdk::notification_settings::IsEncrypted::Yes,
+                                matrix_sdk::notification_settings::IsOneToOne::No,
+                            )
+                            .await
+                        },
+                        |mode| {
+                            Action::from(crate::Message::UserSettings(
+                                Message::GlobalNotificationModeLoaded(false, mode),
+                            ))
+                        },
+                    );
+
+                    return Task::batch(vec![t_name, t_avatar, t_devices, t_dm, t_group]);
                 }
                 Task::none()
             }
@@ -303,6 +353,69 @@ impl State {
                     Err(e) => {
                         self.error = Some(format!("Failed to save profile: {}", e));
                     }
+                }
+                Task::none()
+            }
+            Message::GlobalNotificationModeLoaded(is_dm, mode) => {
+                if is_dm {
+                    self.global_notification_mode_dm = Some(mode);
+                } else {
+                    self.global_notification_mode_group = Some(mode);
+                }
+                Task::none()
+            }
+            Message::GlobalNotificationModeChanged(is_dm, mode) => {
+                if is_dm {
+                    self.global_notification_mode_dm = Some(mode);
+                } else {
+                    self.global_notification_mode_group = Some(mode);
+                }
+                if let Some(matrix) = matrix {
+                    let matrix = matrix.clone();
+                    self.is_loading_global_notifications = true;
+                    return Task::perform(
+                        async move {
+                            let client = matrix.client().await;
+                            let ns = client.notification_settings().await;
+
+                            // Set for both encrypted and unencrypted
+                            ns.set_default_room_notification_mode(
+                                matrix_sdk::notification_settings::IsEncrypted::Yes,
+                                if is_dm {
+                                    matrix_sdk::notification_settings::IsOneToOne::Yes
+                                } else {
+                                    matrix_sdk::notification_settings::IsOneToOne::No
+                                },
+                                mode,
+                            )
+                            .await
+                            .map_err(|e| e.to_string())?;
+
+                            ns.set_default_room_notification_mode(
+                                matrix_sdk::notification_settings::IsEncrypted::No,
+                                if is_dm {
+                                    matrix_sdk::notification_settings::IsOneToOne::Yes
+                                } else {
+                                    matrix_sdk::notification_settings::IsOneToOne::No
+                                },
+                                mode,
+                            )
+                            .await
+                            .map_err(|e| e.to_string())
+                        },
+                        |res| {
+                            Action::from(crate::Message::UserSettings(
+                                Message::GlobalNotificationModeSet(res),
+                            ))
+                        },
+                    );
+                }
+                Task::none()
+            }
+            Message::GlobalNotificationModeSet(res) => {
+                self.is_loading_global_notifications = false;
+                if let Err(e) = res {
+                    self.error = Some(format!("Failed to set notification mode: {}", e));
                 }
                 Task::none()
             }
@@ -764,6 +877,67 @@ impl State {
         }
     }
 
+    fn view_notifications<'a>(&'a self) -> Element<'a, Message> {
+        use matrix_sdk::notification_settings::RoomNotificationMode;
+        let mut col = Column::new().spacing(10);
+        col = col.push(text::title3("Default Notification Settings"));
+
+        let modes = [
+            RoomNotificationMode::AllMessages,
+            RoomNotificationMode::MentionsAndKeywordsOnly,
+            RoomNotificationMode::Mute,
+        ];
+
+        // DMs
+        col = col.push(text::body("Direct Messages").size(12));
+        let mut dm_row = Row::new().spacing(10);
+        for mode in modes {
+            let label = match mode {
+                RoomNotificationMode::AllMessages => "All Messages",
+                RoomNotificationMode::MentionsAndKeywordsOnly => "Mentions Only",
+                RoomNotificationMode::Mute => "Muted",
+            };
+
+            let mut btn = if self.global_notification_mode_dm == Some(mode) {
+                button::suggested(label)
+            } else {
+                button::text(label)
+            };
+
+            if self.global_notification_mode_dm != Some(mode) && !self.is_loading_global_notifications
+            {
+                btn = btn.on_press(Message::GlobalNotificationModeChanged(true, mode));
+            }
+            dm_row = dm_row.push(btn);
+        }
+        col = col.push(dm_row);
+
+        // Groups
+        col = col.push(text::body("Group Chats").size(12));
+        let mut group_row = Row::new().spacing(10);
+        for mode in modes {
+            let label = match mode {
+                RoomNotificationMode::AllMessages => "All Messages",
+                RoomNotificationMode::MentionsAndKeywordsOnly => "Mentions Only",
+                RoomNotificationMode::Mute => "Muted",
+            };
+
+            let mut btn = if self.global_notification_mode_group == Some(mode) {
+                button::suggested(label)
+            } else {
+                button::text(label)
+            };
+
+            if self.global_notification_mode_group != Some(mode)
+                && !self.is_loading_global_notifications
+            {
+                btn = btn.on_press(Message::GlobalNotificationModeChanged(false, mode));
+            }
+            group_row = group_row.push(btn);
+        }
+        col.into()
+    }
+
     fn view_profile<'a>(&'a self) -> Element<'a, Message> {
         let mut col = Column::new().spacing(20);
 
@@ -1027,6 +1201,8 @@ impl State {
         let mut col = Column::new().spacing(20);
 
         col = col.push(self.view_profile());
+
+        col = col.push(self.view_notifications());
 
         if let Some(err) = &self.error {
             col = col.push(
