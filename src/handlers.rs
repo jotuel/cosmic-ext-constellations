@@ -1,6 +1,6 @@
 use crate::{
-    matrix, redact_url, ApplyVectorDiffExt, Constellations, ConstellationsItem, MediaSource,
-    Message, OwnedRoomId, Url,
+    ApplyVectorDiffExt, Constellations, ConstellationsItem, MediaSource, Message, OwnedRoomId, Url,
+    matrix, redact_url,
 };
 use cosmic::{Action, Application, Task};
 
@@ -355,7 +355,8 @@ impl Constellations {
                                 let matrix_clone = matrix.clone();
                                 let url_str = avatar_url.clone();
                                 let uri = matrix_sdk::ruma::OwnedMxcUri::from(avatar_url.as_str());
-                                let source = matrix_sdk::ruma::events::room::MediaSource::Plain(uri);
+                                let source =
+                                    matrix_sdk::ruma::events::room::MediaSource::Plain(uri);
                                 tasks.push(Task::perform(
                                     async move {
                                         matrix_clone
@@ -658,6 +659,7 @@ mod tests {
             matrix: None,
             sync_status: matrix::SyncStatus::Disconnected,
             room_list: Vec::new(),
+            other_rooms: Vec::new(),
             filtered_room_list: Vec::new(),
             selected_room: None,
             timeline_items: eyeball_im::Vector::new(),
