@@ -355,8 +355,8 @@ impl Constellations {
             self.filtered_room_list = rooms;
 
             // Re-filter other_rooms to remove any that we've now joined
-            let all_joined_ids: std::collections::HashSet<String> =
-                self.room_list.iter().map(|r| r.id.to_string()).collect();
+            let all_joined_ids: std::collections::HashSet<&str> =
+                self.room_list.iter().map(|r| r.id.as_ref()).collect();
             self.other_rooms.retain(|r| !all_joined_ids.contains(r.id.as_ref()));
         } else {
             self.filtered_room_list = self
