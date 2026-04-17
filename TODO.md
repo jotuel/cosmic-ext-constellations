@@ -12,7 +12,7 @@
 
 [ ] Implement real time audio connections
 
-[ ] Video connections
+[ ] Video connections using MatrixRTC
 
 # ***Search***
 

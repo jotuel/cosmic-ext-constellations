@@ -334,6 +334,27 @@ impl Constellations {
         }
     }
 
+    pub fn handle_create_space(
+        &mut self,
+        name: String,
+    ) -> Task<Action<<Constellations as Application>::Message>> {
+        if let Some(matrix) = &self.matrix {
+            let matrix = matrix.clone();
+            Task::perform(
+                async move {
+                    matrix
+                        .create_space(&name)
+                        .await
+                        .map(|id| id.to_string())
+                        .map_err(|e| e.to_string())
+                },
+                |res| Action::from(Message::SpaceCreated(res)),
+            )
+        } else {
+            Task::none()
+        }
+    }
+
     pub fn handle_select_space(
         &mut self,
         space_id: Option<OwnedRoomId>,

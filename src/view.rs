@@ -5,13 +5,13 @@ use cosmic::{
         widget::{scrollable, tooltip},
     },
     widget::{
-        Column, Row, button, container, icon::Named, text, text_input,
-        tooltip::Position,
+        Column, Row, button, container, icon::Named, menu, text, text_input,
+        tooltip::Position, RcElementWrapper,
     },
 };
 use matrix_sdk::ruma::events::room::{MediaSource, message::MessageType};
 
-use crate::{Constellations, Message, PreviewEvent, matrix};
+use crate::{Constellations, MenuAct, Message, PreviewEvent, matrix};
 
 impl Constellations {
     pub fn view_timeline(&self) -> Element<'_, Message> {
@@ -608,8 +608,32 @@ impl Constellations {
 
         let scrollable_spaces = scrollable(content).height(cosmic::iced::Length::Fill);
 
+        let mut bottom_content = Column::new().spacing(10).align_x(Alignment::Center);
+
+        let plus_btn = button::icon(Named::new("list-add-symbolic"));
+        let key_binds = std::collections::HashMap::new();
+
+        let menu_tree = menu::Tree::with_children(
+            RcElementWrapper::new(Element::from(plus_btn)),
+            menu::items(
+                &key_binds,
+                vec![
+                    menu::Item::Button("Create Room", None, MenuAct::CreateRoom),
+                    menu::Item::Button("Create Space", None, MenuAct::CreateSpace),
+                ],
+            ),
+        );
+
+        let create_menu = menu::bar(vec![menu_tree])
+            .item_height(menu::ItemHeight::Dynamic(40))
+            .item_width(menu::ItemWidth::Uniform(120))
+            .spacing(4.0);
+
+        bottom_content = bottom_content.push(create_menu);
+
         let layout = Column::new()
             .push(scrollable_spaces)
+            .push(bottom_content)
             .align_x(Alignment::Center);
 
         container(layout).width(60).padding(5).into()

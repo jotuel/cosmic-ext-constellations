@@ -1346,6 +1346,19 @@ impl MatrixEngine {
         Ok(room.room_id().to_owned())
     }
 
+    pub async fn create_space(&self, name: &str) -> Result<OwnedRoomId> {
+        let client = self.client().await;
+        let mut request = matrix_sdk::ruma::api::client::room::create_room::v3::Request::new();
+        request.name = Some(name.to_string());
+        
+        let mut creation_content = matrix_sdk::ruma::api::client::room::create_room::v3::CreationContent::new();
+        creation_content.room_type = Some(RoomType::Space);
+        request.creation_content = Some(matrix_sdk::ruma::serde::Raw::new(&creation_content)?);
+
+        let room = client.create_room(request).await?;
+        Ok(room.room_id().to_owned())
+    }
+
     pub async fn is_in_space(&self, room_id: &RoomId, space_id: &RoomId) -> bool {
         let inner = self.inner.read().await;
         inner.space_hierarchy.is_in_space(room_id, space_id)
