@@ -1,6 +1,6 @@
 use crate::matrix::MatrixEngine;
 use cosmic::iced::Alignment;
-use cosmic::widget::{Column, Row, button, text, text_input};
+use cosmic::widget::{Column, Row, button, text, text_input, tooltip, tooltip::Position};
 use cosmic::{Action, Element, Task};
 use matrix_sdk::ruma::RoomId;
 use matrix_sdk::ruma::events::room::MediaSource;
@@ -746,7 +746,8 @@ impl State {
                             async move {
                                 let client = engine.client().await;
                                 let ns = client.notification_settings().await;
-                                let rid = RoomId::parse(&room_id_clone).map_err(|e| e.to_string())?;
+                                let rid =
+                                    RoomId::parse(&room_id_clone).map_err(|e| e.to_string())?;
                                 ns.set_room_notification_mode(&rid, mode)
                                     .await
                                     .map_err(|e| e.to_string())
@@ -1034,19 +1035,62 @@ impl State {
                 .on_input(Message::InviteUserIdChanged),
         );
 
+        let is_empty = self.invite_user_id.trim().is_empty();
+
         let mut promote_row = Row::new().spacing(10);
+
         if self.my_power_level >= self.invite_level {
-            promote_row = promote_row.push(button::text("Invite").on_press(Message::InviteUser));
+            let mut invite_btn = button::text("Invite");
+            if !is_empty {
+                invite_btn = invite_btn.on_press(Message::InviteUser);
+            }
+
+            let invite_widget: Element<'_, Message> = if is_empty {
+                tooltip(
+                    invite_btn,
+                    text::body("Enter a User ID to invite/promote"),
+                    Position::Top,
+                )
+                .into()
+            } else {
+                invite_btn.into()
+            };
+            promote_row = promote_row.push(invite_widget);
         }
-        promote_row = promote_row
-            .push(
-                button::text("Mod")
-                    .on_press(Message::UpdatePowerLevel(self.invite_user_id.clone(), 50)),
+
+        let mut mod_btn = button::text("Mod");
+        let mut admin_btn = button::text("Admin");
+
+        if !is_empty {
+            mod_btn = mod_btn.on_press(Message::UpdatePowerLevel(self.invite_user_id.clone(), 50));
+            admin_btn =
+                admin_btn.on_press(Message::UpdatePowerLevel(self.invite_user_id.clone(), 100));
+        }
+
+        let mod_widget: Element<'_, Message> = if is_empty {
+            tooltip(
+                mod_btn,
+                text::body("Enter a User ID to invite/promote"),
+                Position::Top,
             )
-            .push(
-                button::text("Admin")
-                    .on_press(Message::UpdatePowerLevel(self.invite_user_id.clone(), 100)),
-            );
+            .into()
+        } else {
+            mod_btn.into()
+        };
+
+        let admin_widget: Element<'_, Message> = if is_empty {
+            tooltip(
+                admin_btn,
+                text::body("Enter a User ID to invite/promote"),
+                Position::Top,
+            )
+            .into()
+        } else {
+            admin_btn.into()
+        };
+
+        promote_row = promote_row.push(mod_widget).push(admin_widget);
+
         add_pl_col = add_pl_col.push(promote_row);
         add_pl_col.into()
     }
