@@ -128,13 +128,13 @@ pub enum Message {
     ToggleLoginMode,
     SubmitRegister,
     RegisterFinished(Result<String, matrix::SyncError>),
-    SelectSpace(Option<OwnedRoomId>),
+    SelectSpace(Option<std::sync::Arc<str>>),
     SpaceChildrenFetched(OwnedRoomId, Result<Vec<matrix::RoomData>, String>),
     NoOp,
     SubmitOidcLogin,
     OidcLoginStarted(Result<Url, String>),
     OidcCallback(Url),
-    JoinRoom(OwnedRoomId),
+    JoinRoom(std::sync::Arc<str>),
     RoomJoined(Result<OwnedRoomId, String>),
     Logout,
     LogoutFinished,
@@ -883,7 +883,10 @@ impl Application for Constellations {
             Message::ToggleLoginMode => self.handle_toggle_login_mode(),
             Message::SubmitRegister => self.handle_submit_register(),
             Message::RegisterFinished(res) => self.handle_register_finished(res),
-            Message::SelectSpace(space_id) => self.handle_select_space(space_id),
+            Message::SelectSpace(space_id) => {
+                let parsed_id = space_id.and_then(|id| matrix_sdk::ruma::RoomId::parse(&*id).ok());
+                self.handle_select_space(parsed_id)
+            }
             Message::SpaceChildrenFetched(space_id, res) => {
                 self.handle_space_children_fetched(space_id, res)
             }
@@ -894,9 +897,9 @@ impl Application for Constellations {
             Message::JoinRoom(room_id) => {
                 if let Some(matrix) = &self.matrix {
                     let matrix = matrix.clone();
-                    let rid = room_id.clone();
                     return Task::perform(
                         async move {
+                            let rid = matrix_sdk::ruma::RoomId::parse(&*room_id).map_err(|e| e.to_string())?;
                             matrix
                                 .join_room(&rid)
                                 .await
@@ -1190,7 +1193,7 @@ impl Application for Constellations {
                 );
 
                 let join_btn = button::text("Join")
-                    .on_press(Message::JoinRoom(room_id.to_string().try_into().unwrap()));
+                    .on_press(Message::JoinRoom(room_id.clone()));
 
                 room_list = room_list.push(
                     Row::new()

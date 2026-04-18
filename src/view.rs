@@ -535,12 +535,12 @@ impl Constellations {
         content = content.push(global_tooltip);
 
         for space in self.room_list.iter().filter(|r| r.is_space) {
-            let space_id_str = &space.id;
-            let space_id = match matrix_sdk::ruma::RoomId::parse(space_id_str) {
-                Ok(id) => id.to_owned(),
-                Err(_) => continue,
-            };
-            let is_selected = self.selected_space.as_ref() == Some(&space_id);
+            let space_id_str = space.id.clone();
+            // Try to parse just for validity
+            if matrix_sdk::ruma::RoomId::parse(&*space_id_str).is_err() {
+                continue;
+            }
+            let is_selected = self.selected_space.as_ref().map(|s| s.as_str()) == Some(&*space_id_str);
 
             let avatar_element: Element<'_, Message> = if let Some(url) = &space.avatar_url {
                 if let Some(handle) = self.media_cache.get(url) {
@@ -597,7 +597,7 @@ impl Constellations {
             let btn = if is_selected {
                 button::custom(space_container)
             } else {
-                button::custom(space_container).on_press(Message::SelectSpace(Some(space_id)))
+                button::custom(space_container).on_press(Message::SelectSpace(Some(space_id_str)))
             };
 
             let space_name = space.name.as_deref().unwrap_or("Unknown Space");
