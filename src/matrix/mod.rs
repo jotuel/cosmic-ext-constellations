@@ -1,3 +1,4 @@
+#![recursion_limit = "1024"]
 use anyhow::{Context, Result};
 use eyeball_im::VectorDiff;
 use matrix_sdk::authentication::matrix::MatrixSession;
@@ -1502,8 +1503,30 @@ impl MatrixEngine {
         Ok(passphrase)
     }
 
+    pub async fn search_in_room(
+        &self,
+        room_id: &RoomId,
+        query: &str,
+        max_results: usize,
+    ) -> Result<Vec<matrix_sdk::ruma::OwnedEventId>> {
+        let inner = self.inner.read().await;
+        let room = inner.client.get_room(room_id).context("Room not found")?;
+
+        #[cfg(feature = "experimental-search")]
+        {
+            let results = room.search(query, max_results, None).await.map_err(|e| anyhow::anyhow!(e))?;
+            Ok(results)
+        }
+        #[cfg(not(feature = "experimental-search"))]
+        {
+            let _ = (query, max_results);
+            anyhow::bail!("Search is not enabled");
+        }
+    }
+
     async fn setup_client(data_dir: PathBuf, homeserver_url: &str) -> Result<Client> {
         let store_path = data_dir.join("matrix-store");
+        let search_index_path = data_dir.join("search-index");
 
         if !data_dir.exists() {
             std::fs::create_dir_all(&data_dir)?;
@@ -1511,14 +1534,15 @@ impl MatrixEngine {
 
         let passphrase = Self::get_or_create_store_passphrase().await?;
 
-        let build_client = |path: &PathBuf, pass: &str| {
+        let build_client = |path: PathBuf, search_path: PathBuf, pass: String| {
             Client::builder()
                 .homeserver_url(homeserver_url)
-                .sqlite_store(path, Some(pass))
+                .sqlite_store(path, Some(&pass))
+                .search_index_store(matrix_sdk::search_index::SearchIndexStoreKind::EncryptedDirectory(search_path, pass))
                 .handle_refresh_tokens()
         };
 
-        let client = match build_client(&store_path, &passphrase).build().await {
+        let client = match build_client(store_path.clone(), search_index_path.clone(), passphrase.clone()).build().await {
             Ok(c) => c,
             Err(e) => {
                 tracing::warn!(
@@ -1526,7 +1550,8 @@ impl MatrixEngine {
                     e
                 );
                 let _ = std::fs::remove_dir_all(&store_path);
-                build_client(&store_path, &passphrase).build().await?
+                let _ = std::fs::remove_dir_all(&search_index_path);
+                build_client(store_path, search_index_path, passphrase).build().await?
             }
         };
 
