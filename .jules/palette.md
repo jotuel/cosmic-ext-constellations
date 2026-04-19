@@ -28,3 +28,6 @@
 ## 2024-05-25 - Disabled States for Settings Actions
 **Learning:** Users can encounter errors or be confused when "Change Password", "Invite", "Mod", or "Admin" buttons in the settings stay enabled despite the required input fields being empty or invalid (e.g., mismatched passwords).
 **Action:** Disabled the primary action buttons in `src/settings/user.rs` and `src/settings/room.rs` when inputs are empty or invalid, and wrapped them in a `cosmic::widget::tooltip` explaining the missing required state.
+## 2026-04-19 - Tooltips for Disabled Save Buttons
+**Learning:** Users can easily become confused when 'Save' or 'Save Changes' buttons are disabled without context. The previous UI did not explicitly communicate that unsaved modifications are required to enable these action buttons.
+**Action:** When conditionally disabling save buttons based on pending changes, wrap the disabled button in a `cosmic::widget::tooltip` (e.g., explaining "Make changes to save") to proactively guide the user on why the button is inactive.

@@ -943,7 +943,13 @@ impl State {
             save_btn = save_btn.on_press(Message::SaveRoom);
         }
 
-        Some(save_btn.into())
+        let widget: Element<'_, Message> = if !has_changes {
+            tooltip(save_btn, text::body("Make changes to save"), Position::Top).into()
+        } else {
+            save_btn.into()
+        };
+
+        Some(widget)
     }
 
     fn view_manage_members(&self) -> Option<Element<'_, Message>> {

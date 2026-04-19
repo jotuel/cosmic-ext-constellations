@@ -540,7 +540,8 @@ impl Constellations {
             if matrix_sdk::ruma::RoomId::parse(&*space_id_str).is_err() {
                 continue;
             }
-            let is_selected = self.selected_space.as_ref().map(|s| s.as_str()) == Some(&*space_id_str);
+            let is_selected =
+                self.selected_space.as_ref().map(|s| s.as_str()) == Some(&*space_id_str);
 
             let avatar_element: Element<'_, Message> = if let Some(url) = &space.avatar_url {
                 if let Some(handle) = self.media_cache.get(url) {
