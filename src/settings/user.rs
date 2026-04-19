@@ -990,10 +990,19 @@ impl State {
                 save_row = save_row.push(button::text("Saving..."));
             } else {
                 let mut btn = button::text("Save");
-                if self.display_name != self.original_display_name {
+                let has_changes = self.display_name != self.original_display_name;
+
+                if has_changes {
                     btn = btn.on_press(Message::SaveProfile);
                 }
-                save_row = save_row.push(btn);
+
+                let widget: Element<'_, Message> = if !has_changes {
+                    tooltip(btn, text::body("Make changes to save"), Position::Top).into()
+                } else {
+                    btn.into()
+                };
+
+                save_row = save_row.push(widget);
             }
 
             col = col.push(save_row);
