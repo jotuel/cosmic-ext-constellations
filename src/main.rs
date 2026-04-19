@@ -899,7 +899,8 @@ impl Application for Constellations {
                     let matrix = matrix.clone();
                     return Task::perform(
                         async move {
-                            let rid = matrix_sdk::ruma::RoomId::parse(&*room_id).map_err(|e| e.to_string())?;
+                            let rid = matrix_sdk::ruma::RoomId::parse(&*room_id)
+                                .map_err(|e| e.to_string())?;
                             matrix
                                 .join_room(&rid)
                                 .await
@@ -1192,8 +1193,7 @@ impl Application for Constellations {
                         .width(cosmic::iced::Length::Fill),
                 );
 
-                let join_btn = button::text("Join")
-                    .on_press(Message::JoinRoom(room_id.clone()));
+                let join_btn = button::text("Join").on_press(Message::JoinRoom(room_id.clone()));
 
                 room_list = room_list.push(
                     Row::new()
