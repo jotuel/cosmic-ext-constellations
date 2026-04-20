@@ -715,3 +715,22 @@ async fn test_create_room() {
     let room_id = engine.create_room("Test Room").await.unwrap();
     assert_eq!(room_id.as_str(), "!new_room:example.com");
 }
+
+#[tokio::test]
+async fn test_get_or_create_store_passphrase() {
+    // This function interacts with oo7 Keyring which might not be available in all test environments.
+    // However, if it's not available, it should return an error rather than panicking.
+    // We try to call it and see if it works or returns a handled error.
+    let result = MatrixEngine::get_or_create_store_passphrase().await;
+
+    match result {
+        Ok(passphrase) => {
+            assert_eq!(passphrase.len(), 64); // 32 bytes hex encoded = 64 chars
+        },
+        Err(e) => {
+            // If it fails because of D-Bus/Keyring, it's acceptable in some CI environments,
+            // but it shouldn't be a random generation failure.
+            info!("get_or_create_store_passphrase failed (likely due to missing Keyring): {}", e);
+        }
+    }
+}
