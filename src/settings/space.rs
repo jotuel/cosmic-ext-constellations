@@ -466,11 +466,20 @@ impl State {
         } else {
             "Save Changes"
         });
-        if (self.name != self.original_name || self.topic != self.original_topic) && !self.is_saving
-        {
+
+        let has_changes = self.name != self.original_name || self.topic != self.original_topic;
+
+        if has_changes && !self.is_saving {
             save_btn = save_btn.on_press(Message::SaveSpace);
         }
-        col = col.push(save_btn);
+
+        let save_btn_widget: Element<'_, Message> = if !self.is_saving && !has_changes {
+            tooltip(save_btn, text::body("Make changes to save"), Position::Top).into()
+        } else {
+            save_btn.into()
+        };
+
+        col = col.push(save_btn_widget);
 
         col = col.push(text::title3("Space Hierarchy"));
 
