@@ -1,4 +1,3 @@
-#![recursion_limit = "1024"]
 use anyhow::{Context, Result};
 use eyeball_im::VectorDiff;
 use matrix_sdk::authentication::matrix::MatrixSession;
@@ -18,7 +17,7 @@ pub use matrix_sdk_ui::timeline::{
     RoomExt, Timeline, TimelineEventItemId, TimelineItem, VirtualTimelineItem,
 };
 use oo7::Keyring;
-use rand::Rng;
+use rand::{TryRng, rngs::SysRng};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -1351,8 +1350,9 @@ impl MatrixEngine {
         let client = self.client().await;
         let mut request = matrix_sdk::ruma::api::client::room::create_room::v3::Request::new();
         request.name = Some(name.to_string());
-        
-        let mut creation_content = matrix_sdk::ruma::api::client::room::create_room::v3::CreationContent::new();
+
+        let mut creation_content =
+            matrix_sdk::ruma::api::client::room::create_room::v3::CreationContent::new();
         creation_content.room_type = Some(RoomType::Space);
         request.creation_content = Some(matrix_sdk::ruma::serde::Raw::new(&creation_content)?);
 
@@ -1471,7 +1471,7 @@ impl MatrixEngine {
         Ok(())
     }
 
-    async fn get_or_create_store_passphrase() -> Result<String> {
+    pub(crate) async fn get_or_create_store_passphrase() -> Result<String> {
         let keyring = Keyring::new().await?;
         let mut attributes = HashMap::new();
         attributes.insert("app_id", "fi.joonastuomi.CosmicExtConstellations");
@@ -1487,7 +1487,9 @@ impl MatrixEngine {
         }
 
         let mut buf = [0u8; 32];
-        rand::rng().fill_bytes(&mut buf);
+        SysRng
+            .try_fill_bytes(&mut buf)
+            .context("Failed to generate secure random bytes for store passphrase")?;
 
         let passphrase: String = buf.iter().map(|b| format!("{:02x}", b)).collect();
 
@@ -1514,7 +1516,10 @@ impl MatrixEngine {
 
         #[cfg(feature = "experimental-search")]
         {
-            let results = room.search(query, max_results, None).await.map_err(|e| anyhow::anyhow!(e))?;
+            let results = room
+                .search(query, max_results, None)
+                .await
+                .map_err(|e| anyhow::anyhow!(e))?;
             Ok(results)
         }
         #[cfg(not(feature = "experimental-search"))]
@@ -1538,11 +1543,23 @@ impl MatrixEngine {
             Client::builder()
                 .homeserver_url(homeserver_url)
                 .sqlite_store(path, Some(&pass))
-                .search_index_store(matrix_sdk::search_index::SearchIndexStoreKind::EncryptedDirectory(search_path, pass))
+                .search_index_store(
+                    matrix_sdk::search_index::SearchIndexStoreKind::EncryptedDirectory(
+                        search_path,
+                        pass,
+                    ),
+                )
                 .handle_refresh_tokens()
         };
 
-        let client = match build_client(store_path.clone(), search_index_path.clone(), passphrase.clone()).build().await {
+        let client = match build_client(
+            store_path.clone(),
+            search_index_path.clone(),
+            passphrase.clone(),
+        )
+        .build()
+        .await
+        {
             Ok(c) => c,
             Err(e) => {
                 tracing::warn!(
@@ -1551,7 +1568,9 @@ impl MatrixEngine {
                 );
                 let _ = std::fs::remove_dir_all(&store_path);
                 let _ = std::fs::remove_dir_all(&search_index_path);
-                build_client(store_path, search_index_path, passphrase).build().await?
+                build_client(store_path, search_index_path, passphrase)
+                    .build()
+                    .await?
             }
         };
 

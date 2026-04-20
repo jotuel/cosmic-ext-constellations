@@ -3,6 +3,7 @@ use crate::{
     matrix, redact_url,
 };
 use cosmic::{Action, Application, Task};
+use futures::stream::StreamExt;
 
 impl Constellations {
     pub fn handle_engine_ready(
@@ -198,6 +199,48 @@ impl Constellations {
                 Task::none()
             }
             matrix::MatrixEvent::RoomDiff(diff) => {
+                match &diff {
+                    eyeball_im::VectorDiff::Insert { value, .. }
+                    | eyeball_im::VectorDiff::PushBack { value }
+                    | eyeball_im::VectorDiff::PushFront { value } => {
+                        self.joined_room_ids.insert(value.id.clone());
+                    }
+                    eyeball_im::VectorDiff::Remove { index } => {
+                        if let Some(room) = self.room_list.get(*index) {
+                            self.joined_room_ids.remove(&room.id);
+                        }
+                    }
+                    eyeball_im::VectorDiff::Set { index, value } => {
+                        if let Some(old_room) = self.room_list.get(*index) {
+                            self.joined_room_ids.remove(&old_room.id);
+                        }
+                        self.joined_room_ids.insert(value.id.clone());
+                    }
+                    eyeball_im::VectorDiff::PopBack => {
+                        if let Some(room) = self.room_list.last() {
+                            self.joined_room_ids.remove(&room.id);
+                        }
+                    }
+                    eyeball_im::VectorDiff::PopFront => {
+                        if let Some(room) = self.room_list.first() {
+                            self.joined_room_ids.remove(&room.id);
+                        }
+                    }
+                    eyeball_im::VectorDiff::Clear => {
+                        self.joined_room_ids.clear();
+                    }
+                    eyeball_im::VectorDiff::Reset { values }
+                    | eyeball_im::VectorDiff::Append { values } => {
+                        self.joined_room_ids
+                            .extend(values.iter().map(|r| r.id.clone()));
+                    }
+                    eyeball_im::VectorDiff::Truncate { length } => {
+                        for room in self.room_list.iter().skip(*length) {
+                            self.joined_room_ids.remove(&room.id);
+                        }
+                    }
+                }
+
                 self.room_list.apply_diff(diff);
                 self.update_filtered_rooms();
                 self.update_title()
@@ -418,36 +461,46 @@ impl Constellations {
                 // First, update the filtered_room_list because the hierarchy in matrix engine was updated
                 self.update_filtered_rooms();
 
-                // Now filter out rooms that are already in room_list (i.e. joined rooms)
-                let joined_ids: std::collections::HashSet<String> =
-                    self.room_list.iter().map(|r| r.id.to_string()).collect();
-
-                for child in &children {
-                    if let Some(avatar_url) = &child.avatar_url {
-                        if !self.media_cache.contains_key(avatar_url) {
-                            if let Some(matrix) = &self.matrix {
-                                let matrix_clone = matrix.clone();
-                                let url_str = avatar_url.clone();
+                if let Some(matrix) = &self.matrix {
+                    let mut urls_to_fetch = Vec::new();
+                    for child in &children {
+                        if let Some(avatar_url) = &child.avatar_url {
+                            if !self.media_cache.contains_key(avatar_url) {
                                 let uri = matrix_sdk::ruma::OwnedMxcUri::from(avatar_url.as_str());
                                 let source =
                                     matrix_sdk::ruma::events::room::MediaSource::Plain(uri);
-                                tasks.push(Task::perform(
-                                    async move {
-                                        matrix_clone
-                                            .fetch_media(source)
-                                            .await
-                                            .map_err(|e| e.to_string())
-                                    },
-                                    move |res| Message::MediaFetched(url_str.clone(), res).into(),
-                                ));
+                                urls_to_fetch.push((avatar_url.clone(), source));
                             }
                         }
+                    }
+
+                    if !urls_to_fetch.is_empty() {
+                        let matrix_clone = matrix.clone();
+                        tasks.push(Task::perform(
+                            async move {
+                                futures::stream::iter(urls_to_fetch)
+                                    .map(|(url_str, source)| {
+                                        let matrix = matrix_clone.clone();
+                                        async move {
+                                            let res = matrix
+                                                .fetch_media(source)
+                                                .await
+                                                .map_err(|e| e.to_string());
+                                            (url_str, res)
+                                        }
+                                    })
+                                    .buffer_unordered(10)
+                                    .collect::<Vec<_>>()
+                                    .await
+                            },
+                            |batch| Message::MediaFetchedBatch(batch).into(),
+                        ));
                     }
                 }
 
                 self.other_rooms = children
                     .into_iter()
-                    .filter(|r| !joined_ids.contains(r.id.as_ref()) && !r.is_space)
+                    .filter(|r| !self.joined_room_ids.contains(r.id.as_ref()) && !r.is_space)
                     .collect();
             }
             Err(e) => {
@@ -495,6 +548,26 @@ impl Constellations {
             }
             Err(e) => {
                 self.error = Some(format!("Failed to fetch media: {}", e));
+            }
+        }
+        Task::none()
+    }
+
+    pub fn handle_media_fetched_batch(
+        &mut self,
+        batch: Vec<(String, Result<Vec<u8>, String>)>,
+    ) -> Task<Action<<Constellations as Application>::Message>> {
+        for (mxc_url, res) in batch {
+            match res {
+                Ok(data) => {
+                    self.media_cache.insert(
+                        mxc_url,
+                        cosmic::iced::widget::image::Handle::from_bytes(data),
+                    );
+                }
+                Err(e) => {
+                    self.error = Some(format!("Failed to fetch media: {}", e));
+                }
             }
         }
         Task::none()
@@ -717,6 +790,7 @@ impl Constellations {
         self.error = None;
         self.selected_space = None;
         self.is_sync_indicator_active = false;
+        self.joined_room_ids.clear();
         Task::none()
     }
 }
@@ -726,6 +800,7 @@ mod tests {
     use super::*;
     use crate::Core;
     use std::collections::HashMap;
+    use std::collections::HashSet;
 
     fn create_dummy_constellations() -> Constellations {
         Constellations {
@@ -756,6 +831,7 @@ mod tests {
             is_sync_indicator_active: false,
             search_query: String::new(),
             is_search_active: false,
+            joined_room_ids: HashSet::new(),
             selected_space: None,
             current_settings_panel: None,
             user_settings: crate::settings::user::State::default(),
@@ -764,6 +840,7 @@ mod tests {
             app_settings: crate::settings::app::State::default(),
             composer_attachments: Vec::new(),
             active_reaction_picker: None,
+            creating_space: todo!(),
         }
     }
 

@@ -904,7 +904,8 @@ impl State {
                 button::text(label)
             };
 
-            if self.global_notification_mode_dm != Some(mode) && !self.is_loading_global_notifications
+            if self.global_notification_mode_dm != Some(mode)
+                && !self.is_loading_global_notifications
             {
                 btn = btn.on_press(Message::GlobalNotificationModeChanged(true, mode));
             }
@@ -989,10 +990,19 @@ impl State {
                 save_row = save_row.push(button::text("Saving..."));
             } else {
                 let mut btn = button::text("Save");
-                if self.display_name != self.original_display_name {
+                let has_changes = self.display_name != self.original_display_name;
+
+                if has_changes {
                     btn = btn.on_press(Message::SaveProfile);
                 }
-                save_row = save_row.push(btn);
+
+                let widget: Element<'_, Message> = if !has_changes {
+                    tooltip(btn, text::body("Make changes to save"), Position::Top).into()
+                } else {
+                    btn.into()
+                };
+
+                save_row = save_row.push(widget);
             }
 
             col = col.push(save_row);
@@ -1024,19 +1034,45 @@ impl State {
                 ),
         );
 
+        let is_empty = self.current_password.is_empty()
+            || self.new_password.is_empty()
+            || self.confirm_new_password.is_empty();
+
+        let passwords_match = self.new_password == self.confirm_new_password;
+
         let mut pw_btn = button::text(if self.is_changing_password {
             "Changing..."
         } else {
             "Change Password"
         });
-        if !self.is_changing_password
-            && !self.current_password.is_empty()
-            && !self.new_password.is_empty()
-            && self.new_password == self.confirm_new_password
-        {
+
+        if !self.is_changing_password && !is_empty && passwords_match {
             pw_btn = pw_btn.on_press(Message::ChangePassword);
         }
-        col = col.push(pw_btn);
+
+        let pw_btn_widget: Element<'_, Message> = if !self.is_changing_password {
+            if is_empty {
+                tooltip(
+                    pw_btn,
+                    text::body("Fill in all fields to change password"),
+                    Position::Top,
+                )
+                .into()
+            } else if !passwords_match {
+                tooltip(
+                    pw_btn,
+                    text::body("New passwords do not match"),
+                    Position::Top,
+                )
+                .into()
+            } else {
+                pw_btn.into()
+            }
+        } else {
+            pw_btn.into()
+        };
+
+        col = col.push(pw_btn_widget);
 
         if let Some(success) = &self.password_success {
             col = col.push(

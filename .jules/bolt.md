@@ -31,3 +31,12 @@
 ## 2025-03-02 - Caching Filtered Room Lists to Avoid Render-Loop Bottlenecks
 **Learning:** During immediate-mode UI rendering loops (like `view`), performing iterative filtering operations that involve string parsing (e.g., `RoomId::parse`) and lock acquisitions (e.g., `try_read()` on an `RwLock` inside `is_in_space_sync`) for every item creates a significant per-frame performance bottleneck.
 **Action:** Move expensive data filtering, string manipulation, and lock-dependent logic out of the immediate-mode render cycle. Cache the results in the application state (e.g., `filtered_room_list`) and update them only when the underlying data or selection changes via application messages.
+## 2023-10-27 - [O(1) Cloning of Identifiers in Message Variants]
+**Learning:** `Message::SelectSpace` and `Message::JoinRoom` were taking `OwnedRoomId` or `String`, forcing unnecessary heap allocations via parsing and cloning deep inside the `view` rendering loop closures where they were bound via `.on_press()`.
+**Action:** Changed the payload of these message variants to `std::sync::Arc<str>` (which is what `matrix::RoomData::id` natively stores). This allows closures in the view tree to capture identifiers with a cheap O(1) reference count increment. Ownership and parsing logic was moved to the state `update` handler where it executes only once when the button is actually pressed.
+## 2025-03-02 - [Avoid String Allocations in Iterative Case-Insensitive Matching]
+**Learning:** In hot loops, calling `.to_lowercase()` just to perform a case-insensitive `.contains()` check allocates a new `String` on the heap for every element in the loop.
+**Action:** When performing case-insensitive substring checks, pre-lowercase the filter and implement custom slice-based matching logic (like using `.windows()` over bytes and `.to_ascii_lowercase()`) to avoid any dynamic heap allocations per iteration.
+## 2025-03-05 - Batching Iced Tasks for Network Requests
+**Learning:** Submitting many isolated `Task::perform` calls concurrently in Iced immediate mode can impact framework performance. Capping the concurrency via `futures::stream::StreamExt::buffer_unordered` within a single task reduces UI overhead.
+**Action:** When making multiple simultaneous network requests or expensive async operations inside a loop, collect the futures and execute them through an `iter` stream with `buffer_unordered`, then map the collected result vector to a single "Batch" Message variant instead of dispatching N individual Messages.

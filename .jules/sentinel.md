@@ -14,3 +14,8 @@
 **Vulnerability:** Reading directly from `/dev/urandom` for secure passphrase generation instead of a portable CSPRNG.
 **Learning:** Hardcoding standard paths like `/dev/urandom` introduces bugs on platforms lacking these files (like Windows), and synchronous blocking file I/O operations can degrade asynchronous executor performance leading to DoS risks.
 **Prevention:** Always use standard cryptographic crates (like `rand` with the `std_rng` or `os_rng` capabilities) instead of raw file system accesses when generating cryptographic materials.
+
+## 2025-05-14 - Use CSRNG for Store Passphrase
+**Vulnerability:** Use of standard `rand::rng()` (ThreadRng) for generating a 32-byte store passphrase instead of a more direct cryptographically secure RNG.
+**Learning:** While `ThreadRng` in modern `rand` versions is cryptographically secure, it is a PRNG seeded from the OS. For high-value secrets like encryption passphrases, using `OsRng` directly ensures maximum entropy from the operating system and provides better error handling if the entropy source is unavailable.
+**Prevention:** Always use `rand::rngs::OsRng` and handle potential failures with `try_fill_bytes` when generating sensitive cryptographic keys or passphrases.
