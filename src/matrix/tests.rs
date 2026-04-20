@@ -726,11 +726,73 @@ async fn test_get_or_create_store_passphrase() {
     match result {
         Ok(passphrase) => {
             assert_eq!(passphrase.len(), 64); // 32 bytes hex encoded = 64 chars
-        },
+        }
         Err(e) => {
             // If it fails because of D-Bus/Keyring, it's acceptable in some CI environments,
             // but it shouldn't be a random generation failure.
-            info!("get_or_create_store_passphrase failed (likely due to missing Keyring): {}", e);
+            info!(
+                "get_or_create_store_passphrase failed (likely due to missing Keyring): {}",
+                e
+            );
         }
     }
+}
+
+#[test]
+fn test_space_hierarchy_remove_child() {
+    let mut hierarchy = SpaceHierarchy::new();
+    let space_id = RoomId::parse("!space:example.com").unwrap();
+    let room_id = RoomId::parse("!room:example.com").unwrap();
+
+    hierarchy.add_child(space_id.clone(), room_id.clone());
+    assert!(hierarchy.is_in_space(&room_id, &space_id));
+
+    hierarchy.remove_child(&space_id, &room_id);
+    assert!(!hierarchy.is_in_space(&room_id, &space_id));
+}
+
+#[test]
+fn test_space_hierarchy_remove_nonexistent_child() {
+    let mut hierarchy = SpaceHierarchy::new();
+    let space_id = RoomId::parse("!space:example.com").unwrap();
+    let room_id = RoomId::parse("!room:example.com").unwrap();
+
+    // Remove before adding
+    hierarchy.remove_child(&space_id, &room_id);
+    assert!(!hierarchy.is_in_space(&room_id, &space_id));
+}
+
+#[test]
+fn test_space_hierarchy_add_child_idempotency() {
+    let mut hierarchy = SpaceHierarchy::new();
+    let space_id = RoomId::parse("!space:example.com").unwrap();
+    let room_id = RoomId::parse("!room:example.com").unwrap();
+
+    // Add twice
+    hierarchy.add_child(space_id.clone(), room_id.clone());
+    hierarchy.add_child(space_id.clone(), room_id.clone());
+
+    assert!(hierarchy.is_in_space(&room_id, &space_id));
+
+    // Test that internal collections haven't duplicated items.
+    // HashSets automatically deduplicate, but verifying is safe.
+    assert_eq!(hierarchy.children.get(&space_id).unwrap().len(), 1);
+    assert_eq!(hierarchy.parents.get(&room_id).unwrap().len(), 1);
+}
+
+#[test]
+fn test_space_hierarchy_known_spaces() {
+    let mut hierarchy = SpaceHierarchy::new();
+    let space_id = RoomId::parse("!space:example.com").unwrap();
+    let room_id = RoomId::parse("!room:example.com").unwrap();
+
+    assert!(!hierarchy.is_known_space(&space_id));
+
+    hierarchy.add_space(space_id.clone());
+    assert!(hierarchy.is_known_space(&space_id));
+
+    // add_child should also add the space to known_spaces
+    let space_id2 = RoomId::parse("!space2:example.com").unwrap();
+    hierarchy.add_child(space_id2.clone(), room_id.clone());
+    assert!(hierarchy.is_known_space(&space_id2));
 }
