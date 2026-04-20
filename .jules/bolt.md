@@ -40,3 +40,7 @@
 ## 2025-03-05 - Batching Iced Tasks for Network Requests
 **Learning:** Submitting many isolated `Task::perform` calls concurrently in Iced immediate mode can impact framework performance. Capping the concurrency via `futures::stream::StreamExt::buffer_unordered` within a single task reduces UI overhead.
 **Action:** When making multiple simultaneous network requests or expensive async operations inside a loop, collect the futures and execute them through an `iter` stream with `buffer_unordered`, then map the collected result vector to a single "Batch" Message variant instead of dispatching N individual Messages.
+
+## 2026-04-20 - HashSet over Vec for SpaceHierarchy
+**Learning:** SpaceHierarchy lookup operations using Vec required O(N) contain checks, migrating to HashSet gave O(1) performance. However, migrating requires auditing methods like `.first()` that don't exist on HashSet and must be rewritten to `.iter().next()`. It's also important to update downstream removals from `.retain()` to `.remove()`.
+**Action:** When migrating an inner structure from `Vec` to `HashSet`, grep for usage of specific `Vec` methods (e.g., `retain`, `first`, `push`) and replace them with their `HashSet` equivalents (`remove`, `iter().next()`, `insert`).
