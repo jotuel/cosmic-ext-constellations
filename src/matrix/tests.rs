@@ -734,3 +734,89 @@ async fn test_get_or_create_store_passphrase() {
         }
     }
 }
+
+#[tokio::test]
+#[serial_test::serial]
+async fn test_logout_error_path() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path_regex(r"^/_matrix/client/.*?/logout$"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&mock_server)
+        .await;
+    mock_server.expect(Mock::given(method("POST")).and(path_regex(r"^/_matrix/client/.*?/logout$")).respond_with(ResponseTemplate::new(500)).expect(1).mount(&mock_server).await);
+
+    let tmp_dir = tempdir().unwrap();
+    let engine = MatrixEngine::new(tmp_dir.path().to_path_buf()).await.unwrap();
+
+    let client = logged_in_client(Some(mock_server.uri())).await;
+
+    // Override the internal client with our mocked one
+    {
+        let mut inner = engine.inner.write().await;
+        inner.client = client;
+    }
+
+    // Set invalid DBus so keyring doesn't hang/fail test due to DBus
+    let orig_dbus = std::env::var("DBUS_SESSION_BUS_ADDRESS").ok();
+    std::env::set_var("DBUS_SESSION_BUS_ADDRESS", "unix:path=/nonexistent");
+
+    // Call logout and ensure it completes successfully despite the 500 error from the mock server
+    let result = engine.logout().await;
+
+    // Restore DBus
+    if let Some(dbus) = orig_dbus {
+        std::env::set_var("DBUS_SESSION_BUS_ADDRESS", dbus);
+    } else {
+        std::env::remove_var("DBUS_SESSION_BUS_ADDRESS");
+    }
+
+    assert!(result.is_ok(), "Logout failed: {:?}", result.err());
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn test_logout_error_path() {
+    let mock_server = MockServer::start().await;
+
+    let _mock_guard = Mock::given(method("POST"))
+        .and(path_regex(r"^/_matrix/client/.*?/logout$"))
+        .respond_with(ResponseTemplate::new(500))
+        .expect(1)
+        .mount_as_scoped(&mock_server)
+        .await;
+
+    let tmp_dir = tempdir().unwrap();
+    let engine = MatrixEngine::new(tmp_dir.path().to_path_buf()).await.unwrap();
+
+    let client = logged_in_client(Some(mock_server.uri())).await;
+
+    // Override the internal client with our mocked one
+    {
+        let mut inner = engine.inner.write().await;
+        inner.client = client;
+    }
+
+    // Set invalid DBus so keyring doesn't hang/fail test due to DBus
+    let orig_dbus = std::env::var("DBUS_SESSION_BUS_ADDRESS").ok();
+    std::env::set_var("DBUS_SESSION_BUS_ADDRESS", "unix:path=/nonexistent");
+
+    // We can use a guard to ensure DBus is restored even on panic
+    struct DBusGuard(Option<String>);
+    impl Drop for DBusGuard {
+        fn drop(&mut self) {
+            if let Some(dbus) = &self.0 {
+                std::env::set_var("DBUS_SESSION_BUS_ADDRESS", dbus);
+            } else {
+                std::env::remove_var("DBUS_SESSION_BUS_ADDRESS");
+            }
+        }
+    }
+    let _guard = DBusGuard(orig_dbus);
+
+    // Call logout and ensure it completes successfully despite the 500 error from the mock server
+    let result = engine.logout().await;
+
+    assert!(result.is_ok(), "Logout failed: {:?}", result.err());
+}
