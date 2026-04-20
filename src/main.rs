@@ -115,6 +115,7 @@ pub enum Message {
     UserReady(Option<String>, Result<(), matrix::SyncError>),
     FetchMedia(MediaSource),
     MediaFetched(String, Result<Vec<u8>, String>),
+    MediaFetchedBatch(Vec<(String, Result<Vec<u8>, String>)>),
     CreateRoom(String),
     RoomCreated(Result<String, String>),
     NewRoomNameChanged(String),
@@ -839,6 +840,7 @@ impl Application for Constellations {
             }
             Message::FetchMedia(source) => self.handle_fetch_media(source),
             Message::MediaFetched(mxc_url, res) => self.handle_media_fetched(mxc_url, res),
+            Message::MediaFetchedBatch(batch) => self.handle_media_fetched_batch(batch),
             Message::DismissError => {
                 self.error = None;
                 Task::none()

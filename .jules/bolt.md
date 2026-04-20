@@ -34,3 +34,6 @@
 ## 2023-10-27 - [O(1) Cloning of Identifiers in Message Variants]
 **Learning:** `Message::SelectSpace` and `Message::JoinRoom` were taking `OwnedRoomId` or `String`, forcing unnecessary heap allocations via parsing and cloning deep inside the `view` rendering loop closures where they were bound via `.on_press()`.
 **Action:** Changed the payload of these message variants to `std::sync::Arc<str>` (which is what `matrix::RoomData::id` natively stores). This allows closures in the view tree to capture identifiers with a cheap O(1) reference count increment. Ownership and parsing logic was moved to the state `update` handler where it executes only once when the button is actually pressed.
+## 2025-03-05 - Batching Iced Tasks for Network Requests
+**Learning:** Submitting many isolated `Task::perform` calls concurrently in Iced immediate mode can impact framework performance. Capping the concurrency via `futures::stream::StreamExt::buffer_unordered` within a single task reduces UI overhead.
+**Action:** When making multiple simultaneous network requests or expensive async operations inside a loop, collect the futures and execute them through an `iter` stream with `buffer_unordered`, then map the collected result vector to a single "Batch" Message variant instead of dispatching N individual Messages.
