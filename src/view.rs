@@ -1,3 +1,5 @@
+use cosmic::Theme;
+use cosmic::widget::{Container, Text};
 use cosmic::{
     Action, Element, Task,
     iced::{
@@ -5,8 +7,8 @@ use cosmic::{
         widget::{scrollable, tooltip},
     },
     widget::{
-        Column, Row, button, container, icon::Named, menu, text, text_input,
-        tooltip::Position, RcElementWrapper,
+        Column, RcElementWrapper, Row, button, container, icon::Named, menu, text, text_input,
+        tooltip::Position,
     },
 };
 use matrix_sdk::ruma::events::room::{MediaSource, message::MessageType};
@@ -248,78 +250,78 @@ impl Constellations {
         bubble_col
     }
 
+    fn view_markdown_text<'a>(&self, t: &'a str) -> Text<'a, Theme> {
+        Text::new(t).size(if self.app_settings.compact_mode {
+            12
+        } else {
+            14
+        })
+    }
+
+    fn view_markdown_code<'a>(&self, c: &'a str) -> Container<'a, Message, Theme> {
+        Container::new(text::body(c).size(if self.app_settings.compact_mode {
+            10
+        } else {
+            12
+        }))
+        .padding(2)
+    }
+
+    fn view_markdown<'a>(&'a self, markdown: &'a [PreviewEvent]) -> Column<'a, Message, Theme> {
+        let mut md_col: Column<'a, Message, Theme> =
+            Column::new().spacing(if self.app_settings.compact_mode { 2 } else { 5 });
+        let mut current_row = Row::new().spacing(0).align_y(Alignment::Center);
+        let mut row_has_content = false;
+
+        for event in markdown {
+            match event {
+                PreviewEvent::StartHeading => {
+                    if row_has_content {
+                        md_col = md_col.push(current_row);
+                        current_row = Row::new().spacing(0).align_y(Alignment::Center);
+                        row_has_content = false;
+                    }
+                }
+                PreviewEvent::EndBlock => {
+                    if row_has_content {
+                        md_col = md_col.push(current_row).into();
+                        current_row = Row::new().spacing(0).align_y(Alignment::Center);
+                        row_has_content = false;
+                    }
+                }
+                PreviewEvent::Text(t) => {
+                    current_row = current_row.push(self.view_markdown_text(t.as_str()));
+                    row_has_content = true;
+                }
+                PreviewEvent::Code(c) => {
+                    current_row = current_row.push(self.view_markdown_code(c.as_str()));
+                    row_has_content = true;
+                }
+                PreviewEvent::Break => {
+                    if row_has_content {
+                        md_col = md_col.push(current_row);
+                        current_row = Row::new().spacing(0).align_y(Alignment::Center);
+                        row_has_content = false;
+                    }
+                }
+            }
+        }
+        if row_has_content {
+            md_col = md_col.push(current_row);
+        }
+        md_col.into()
+    }
+
     fn view_message_text<'a>(
         &'a self,
         message: &'a matrix_sdk::ruma::events::room::message::MessageType,
         markdown: &'a [PreviewEvent],
-    ) -> Column<'a, Message, cosmic::Theme> {
-        let mut bubble_col = Column::new();
+    ) -> Column<'a, Message, Theme> {
+        let mut bubble_col: Column<'a, Message, Theme> = Column::new();
         if self.app_settings.render_markdown {
-            let mut md_col =
-                Column::new().spacing(if self.app_settings.compact_mode { 2 } else { 5 });
-            let mut current_row = Row::new().spacing(0).align_y(Alignment::Center);
-            let mut row_has_content = false;
-
-            for event in markdown {
-                match event {
-                    PreviewEvent::StartHeading => {
-                        if row_has_content {
-                            md_col = md_col.push(current_row);
-                            current_row = Row::new().spacing(0).align_y(Alignment::Center);
-                            row_has_content = false;
-                        }
-                    }
-                    PreviewEvent::EndBlock => {
-                        if row_has_content {
-                            md_col = md_col.push(current_row);
-                            current_row = Row::new().spacing(0).align_y(Alignment::Center);
-                            row_has_content = false;
-                        }
-                    }
-                    PreviewEvent::Text(t) => {
-                        current_row = current_row.push(text::body(t.as_str()).size(
-                            if self.app_settings.compact_mode {
-                                12
-                            } else {
-                                14
-                            },
-                        ));
-                        row_has_content = true;
-                    }
-                    PreviewEvent::Code(c) => {
-                        current_row = current_row.push(
-                            container(text::body(c.as_str()).size(
-                                if self.app_settings.compact_mode {
-                                    10
-                                } else {
-                                    12
-                                },
-                            ))
-                            .padding(2),
-                        );
-                        row_has_content = true;
-                    }
-                    PreviewEvent::Break => {
-                        if row_has_content {
-                            md_col = md_col.push(current_row);
-                            current_row = Row::new().spacing(0).align_y(Alignment::Center);
-                            row_has_content = false;
-                        }
-                    }
-                }
-            }
-            if row_has_content {
-                md_col = md_col.push(current_row);
-            }
-            bubble_col = bubble_col.push(md_col);
+            bubble_col = bubble_col.push(self.view_markdown(markdown));
         } else {
-            bubble_col = bubble_col.push(text::body(message.body()).size(
-                if self.app_settings.compact_mode {
-                    12
-                } else {
-                    14
-                },
-            ));
+            bubble_col = bubble_col.push(self.view_markdown_text(message.body()));
         }
         bubble_col
     }
