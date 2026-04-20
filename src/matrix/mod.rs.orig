@@ -874,7 +874,7 @@ impl MatrixEngine {
                 .space_hierarchy
                 .parents
                 .get(room.room_id())
-                .and_then(|parents| parents.iter().next())
+                .and_then(|parents| parents.first())
                 .map(|id| id.to_string())
         };
 
