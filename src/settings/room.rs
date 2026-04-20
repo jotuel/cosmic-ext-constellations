@@ -977,9 +977,22 @@ impl State {
             );
 
             let filter = self.member_filter.to_lowercase();
+
+            fn contains_ignore_ascii_case(haystack: &str, needle_lower: &str) -> bool {
+                if needle_lower.is_empty() {
+                    return true;
+                }
+                if haystack.len() < needle_lower.len() {
+                    return false;
+                }
+                haystack.as_bytes().windows(needle_lower.len()).any(|window| {
+                    window.eq_ignore_ascii_case(needle_lower.as_bytes())
+                })
+            }
+
             for (user_id, level) in users {
                 let user_id_str = user_id.as_str();
-                if !filter.is_empty() && !user_id_str.to_lowercase().contains(&filter) {
+                if !filter.is_empty() && !contains_ignore_ascii_case(user_id_str, &filter) {
                     continue;
                 }
 

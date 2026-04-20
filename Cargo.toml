@@ -18,7 +18,7 @@ libcosmic = { git = "https://github.com/pop-os/libcosmic", branch = "master", fe
     "desktop-systemd-scope",
     "xdg-portal",
 ] }
-matrix-sdk = { version = "0.16.0", features = ["sqlite", "e2e-encryption", "sso-login", "testing"] }
+matrix-sdk = { version = "0.16.0", features = ["sqlite", "e2e-encryption", "sso-login", "testing", "experimental-search"] }
 matrix-sdk-ui = { version = "0.16.0" }
 matrix-sdk-sqlite = "0.16.0"
 matrix-sdk-base = "0.16.0"
@@ -46,6 +46,7 @@ mime = "0.3.17"
 mime_guess = "2.0.5"
 rand = { version = "0.10.1", features = ["std_rng"] }
 notify-rust = "4.15.0"
+futures = "0.3.32"
 
 [dev-dependencies]
 matrix-sdk-test = "0.16.0"
@@ -56,3 +57,6 @@ wiremock = "0.6.5"
 [patch.crates-io]
 # Many COSMIC apps need to patch iced or other dependencies to match what libcosmic uses.
 # However, for a basic shell, let's start without patches and see if it compiles.
+
+[lints.rust]
+unused_imports = "warn"
