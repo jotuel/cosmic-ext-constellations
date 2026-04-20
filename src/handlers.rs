@@ -3,6 +3,7 @@ use crate::{
     matrix, redact_url,
 };
 use cosmic::{Action, Application, Task};
+use std::collections::HashSet;
 
 impl Constellations {
     pub fn handle_engine_ready(
@@ -198,6 +199,47 @@ impl Constellations {
                 Task::none()
             }
             matrix::MatrixEvent::RoomDiff(diff) => {
+                match &diff {
+                    eyeball_im::VectorDiff::Insert { value, .. }
+                    | eyeball_im::VectorDiff::PushBack { value }
+                    | eyeball_im::VectorDiff::PushFront { value } => {
+                        self.joined_room_ids.insert(value.id.clone());
+                    }
+                    eyeball_im::VectorDiff::Remove { index } => {
+                        if let Some(room) = self.room_list.get(*index) {
+                            self.joined_room_ids.remove(&room.id);
+                        }
+                    }
+                    eyeball_im::VectorDiff::Set { index, value } => {
+                        if let Some(old_room) = self.room_list.get(*index) {
+                            self.joined_room_ids.remove(&old_room.id);
+                        }
+                        self.joined_room_ids.insert(value.id.clone());
+                    }
+                    eyeball_im::VectorDiff::PopBack => {
+                        if let Some(room) = self.room_list.last() {
+                            self.joined_room_ids.remove(&room.id);
+                        }
+                    }
+                    eyeball_im::VectorDiff::PopFront => {
+                        if let Some(room) = self.room_list.first() {
+                            self.joined_room_ids.remove(&room.id);
+                        }
+                    }
+                    eyeball_im::VectorDiff::Clear => {
+                        self.joined_room_ids.clear();
+                    }
+                    eyeball_im::VectorDiff::Reset { values }
+                    | eyeball_im::VectorDiff::Append { values } => {
+                        self.joined_room_ids.extend(values.iter().map(|r| r.id.clone()));
+                    }
+                    eyeball_im::VectorDiff::Truncate { length } => {
+                        for room in self.room_list.iter().skip(*length) {
+                            self.joined_room_ids.remove(&room.id);
+                        }
+                    }
+                }
+
                 self.room_list.apply_diff(diff);
                 self.update_filtered_rooms();
                 self.update_title()
@@ -397,10 +439,6 @@ impl Constellations {
                 // First, update the filtered_room_list because the hierarchy in matrix engine was updated
                 self.update_filtered_rooms();
 
-                // Now filter out rooms that are already in room_list (i.e. joined rooms)
-                let joined_ids: std::collections::HashSet<String> =
-                    self.room_list.iter().map(|r| r.id.to_string()).collect();
-
                 for child in &children {
                     if let Some(avatar_url) = &child.avatar_url {
                         if !self.media_cache.contains_key(avatar_url) {
@@ -426,7 +464,7 @@ impl Constellations {
 
                 self.other_rooms = children
                     .into_iter()
-                    .filter(|r| !joined_ids.contains(r.id.as_ref()) && !r.is_space)
+                    .filter(|r| !self.joined_room_ids.contains(r.id.as_ref()) && !r.is_space)
                     .collect();
             }
             Err(e) => {
@@ -696,6 +734,7 @@ impl Constellations {
         self.error = None;
         self.selected_space = None;
         self.is_sync_indicator_active = false;
+        self.joined_room_ids.clear();
         Task::none()
     }
 }
@@ -733,6 +772,7 @@ mod tests {
             is_registering_mode: false,
             is_initializing: false,
             is_sync_indicator_active: false,
+            joined_room_ids: HashSet::new(),
             selected_space: None,
             current_settings_panel: None,
             user_settings: crate::settings::user::State::default(),
