@@ -3,6 +3,7 @@ use crate::{
     matrix, redact_url,
 };
 use cosmic::{Action, Application, Task};
+use futures::stream::StreamExt;
 
 impl Constellations {
     pub fn handle_engine_ready(
@@ -401,26 +402,40 @@ impl Constellations {
                 let joined_ids: std::collections::HashSet<String> =
                     self.room_list.iter().map(|r| r.id.to_string()).collect();
 
-                for child in &children {
-                    if let Some(avatar_url) = &child.avatar_url {
-                        if !self.media_cache.contains_key(avatar_url) {
-                            if let Some(matrix) = &self.matrix {
-                                let matrix_clone = matrix.clone();
-                                let url_str = avatar_url.clone();
+                if let Some(matrix) = &self.matrix {
+                    let mut urls_to_fetch = Vec::new();
+                    for child in &children {
+                        if let Some(avatar_url) = &child.avatar_url {
+                            if !self.media_cache.contains_key(avatar_url) {
                                 let uri = matrix_sdk::ruma::OwnedMxcUri::from(avatar_url.as_str());
                                 let source =
                                     matrix_sdk::ruma::events::room::MediaSource::Plain(uri);
-                                tasks.push(Task::perform(
-                                    async move {
-                                        matrix_clone
-                                            .fetch_media(source)
-                                            .await
-                                            .map_err(|e| e.to_string())
-                                    },
-                                    move |res| Message::MediaFetched(url_str.clone(), res).into(),
-                                ));
+                                urls_to_fetch.push((avatar_url.clone(), source));
                             }
                         }
+                    }
+
+                    if !urls_to_fetch.is_empty() {
+                        let matrix_clone = matrix.clone();
+                        tasks.push(Task::perform(
+                            async move {
+                                futures::stream::iter(urls_to_fetch)
+                                    .map(|(url_str, source)| {
+                                        let matrix = matrix_clone.clone();
+                                        async move {
+                                            let res = matrix
+                                                .fetch_media(source)
+                                                .await
+                                                .map_err(|e| e.to_string());
+                                            (url_str, res)
+                                        }
+                                    })
+                                    .buffer_unordered(10)
+                                    .collect::<Vec<_>>()
+                                    .await
+                            },
+                            |batch| Message::MediaFetchedBatch(batch).into(),
+                        ));
                     }
                 }
 
@@ -474,6 +489,26 @@ impl Constellations {
             }
             Err(e) => {
                 self.error = Some(format!("Failed to fetch media: {}", e));
+            }
+        }
+        Task::none()
+    }
+
+    pub fn handle_media_fetched_batch(
+        &mut self,
+        batch: Vec<(String, Result<Vec<u8>, String>)>,
+    ) -> Task<Action<<Constellations as Application>::Message>> {
+        for (mxc_url, res) in batch {
+            match res {
+                Ok(data) => {
+                    self.media_cache.insert(
+                        mxc_url,
+                        cosmic::iced::widget::image::Handle::from_bytes(data),
+                    );
+                }
+                Err(e) => {
+                    self.error = Some(format!("Failed to fetch media: {}", e));
+                }
             }
         }
         Task::none()
