@@ -716,21 +716,58 @@ async fn test_create_room() {
     assert_eq!(room_id.as_str(), "!new_room:example.com");
 }
 
+
 #[tokio::test]
-async fn test_get_or_create_store_passphrase() {
-    // This function interacts with oo7 Keyring which might not be available in all test environments.
-    // However, if it's not available, it should return an error rather than panicking.
-    // We try to call it and see if it works or returns a handled error.
+#[serial_test::serial]
+async fn test_get_or_create_store_passphrase_success() {
     let result = MatrixEngine::get_or_create_store_passphrase().await;
 
     match result {
         Ok(passphrase) => {
             assert_eq!(passphrase.len(), 64); // 32 bytes hex encoded = 64 chars
+
+            let result2 = MatrixEngine::get_or_create_store_passphrase().await;
+            let passphrase2 = result2.expect("Second call should succeed if first did");
+            assert_eq!(passphrase, passphrase2, "Passphrase should be stable and retrieved from the store");
         },
         Err(e) => {
-            // If it fails because of D-Bus/Keyring, it's acceptable in some CI environments,
-            // but it shouldn't be a random generation failure.
-            info!("get_or_create_store_passphrase failed (likely due to missing Keyring): {}", e);
+            // In CI environments without D-Bus or Keyring, we can't fully test the success path.
+            // We just log it so it doesn't artificially fail the test suite on headless runners.
+            info!("Skipping success test due to missing Keyring/D-Bus environment: {}", e);
         }
     }
+}
+
+
+
+struct DbusEnvGuard {
+    original_value: Result<String, std::env::VarError>,
+}
+
+impl DbusEnvGuard {
+    fn new() -> Self {
+        let original_value = std::env::var("DBUS_SESSION_BUS_ADDRESS");
+        std::env::set_var("DBUS_SESSION_BUS_ADDRESS", "unix:path=/nonexistent/dbus/socket");
+        Self { original_value }
+    }
+}
+
+impl Drop for DbusEnvGuard {
+    fn drop(&mut self) {
+        match &self.original_value {
+            Ok(val) => std::env::set_var("DBUS_SESSION_BUS_ADDRESS", val),
+            Err(_) => std::env::remove_var("DBUS_SESSION_BUS_ADDRESS"),
+        }
+    }
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn test_get_or_create_store_passphrase_dbus_failure() {
+    let _guard = DbusEnvGuard::new();
+
+    let result = MatrixEngine::get_or_create_store_passphrase().await;
+
+    // We expect this to fail due to the invalid D-Bus address
+    assert!(result.is_err(), "Expected get_or_create_store_passphrase to fail with invalid D-Bus address");
 }
