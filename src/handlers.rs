@@ -3,7 +3,6 @@ use crate::{
     matrix, redact_url,
 };
 use cosmic::{Action, Application, Task};
-use std::collections::HashSet;
 use futures::stream::StreamExt;
 
 impl Constellations {
@@ -232,7 +231,8 @@ impl Constellations {
                     }
                     eyeball_im::VectorDiff::Reset { values }
                     | eyeball_im::VectorDiff::Append { values } => {
-                        self.joined_room_ids.extend(values.iter().map(|r| r.id.clone()));
+                        self.joined_room_ids
+                            .extend(values.iter().map(|r| r.id.clone()));
                     }
                     eyeball_im::VectorDiff::Truncate { length } => {
                         for room in self.room_list.iter().skip(*length) {
@@ -439,10 +439,6 @@ impl Constellations {
             Ok(children) => {
                 // First, update the filtered_room_list because the hierarchy in matrix engine was updated
                 self.update_filtered_rooms();
-
-                // Now filter out rooms that are already in room_list (i.e. joined rooms)
-                let joined_ids: std::collections::HashSet<String> =
-                    self.room_list.iter().map(|r| r.id.to_string()).collect();
 
                 if let Some(matrix) = &self.matrix {
                     let mut urls_to_fetch = Vec::new();
@@ -783,6 +779,7 @@ mod tests {
     use super::*;
     use crate::Core;
     use std::collections::HashMap;
+    use std::collections::HashSet;
 
     fn create_dummy_constellations() -> Constellations {
         Constellations {
