@@ -57,3 +57,6 @@ wiremock = "0.6.5"
 [patch.crates-io]
 # Many COSMIC apps need to patch iced or other dependencies to match what libcosmic uses.
 # However, for a basic shell, let's start without patches and see if it compiles.
+
+[lints.rust]
+unused_imports = "warn"
