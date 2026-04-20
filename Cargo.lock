@@ -1359,6 +1359,7 @@ dependencies = [
  "cosmic-text 0.12.1",
  "dirs",
  "eyeball-im",
+ "futures",
  "imbl",
  "libcosmic",
  "matrix-sdk",

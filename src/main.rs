@@ -86,6 +86,7 @@ struct Constellations {
     is_initializing: bool,
     is_sync_indicator_active: bool,
     active_reaction_picker: Option<matrix::TimelineEventItemId>,
+    joined_room_ids: std::collections::HashSet<std::sync::Arc<str>>,
     selected_space: Option<OwnedRoomId>,
     current_settings_panel: Option<SettingsPanel>,
     user_settings: settings::user::State,
@@ -367,10 +368,8 @@ impl Constellations {
             self.filtered_room_list = rooms;
 
             // Re-filter other_rooms to remove any that we've now joined
-            let all_joined_ids: std::collections::HashSet<&str> =
-                self.room_list.iter().map(|r| r.id.as_ref()).collect();
             self.other_rooms
-                .retain(|r| !all_joined_ids.contains(r.id.as_ref()));
+                .retain(|r| !self.joined_room_ids.contains(r.id.as_ref()));
         } else {
             self.filtered_room_list = self
                 .room_list
@@ -682,6 +681,7 @@ impl Application for Constellations {
             is_initializing: true,
             is_sync_indicator_active: false,
             active_reaction_picker: None,
+            joined_room_ids: std::collections::HashSet::new(),
             selected_space: None,
             current_settings_panel: None,
             user_settings: Default::default(),
