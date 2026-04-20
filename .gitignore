@@ -2,4 +2,3 @@
 script.sh
 test_src/
 test_opt
-bench_format/target
