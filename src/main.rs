@@ -13,7 +13,8 @@ use cosmic::iced::{Alignment, Subscription};
 use cosmic::widget::icon::Named;
 use cosmic::widget::menu::action::MenuAction;
 use cosmic::widget::{
-    Column, Row, button, container, scrollable, text, text_input, tooltip::Position,
+    Column, RcElementWrapper, Row, button, container, menu, scrollable, text, text_input,
+    tooltip::Position,
 };
 use cosmic::{Action, Application, Core, Element, Task};
 use eyeball_im::Vector;
@@ -74,6 +75,7 @@ struct Constellations {
     user_id: Option<String>,
     media_cache: HashMap<String, image::Handle>,
     creating_room: bool,
+    creating_space: bool,
     new_room_name: String,
     error: Option<String>,
     login_homeserver: String,
@@ -85,7 +87,10 @@ struct Constellations {
     is_registering: bool,
     is_initializing: bool,
     is_sync_indicator_active: bool,
+    search_query: String,
+    is_search_active: bool,
     active_reaction_picker: Option<matrix::TimelineEventItemId>,
+    joined_room_ids: std::collections::HashSet<std::sync::Arc<str>>,
     selected_space: Option<OwnedRoomId>,
     current_settings_panel: Option<SettingsPanel>,
     user_settings: settings::user::State,
@@ -115,10 +120,14 @@ pub enum Message {
     UserReady(Option<String>, Result<(), matrix::SyncError>),
     FetchMedia(MediaSource),
     MediaFetched(String, Result<Vec<u8>, String>),
+    MediaFetchedBatch(Vec<(String, Result<Vec<u8>, String>)>),
     CreateRoom(String),
     RoomCreated(Result<String, String>),
+    CreateSpace(String),
+    SpaceCreated(Result<String, String>),
     NewRoomNameChanged(String),
     ToggleCreateRoom,
+    ToggleCreateSpace,
     DismissError,
     LoginHomeserverChanged(String),
     LoginUsernameChanged(String),
@@ -145,6 +154,8 @@ pub enum Message {
     SpaceSettings(settings::space::Message),
     AppSettings(settings::app::Message),
     AppSettingChanged,
+    ToggleSearch,
+    SearchQueryChanged(String),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -160,6 +171,8 @@ pub enum MenuAct {
     AppSettings,
     UserSettings,
     Logout,
+    CreateRoom,
+    CreateSpace,
 }
 
 impl MenuAction for MenuAct {
@@ -169,6 +182,8 @@ impl MenuAction for MenuAct {
             MenuAct::AppSettings => Message::OpenSettings(SettingsPanel::App),
             MenuAct::UserSettings => Message::OpenSettings(SettingsPanel::User),
             MenuAct::Logout => Message::Logout,
+            MenuAct::CreateRoom => Message::ToggleCreateRoom,
+            MenuAct::CreateSpace => Message::ToggleCreateSpace,
         }
     }
 }
@@ -352,6 +367,19 @@ impl<T: Clone> ApplyVectorDiffExt<T> for eyeball_im::Vector<T> {
 
 impl Constellations {
     pub fn update_filtered_rooms(&mut self) {
+        let search_query = self.search_query.to_lowercase();
+        let filter_by_search = |room: &matrix::RoomData| {
+            if search_query.is_empty() {
+                true
+            } else {
+                room.name
+                    .as_ref()
+                    .map(|n| n.to_lowercase().contains(&search_query))
+                    .unwrap_or(false)
+                    || room.id.to_lowercase().contains(&search_query)
+            }
+        };
+
         if let Some(selected_space) = &self.selected_space {
             let mut rooms = Vec::new();
             if let Some(matrix) = &self.matrix {
@@ -394,15 +422,13 @@ impl Constellations {
             self.filtered_room_list = rooms;
 
             // Re-filter other_rooms to remove any that we've now joined
-            let all_joined_ids: std::collections::HashSet<&str> =
-                self.room_list.iter().map(|r| r.id.as_ref()).collect();
             self.other_rooms
-                .retain(|r| !all_joined_ids.contains(r.id.as_ref()));
+                .retain(|r| !self.joined_room_ids.contains(r.id.as_ref()));
         } else {
             self.filtered_room_list = self
                 .room_list
                 .iter()
-                .filter(|r| !r.is_space)
+                .filter(|r| !r.is_space && filter_by_search(r))
                 .cloned()
                 .collect();
             self.other_rooms.clear();
@@ -659,6 +685,62 @@ impl Application for Constellations {
         &mut self.core
     }
 
+    fn header_start(&self) -> Vec<Element<'_, Self::Message>> {
+        let mut start = Vec::new();
+
+        if self.is_search_active {
+            let row = Row::new()
+                .align_y(Alignment::Center)
+                .push(
+                    button::icon(Named::new("edit-find-symbolic")).on_press(Message::ToggleSearch),
+                )
+                .push(
+                    text_input("Search...", &self.search_query)
+                        .on_input(Message::SearchQueryChanged)
+                        .width(200.0),
+                );
+            start.push(row.into());
+        } else {
+            start.push(
+                button::icon(Named::new("edit-find-symbolic"))
+                    .on_press(Message::ToggleSearch)
+                    .into(),
+            );
+        }
+
+        start
+    }
+
+    fn header_end(&self) -> Vec<Element<'_, Self::Message>> {
+        let mut end = Vec::new();
+
+        if self.user_id.is_some() {
+            let user_btn = button::icon(Named::new("user-available-symbolic"));
+            let key_binds = std::collections::HashMap::new();
+
+            let menu_tree = menu::Tree::with_children(
+                RcElementWrapper::new(Element::from(user_btn)),
+                menu::items(
+                    &key_binds,
+                    vec![
+                        menu::Item::Button("App Settings", None, MenuAct::AppSettings),
+                        menu::Item::Button("User Settings", None, MenuAct::UserSettings),
+                        menu::Item::Button("Logout", None, MenuAct::Logout),
+                    ],
+                ),
+            );
+
+            let user_menu = menu::bar(vec![menu_tree])
+                .item_height(menu::ItemHeight::Dynamic(40))
+                .item_width(menu::ItemWidth::Uniform(120))
+                .spacing(4.0);
+
+            end.push(user_menu.into());
+        }
+
+        end
+    }
+
     fn init(core: Core, flags: Self::Flags) -> (Self, Task<Action<Self::Message>>) {
         let data_dir = dirs::data_dir().map(|d| d.join("fi.joonastuomi.Constellations"));
 
@@ -697,6 +779,7 @@ impl Application for Constellations {
             user_id: None,
             media_cache: HashMap::new(),
             creating_room: false,
+            creating_space: false,
             new_room_name: String::new(),
             error: None,
             login_homeserver: "https://matrix.org".to_string(),
@@ -708,7 +791,10 @@ impl Application for Constellations {
             is_registering: false,
             is_initializing: true,
             is_sync_indicator_active: false,
+            search_query: String::new(),
+            is_search_active: false,
             active_reaction_picker: None,
+            joined_room_ids: std::collections::HashSet::new(),
             selected_space: None,
             current_settings_panel: None,
             user_settings: Default::default(),
@@ -867,12 +953,20 @@ impl Application for Constellations {
             }
             Message::FetchMedia(source) => self.handle_fetch_media(source),
             Message::MediaFetched(mxc_url, res) => self.handle_media_fetched(mxc_url, res),
+            Message::MediaFetchedBatch(batch) => self.handle_media_fetched_batch(batch),
             Message::DismissError => {
                 self.error = None;
                 Task::none()
             }
             Message::ToggleCreateRoom => {
                 self.creating_room = !self.creating_room;
+                self.creating_space = false;
+                self.new_room_name.clear();
+                Task::none()
+            }
+            Message::ToggleCreateSpace => {
+                self.creating_space = !self.creating_space;
+                self.creating_room = false;
                 self.new_room_name.clear();
                 Task::none()
             }
@@ -890,6 +984,22 @@ impl Application for Constellations {
                     }
                     Err(e) => {
                         self.error = Some(format!("Failed to create room: {}", e));
+                    }
+                }
+                Task::none()
+            }
+            Message::CreateSpace(name) => self.handle_create_space(name),
+            Message::SpaceCreated(res) => {
+                match res {
+                    Ok(space_id) => {
+                        self.creating_space = false;
+                        self.new_room_name.clear();
+                        if let Ok(rid) = space_id.as_str().try_into() {
+                            return self.handle_select_space(Some(rid));
+                        }
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to create space: {}", e));
                     }
                 }
                 Task::none()
@@ -1010,6 +1120,19 @@ impl Application for Constellations {
                 _ => self.app_settings.update(msg),
             },
             Message::AppSettingChanged => Task::none(),
+            Message::ToggleSearch => {
+                self.is_search_active = !self.is_search_active;
+                if !self.is_search_active {
+                    self.search_query.clear();
+                    self.update_filtered_rooms();
+                }
+                Task::none()
+            }
+            Message::SearchQueryChanged(query) => {
+                self.search_query = query;
+                self.update_filtered_rooms();
+                Task::none()
+            }
         }
     }
 
@@ -1049,23 +1172,40 @@ impl Application for Constellations {
 
         let mut room_list = Column::new().spacing(5);
 
-        let create_room_ui = if self.creating_room {
+        if self.creating_room || self.creating_space {
+            let label = if self.creating_room {
+                "Room Name"
+            } else {
+                "Space Name"
+            };
+
             let mut name_input =
-                text_input("Room Name", &self.new_room_name).on_input(Message::NewRoomNameChanged);
+                text_input(label, &self.new_room_name).on_input(Message::NewRoomNameChanged);
 
             let is_empty = self.new_room_name.trim().is_empty();
 
             let mut create_btn = button::text("Create");
             if !is_empty {
-                name_input =
-                    name_input.on_submit(|_| Message::CreateRoom(self.new_room_name.clone()));
-                create_btn = create_btn.on_press(Message::CreateRoom(self.new_room_name.clone()));
+                if self.creating_room {
+                    name_input =
+                        name_input.on_submit(|_| Message::CreateRoom(self.new_room_name.clone()));
+                    create_btn =
+                        create_btn.on_press(Message::CreateRoom(self.new_room_name.clone()));
+                } else {
+                    name_input =
+                        name_input.on_submit(|_| Message::CreateSpace(self.new_room_name.clone()));
+                    create_btn =
+                        create_btn.on_press(Message::CreateSpace(self.new_room_name.clone()));
+                }
             }
 
             let create_btn_widget: Element<'_, Message> = if is_empty {
                 tooltip(
                     create_btn,
-                    text::body("Enter a room name to create"),
+                    text::body(format!(
+                        "Enter a {} name to create",
+                        if self.creating_room { "room" } else { "space" }
+                    )),
                     Position::Top,
                 )
                 .into()
@@ -1073,17 +1213,21 @@ impl Application for Constellations {
                 create_btn.into()
             };
 
-            Column::new().spacing(5).push(name_input).push(
+            let cancel_msg = if self.creating_room {
+                Message::ToggleCreateRoom
+            } else {
+                Message::ToggleCreateSpace
+            };
+
+            let create_ui = Column::new().spacing(5).push(name_input).push(
                 Row::new()
                     .spacing(5)
                     .push(create_btn_widget)
-                    .push(button::text("Cancel").on_press(Message::ToggleCreateRoom)),
-            )
-        } else {
-            Column::new().push(button::text("+ Create Room").on_press(Message::ToggleCreateRoom))
-        };
+                    .push(button::text("Cancel").on_press(cancel_msg)),
+            );
 
-        room_list = room_list.push(container(create_room_ui).padding(5));
+            room_list = room_list.push(container(create_ui).padding(5));
+        }
 
         if let Some(selected_space) = &self.selected_space {
             let space_name = self

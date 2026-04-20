@@ -37,3 +37,9 @@
 ## 2026-04-20 - Cached Parsing and Bulk Lookup
 **Learning:** Repetitive string parsing inside UI loops and repeated read-locks cause O(N) performance bottlenecks.
 **Action:** Cache parsed structural IDs in long-lived state components (e.g., `RoomData`) using `#[serde(skip)]` where necessary, and implement bulk-lookup APIs that hold synchronization primitives once over arrays/slices rather than inside iterations.
+## 2025-03-02 - [Avoid String Allocations in Iterative Case-Insensitive Matching]
+**Learning:** In hot loops, calling `.to_lowercase()` just to perform a case-insensitive `.contains()` check allocates a new `String` on the heap for every element in the loop.
+**Action:** When performing case-insensitive substring checks, pre-lowercase the filter and implement custom slice-based matching logic (like using `.windows()` over bytes and `.to_ascii_lowercase()`) to avoid any dynamic heap allocations per iteration.
+## 2025-03-05 - Batching Iced Tasks for Network Requests
+**Learning:** Submitting many isolated `Task::perform` calls concurrently in Iced immediate mode can impact framework performance. Capping the concurrency via `futures::stream::StreamExt::buffer_unordered` within a single task reduces UI overhead.
+**Action:** When making multiple simultaneous network requests or expensive async operations inside a loop, collect the futures and execute them through an `iter` stream with `buffer_unordered`, then map the collected result vector to a single "Batch" Message variant instead of dispatching N individual Messages.

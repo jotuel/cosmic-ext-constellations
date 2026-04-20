@@ -5,8 +5,8 @@ use cosmic::{
         widget::{scrollable, tooltip},
     },
     widget::{
-        Column, RcElementWrapper, Row, button, container, icon::Named, menu, text, text_input,
-        tooltip::Position,
+        Column, Row, button, container, icon::Named, menu, text, text_input,
+        tooltip::Position, RcElementWrapper,
     },
 };
 use matrix_sdk::ruma::events::room::{MediaSource, message::MessageType};
@@ -609,40 +609,32 @@ impl Constellations {
 
         let scrollable_spaces = scrollable(content).height(cosmic::iced::Length::Fill);
 
-        let user_initial = self
-            .user_id
-            .as_deref()
-            .and_then(|u| u.chars().nth(1))
-            .unwrap_or('U')
-            .to_ascii_uppercase()
-            .to_string();
-        let avatar = container(text::body(user_initial).size(24))
-            .padding(8)
-            .align_x(Alignment::Center);
+        let mut bottom_content = Column::new().spacing(10).align_x(Alignment::Center);
 
-        let user_btn = button::custom(avatar);
+        let plus_btn = button::icon(Named::new("list-add-symbolic"));
         let key_binds = std::collections::HashMap::new();
 
         let menu_tree = menu::Tree::with_children(
-            RcElementWrapper::new(Element::from(user_btn)),
+            RcElementWrapper::new(Element::from(plus_btn)),
             menu::items(
                 &key_binds,
                 vec![
-                    menu::Item::Button("App Settings", None, MenuAct::AppSettings),
-                    menu::Item::Button("User Settings", None, MenuAct::UserSettings),
-                    menu::Item::Button("Logout", None, MenuAct::Logout),
+                    menu::Item::Button("Create Room", None, MenuAct::CreateRoom),
+                    menu::Item::Button("Create Space", None, MenuAct::CreateSpace),
                 ],
             ),
         );
 
-        let user_menu = menu::bar(vec![menu_tree])
+        let create_menu = menu::bar(vec![menu_tree])
             .item_height(menu::ItemHeight::Dynamic(40))
             .item_width(menu::ItemWidth::Uniform(120))
             .spacing(4.0);
 
+        bottom_content = bottom_content.push(create_menu);
+
         let layout = Column::new()
             .push(scrollable_spaces)
-            .push(user_menu)
+            .push(bottom_content)
             .align_x(Alignment::Center);
 
         container(layout).width(60).padding(5).into()

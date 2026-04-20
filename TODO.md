@@ -6,11 +6,19 @@
 
 [ ] After Logout can't Login again
 
+# ***General***
+
+[ ] Fluent for localization
+
+[ ] Implement real time audio connections
+
+[ ] Video connections using MatrixRTC
+
 # ***Search***
 
-[ ] Implement application wide search
+[x] Add search icon and bar to header
 
-[ ] Implement Setting search
+[ ] Implement application wide search
 
 [ ] Filter out Rooms in Space settings
 
@@ -26,24 +34,24 @@
 
 [ ] Threaded conversations
 
+[ ] Reply to message
+
 [ ] Automatic sliding sync / pagination
 
 [ ] Option to ignore user
 
 # ***Notifications***
 
-[ ] Plug in cosmic-notifications
+[x] Notifications support
 
-[ ] Investigate OSD notifications
+[x] Settings for Notifications
 
 # ***Settings***
 ## **Application**
 
-[ ] Settings for Notifications
-
 [ ] Set up Config
 
-[ ] Global Notification Rules: The NotificationSettings API in the SDK allows you to
+[x] Global Notification Rules: The NotificationSettings API in the SDK allows you to
  configure whether the user is notified for specific events (e.g., mentions, direct
  messages, room messages, encrypted messages).
 ## **Room**
@@ -56,7 +64,7 @@
 
 ### *2. Notification Settings*
 
-[ ] Push Rules & Muting: The SDK has a dedicated client.notification_settings() API. You can allow users to set the room to:
+[x] Push Rules & Muting: The SDK has a dedicated client.notification_settings() API. You can allow users to set the room to:
     - All Messages: Notify for every message.
     - Mentions & Keywords Only: Only notify if the user is pinged.
     - Mute: Completely suppress notifications for the room.
