@@ -355,11 +355,39 @@ impl Constellations {
         if let Some(selected_space) = &self.selected_space {
             let mut rooms = Vec::new();
             if let Some(matrix) = &self.matrix {
-                for room in self.room_list.iter().filter(|r| !r.is_space) {
-                    if let Ok(room_id) = matrix_sdk::ruma::RoomId::parse(&*room.id) {
-                        if matrix.is_in_space_sync(&room_id, selected_space) {
-                            rooms.push(room.clone());
-                        }
+                let candidate_rooms: Vec<&matrix::RoomData> = self.room_list.iter().filter(|r| !r.is_space).collect();
+
+                // Keep track of which rooms have valid IDs we can check
+                let mut valid_indices = Vec::with_capacity(candidate_rooms.len());
+                let mut valid_owned_ids = Vec::new();
+
+                for (idx, room) in candidate_rooms.iter().enumerate() {
+                    if room.parsed_id.is_some() {
+                        valid_indices.push(idx);
+                    } else if let Ok(parsed) = matrix_sdk::ruma::RoomId::parse(&*room.id) {
+                        valid_owned_ids.push((idx, parsed));
+                        valid_indices.push(idx);
+                    }
+                }
+
+                let mut room_ids = Vec::with_capacity(valid_indices.len());
+                let mut valid_owned_idx = 0;
+
+                for &idx in &valid_indices {
+                    let room = candidate_rooms[idx];
+                    if let Some(id) = room.parsed_id.as_deref() {
+                        room_ids.push(id);
+                    } else if valid_owned_idx < valid_owned_ids.len() && valid_owned_ids[valid_owned_idx].0 == idx {
+                        room_ids.push(valid_owned_ids[valid_owned_idx].1.as_ref());
+                        valid_owned_idx += 1;
+                    }
+                }
+
+                let inclusion_results = matrix.is_in_space_bulk(selected_space, &room_ids);
+
+                for (&idx, &is_in_space) in valid_indices.iter().zip(inclusion_results.iter()) {
+                    if is_in_space {
+                        rooms.push(candidate_rooms[idx].clone());
                     }
                 }
             }
