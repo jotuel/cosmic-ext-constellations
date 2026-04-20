@@ -34,3 +34,6 @@
 ## 2023-10-27 - [O(1) Cloning of Identifiers in Message Variants]
 **Learning:** `Message::SelectSpace` and `Message::JoinRoom` were taking `OwnedRoomId` or `String`, forcing unnecessary heap allocations via parsing and cloning deep inside the `view` rendering loop closures where they were bound via `.on_press()`.
 **Action:** Changed the payload of these message variants to `std::sync::Arc<str>` (which is what `matrix::RoomData::id` natively stores). This allows closures in the view tree to capture identifiers with a cheap O(1) reference count increment. Ownership and parsing logic was moved to the state `update` handler where it executes only once when the button is actually pressed.
+## 2026-04-20 - Cached Parsing and Bulk Lookup
+**Learning:** Repetitive string parsing inside UI loops and repeated read-locks cause O(N) performance bottlenecks.
+**Action:** Cache parsed structural IDs in long-lived state components (e.g., `RoomData`) using `#[serde(skip)]` where necessary, and implement bulk-lookup APIs that hold synchronization primitives once over arrays/slices rather than inside iterations.
