@@ -284,7 +284,7 @@ impl Constellations {
                 }
                 PreviewEvent::EndBlock => {
                     if row_has_content {
-                        md_col = md_col.push(current_row).into();
+                        md_col = md_col.push(current_row);
                         current_row = Row::new().spacing(0).align_y(Alignment::Center);
                         row_has_content = false;
                     }
@@ -309,7 +309,7 @@ impl Constellations {
         if row_has_content {
             md_col = md_col.push(current_row);
         }
-        md_col.into()
+        md_col
     }
 
     fn view_message_text<'a>(

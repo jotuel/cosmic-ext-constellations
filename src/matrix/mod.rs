@@ -365,10 +365,10 @@ impl MatrixEngine {
                     ) = event
                     {
                         // Ignore our own messages
-                        if let Some(user_id) = room.client().user_id() {
-                            if ev.sender == user_id {
-                                return;
-                            }
+                        if let Some(user_id) = room.client().user_id()
+                            && ev.sender == user_id
+                        {
+                            return;
                         }
 
                         // Avoid spamming during initial sync by checking if event is older than 5 minutes
@@ -378,11 +378,7 @@ impl MatrixEngine {
                             .as_millis();
 
                         let event_time = ev.origin_server_ts.0.into();
-                        let diff = if now > event_time {
-                            now - event_time
-                        } else {
-                            event_time - now
-                        };
+                        let diff = now.abs_diff(event_time);
 
                         if diff > 300_000 {
                             return;
@@ -1510,19 +1506,11 @@ impl MatrixEngine {
         let inner = self.inner.read().await;
         let room = inner.client.get_room(room_id).context("Room not found")?;
 
-        #[cfg(feature = "experimental-search")]
-        {
-            let results = room
-                .search(query, max_results, None)
-                .await
-                .map_err(|e| anyhow::anyhow!(e))?;
-            Ok(results)
-        }
-        #[cfg(not(feature = "experimental-search"))]
-        {
-            let _ = (query, max_results);
-            anyhow::bail!("Search is not enabled");
-        }
+        let results = room
+            .search(query, max_results, None)
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+        Ok(results)
     }
 
     async fn setup_client(data_dir: PathBuf, homeserver_url: &str) -> Result<Client> {

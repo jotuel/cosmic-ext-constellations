@@ -184,8 +184,8 @@ impl State {
 
                         let mut tasks = Vec::new();
 
-                        if let Some(url) = &self.avatar_url {
-                            if let Some(matrix) = matrix {
+                        if let Some(url) = &self.avatar_url
+                            && let Some(matrix) = matrix {
                                 let engine = matrix.clone();
                                 let mxc = url.clone();
                                 self.is_loading_avatar = true;
@@ -203,7 +203,6 @@ impl State {
                                     },
                                 ));
                             }
-                        }
 
                         tasks.push(Task::done(Action::from(crate::Message::RoomSettings(
                             Message::LoadPowerLevels,
@@ -217,8 +216,8 @@ impl State {
                 Task::none()
             }
             Message::LoadPowerLevels => {
-                if let Some(matrix) = matrix {
-                    if let Some(room_id) = &self.room_id {
+                if let Some(matrix) = matrix
+                    && let Some(room_id) = &self.room_id {
                         self.is_loading_power_levels = true;
                         let engine = matrix.clone();
                         let room_id_clone = room_id.clone();
@@ -255,7 +254,6 @@ impl State {
                             },
                         );
                     }
-                }
                 Task::none()
             }
             Message::PowerLevelsLoaded(res) => {
@@ -272,8 +270,8 @@ impl State {
                 Task::none()
             }
             Message::InviteUser => {
-                if let Some(matrix) = matrix {
-                    if let Some(room_id) = &self.room_id {
+                if let Some(matrix) = matrix
+                    && let Some(room_id) = &self.room_id {
                         let engine = matrix.clone();
                         let room_id_clone = room_id.clone();
                         let user_id_clone = self.invite_user_id.clone();
@@ -291,7 +289,6 @@ impl State {
                             },
                         );
                     }
-                }
                 Task::none()
             }
             Message::UserInvited(res) => {
@@ -310,8 +307,8 @@ impl State {
                 Task::none()
             }
             Message::KickUser(user_id) => {
-                if let Some(matrix) = matrix {
-                    if let Some(room_id) = &self.room_id {
+                if let Some(matrix) = matrix
+                    && let Some(room_id) = &self.room_id {
                         let engine = matrix.clone();
                         let room_id_clone = room_id.clone();
                         let user_id_clone = user_id.clone();
@@ -336,7 +333,6 @@ impl State {
                             },
                         );
                     }
-                }
                 Task::none()
             }
             Message::UserKicked(user_id, res) => {
@@ -355,8 +351,8 @@ impl State {
                 Task::none()
             }
             Message::BanUser(user_id) => {
-                if let Some(matrix) = matrix {
-                    if let Some(room_id) = &self.room_id {
+                if let Some(matrix) = matrix
+                    && let Some(room_id) = &self.room_id {
                         let engine = matrix.clone();
                         let room_id_clone = room_id.clone();
                         let user_id_clone = user_id.clone();
@@ -381,7 +377,6 @@ impl State {
                             },
                         );
                     }
-                }
                 Task::none()
             }
             Message::UserBanned(user_id, res) => {
@@ -412,8 +407,8 @@ impl State {
                 Task::none()
             }
             Message::UpdatePowerLevel(user_id, level) => {
-                if let Some(matrix) = matrix {
-                    if let Some(room_id) = &self.room_id {
+                if let Some(matrix) = matrix
+                    && let Some(room_id) = &self.room_id {
                         self.updating_power_level_for = Some(user_id.clone());
                         let engine = matrix.clone();
                         let room_id_clone = room_id.clone();
@@ -437,7 +432,6 @@ impl State {
                             },
                         );
                     }
-                }
                 Task::none()
             }
             Message::PowerLevelUpdated(user_id, res) => {
@@ -621,8 +615,8 @@ impl State {
                 },
             ),
             Message::AvatarFileSelected(path_opt) => {
-                if let Some(path) = path_opt {
-                    if let Some(matrix) = matrix {
+                if let Some(path) = path_opt
+                    && let Some(matrix) = matrix {
                         self.is_uploading_avatar = true;
                         let engine = matrix.clone();
                         let room_id = self.room_id.clone().unwrap_or_default();
@@ -645,7 +639,6 @@ impl State {
                             },
                         );
                     }
-                }
                 Task::none()
             }
             Message::AvatarUploaded(res) => {
@@ -664,8 +657,8 @@ impl State {
                 Task::none()
             }
             Message::LeaveRoom => {
-                if let Some(matrix) = matrix {
-                    if let Some(room_id) = &self.room_id {
+                if let Some(matrix) = matrix
+                    && let Some(room_id) = &self.room_id {
                         self.is_saving = true;
                         let engine = matrix.clone();
                         let room_id_clone = room_id.clone();
@@ -681,7 +674,6 @@ impl State {
                             },
                         );
                     }
-                }
                 Task::none()
             }
             Message::RoomLeft(res) => {
@@ -700,8 +692,8 @@ impl State {
                 Task::none()
             }
             Message::ForgetRoom => {
-                if let Some(matrix) = matrix {
-                    if let Some(room_id) = &self.room_id {
+                if let Some(matrix) = matrix
+                    && let Some(room_id) = &self.room_id {
                         self.is_saving = true;
                         let engine = matrix.clone();
                         let room_id_clone = room_id.clone();
@@ -719,7 +711,6 @@ impl State {
                             },
                         );
                     }
-                }
                 Task::none()
             }
             Message::RoomForgotten(res) => {
@@ -736,8 +727,8 @@ impl State {
                 Task::none()
             }
             Message::NotificationModeChanged(mode) => {
-                if let Some(matrix) = matrix {
-                    if let Some(room_id) = &self.room_id {
+                if let Some(matrix) = matrix
+                    && let Some(room_id) = &self.room_id {
                         self.is_loading_notifications = true;
                         self.notification_mode = Some(mode);
                         let engine = matrix.clone();
@@ -759,7 +750,6 @@ impl State {
                             },
                         );
                     }
-                }
                 Task::none()
             }
             Message::NotificationModeSet(res) => {
@@ -811,18 +801,12 @@ impl State {
     }
 
     fn view_error(&self) -> Option<Element<'_, Message>> {
-        if let Some(error) = &self.error {
-            Some(
-                Row::new()
+        self.error.as_ref().map(|error| Row::new()
                     .spacing(10)
                     .align_y(Alignment::Center)
                     .push(text::body(error))
                     .push(button::text("Dismiss").on_press(Message::DismissError))
-                    .into(),
-            )
-        } else {
-            None
-        }
+                    .into())
     }
 
     fn view_profile(&self) -> Element<'_, Message> {
