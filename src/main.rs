@@ -8,13 +8,11 @@ mod view;
 
 use anyhow::Result;
 use cosmic::iced::widget::image;
-use cosmic::iced::widget::tooltip;
 use cosmic::iced::{Alignment, Subscription};
 use cosmic::widget::icon::Named;
 use cosmic::widget::menu::action::MenuAction;
 use cosmic::widget::{
-    Column, RcElementWrapper, Row, button, container, menu, scrollable, text, text_input,
-    tooltip::Position,
+    Column, RcElementWrapper, Row, button, container, menu, text_input,
 };
 use cosmic::{Action, Application, Core, Element, Task};
 use eyeball_im::Vector;
