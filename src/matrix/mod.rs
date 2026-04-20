@@ -90,9 +90,9 @@ pub type TimelineDiff<T> = VectorDiff<Arc<T>>;
 #[derive(Debug, Default, Clone)]
 pub struct SpaceHierarchy {
     /// Maps a space ID to its children (rooms or sub-spaces)
-    pub children: HashMap<OwnedRoomId, Vec<OwnedRoomId>>,
+    pub children: HashMap<OwnedRoomId, HashSet<OwnedRoomId>>,
     /// Maps a room/space ID to its parent spaces
-    pub parents: HashMap<OwnedRoomId, Vec<OwnedRoomId>>,
+    pub parents: HashMap<OwnedRoomId, HashSet<OwnedRoomId>>,
     /// Set of all known space IDs
     pub known_spaces: HashSet<OwnedRoomId>,
 }
@@ -113,22 +113,18 @@ impl SpaceHierarchy {
     pub fn add_child(&mut self, space_id: OwnedRoomId, child_id: OwnedRoomId) {
         self.add_space(space_id.clone());
         let children = self.children.entry(space_id.clone()).or_default();
-        if !children.contains(&child_id) {
-            children.push(child_id.clone());
-        }
+        children.insert(child_id.clone());
 
         let parents = self.parents.entry(child_id).or_default();
-        if !parents.contains(&space_id) {
-            parents.push(space_id);
-        }
+        parents.insert(space_id);
     }
 
     pub fn remove_child(&mut self, space_id: &RoomId, child_id: &RoomId) {
         if let Some(children) = self.children.get_mut(space_id) {
-            children.retain(|id| id != child_id);
+            children.remove(child_id);
         }
         if let Some(parents) = self.parents.get_mut(child_id) {
-            parents.retain(|id| id != space_id);
+            parents.remove(space_id);
         }
     }
 
@@ -878,7 +874,7 @@ impl MatrixEngine {
                 .space_hierarchy
                 .parents
                 .get(room.room_id())
-                .and_then(|parents| parents.first())
+                .and_then(|parents| parents.iter().next())
                 .map(|id| id.to_string())
         };
 
