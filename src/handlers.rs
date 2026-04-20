@@ -71,6 +71,7 @@ impl Constellations {
         tasks.push(title_task);
 
         if let Some(matrix) = &self.matrix {
+            let mut media_fetches = Vec::new();
             for room in self.room_list.iter() {
                 if let Some(avatar_url) = &room.avatar_url {
                     if !self.media_cache.contains_key(avatar_url) {
@@ -78,17 +79,23 @@ impl Constellations {
                         let url_str = avatar_url.clone();
                         let uri = matrix_sdk::ruma::OwnedMxcUri::from(avatar_url.as_str());
                         let source = matrix_sdk::ruma::events::room::MediaSource::Plain(uri);
-                        tasks.push(Task::perform(
-                            async move {
-                                matrix_clone
-                                    .fetch_media(source)
-                                    .await
-                                    .map_err(|e| e.to_string())
-                            },
-                            move |res| Message::MediaFetched(url_str.clone(), res).into(),
-                        ));
+                        media_fetches.push(async move {
+                            let res = matrix_clone.fetch_media(source).await.map_err(|e| e.to_string());
+                            (url_str, res)
+                        });
                     }
                 }
+            }
+            if !media_fetches.is_empty() {
+                tasks.push(Task::perform(
+                    async move {
+                        futures::stream::iter(media_fetches)
+                            .buffer_unordered(10)
+                            .collect::<Vec<_>>()
+                            .await
+                    },
+                    |results| Message::MediaFetchedBatch(results).into(),
+                ));
             }
         }
 
@@ -100,7 +107,8 @@ impl Constellations {
         diff: eyeball_im::VectorDiff<std::sync::Arc<matrix::TimelineItem>>,
     ) -> Task<Action<<Constellations as Application>::Message>> {
         let mut tasks = Vec::new();
-        let mut check_item = |item: &std::sync::Arc<matrix::TimelineItem>| {
+        let mut media_fetches = Vec::new();
+        let mut check_item = |item: &std::sync::Arc<matrix::TimelineItem>, fetches: &mut Vec<_>| {
             if let Some(event) = item.as_event() {
                 if let matrix_sdk_ui::timeline::TimelineDetails::Ready(profile) =
                     event.sender_profile()
@@ -114,15 +122,10 @@ impl Constellations {
                                 let source = matrix_sdk::ruma::events::room::MediaSource::Plain(
                                     avatar_url.clone(),
                                 );
-                                tasks.push(cosmic::iced::Task::perform(
-                                    async move {
-                                        matrix_clone
-                                            .fetch_media(source)
-                                            .await
-                                            .map_err(|e| e.to_string())
-                                    },
-                                    move |res| Message::MediaFetched(mxc_url.clone(), res).into(),
-                                ));
+                                fetches.push(async move {
+                                    let res = matrix_clone.fetch_media(source).await.map_err(|e| e.to_string());
+                                    (mxc_url, res)
+                                });
                             }
                         }
                     }
@@ -131,13 +134,25 @@ impl Constellations {
         };
 
         match &diff {
-            eyeball_im::VectorDiff::Insert { value, .. } => check_item(value),
-            eyeball_im::VectorDiff::Set { value, .. } => check_item(value),
-            eyeball_im::VectorDiff::PushBack { value } => check_item(value),
-            eyeball_im::VectorDiff::PushFront { value } => check_item(value),
-            eyeball_im::VectorDiff::Append { values } => values.iter().for_each(&mut check_item),
-            eyeball_im::VectorDiff::Reset { values } => values.iter().for_each(&mut check_item),
+            eyeball_im::VectorDiff::Insert { value, .. } => check_item(value, &mut media_fetches),
+            eyeball_im::VectorDiff::Set { value, .. } => check_item(value, &mut media_fetches),
+            eyeball_im::VectorDiff::PushBack { value } => check_item(value, &mut media_fetches),
+            eyeball_im::VectorDiff::PushFront { value } => check_item(value, &mut media_fetches),
+            eyeball_im::VectorDiff::Append { values } => values.iter().for_each(|v| check_item(v, &mut media_fetches)),
+            eyeball_im::VectorDiff::Reset { values } => values.iter().for_each(|v| check_item(v, &mut media_fetches)),
             _ => {}
+        }
+
+        if !media_fetches.is_empty() {
+            tasks.push(cosmic::iced::Task::perform(
+                async move {
+                    futures::stream::iter(media_fetches)
+                        .buffer_unordered(10)
+                        .collect::<Vec<_>>()
+                        .await
+                },
+                |results| Message::MediaFetchedBatch(results).into(),
+            ));
         }
 
         let mapped_diff = match diff {
