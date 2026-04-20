@@ -80,12 +80,13 @@ impl Constellations {
                         let source = matrix_sdk::ruma::events::room::MediaSource::Plain(uri);
                         tasks.push(Task::perform(
                             async move {
-                                matrix_clone
+                                let res = matrix_clone
                                     .fetch_media(source)
                                     .await
-                                    .map_err(|e| e.to_string())
+                                    .map_err(|e| e.to_string());
+                                (url_str, res)
                             },
-                            move |res| Message::MediaFetched(url_str.clone(), res).into(),
+                            move |(url_str, res)| Message::MediaFetched(url_str, res).into(),
                         ));
                     }
                 }
@@ -110,18 +111,18 @@ impl Constellations {
                         if !self.media_cache.contains_key(&url_str) {
                             if let Some(matrix) = &self.matrix {
                                 let matrix_clone = matrix.clone();
-                                let mxc_url = url_str.clone();
                                 let source = matrix_sdk::ruma::events::room::MediaSource::Plain(
                                     avatar_url.clone(),
                                 );
                                 tasks.push(cosmic::iced::Task::perform(
                                     async move {
-                                        matrix_clone
+                                        let res = matrix_clone
                                             .fetch_media(source)
                                             .await
-                                            .map_err(|e| e.to_string())
+                                            .map_err(|e| e.to_string());
+                                        (url_str, res)
                                     },
-                                    move |res| Message::MediaFetched(mxc_url.clone(), res).into(),
+                                    move |(url_str, res)| Message::MediaFetched(url_str, res).into(),
                                 ));
                             }
                         }
@@ -302,7 +303,7 @@ impl Constellations {
     ) -> Task<Action<<Constellations as Application>::Message>> {
         if let (Some(matrix), Some(room_id)) = (&self.matrix, &self.selected_room) {
             let body = self.composer_text.clone();
-            let attachments = self.composer_attachments.clone();
+            let attachments = std::mem::take(&mut self.composer_attachments);
 
             if body.is_empty() && attachments.is_empty() {
                 return Task::none();
@@ -335,20 +336,18 @@ impl Constellations {
             for path in attachments {
                 let matrix_clone = matrix.clone();
                 let room_id_clone = room_id.clone();
-                let path_clone = path.clone();
 
                 tasks.push(Task::perform(
                     async move {
-                        matrix_clone
-                            .send_attachment(&room_id_clone, &path_clone)
+                        let res = matrix_clone
+                            .send_attachment(&room_id_clone, &path)
                             .await
-                            .map_err(|e| e.to_string())
+                            .map_err(|e| e.to_string());
+                        (path, res)
                     },
-                    move |res| Action::from(Message::AttachmentSent(path.clone(), res)),
+                    move |(path, res)| Action::from(Message::AttachmentSent(path, res)),
                 ));
             }
-
-            self.composer_attachments.clear();
 
             Task::batch(tasks)
         } else {
@@ -420,16 +419,15 @@ impl Constellations {
 
             if let Some(space_id) = space_id {
                 let matrix_clone = matrix.clone();
-                let sid_inner = space_id.clone();
-                let sid_res = space_id.clone();
                 tasks.push(Task::perform(
                     async move {
-                        matrix_clone
-                            .get_space_children(sid_inner.as_str())
+                        let res = matrix_clone
+                            .get_space_children(space_id.as_str())
                             .await
-                            .map_err(|e| e.to_string())
+                            .map_err(|e| e.to_string());
+                        (space_id, res)
                     },
-                    move |res| Action::from(Message::SpaceChildrenFetched(sid_res.clone(), res)),
+                    move |(space_id, res)| Action::from(Message::SpaceChildrenFetched(space_id, res)),
                 ));
             } else {
                 self.other_rooms.clear();
@@ -591,8 +589,7 @@ impl Constellations {
             let matrix = matrix.clone();
             let homeserver = self.login_homeserver.clone();
             let username = self.login_username.clone();
-            let password = self.login_password.clone();
-            self.login_password.clear();
+            let password = std::mem::take(&mut self.login_password);
 
             Task::perform(
                 async move {
@@ -650,8 +647,7 @@ impl Constellations {
             let matrix = matrix.clone();
             let homeserver = self.login_homeserver.clone();
             let username = self.login_username.clone();
-            let password = self.login_password.clone();
-            self.login_password.clear();
+            let password = std::mem::take(&mut self.login_password);
 
             Task::perform(
                 async move {
