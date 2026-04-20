@@ -103,8 +103,8 @@ impl State {
 
                         let mut tasks = Vec::new();
 
-                        if let Some(url) = &self.avatar_url {
-                            if let Some(matrix) = matrix {
+                        if let Some(url) = &self.avatar_url
+                            && let Some(matrix) = matrix {
                                 let engine = matrix.clone();
                                 let mxc = url.clone();
                                 self.is_loading_avatar = true;
@@ -123,7 +123,6 @@ impl State {
                                     },
                                 ));
                             }
-                        }
 
                         tasks.push(Task::done(Action::from(crate::Message::SpaceSettings(
                             Message::LoadChildren,
@@ -165,8 +164,8 @@ impl State {
                 },
             ),
             Message::AvatarFileSelected(path_opt) => {
-                if let Some(path) = path_opt {
-                    if let Some(matrix) = matrix {
+                if let Some(path) = path_opt
+                    && let Some(matrix) = matrix {
                         self.is_uploading_avatar = true;
                         let engine = matrix.clone();
                         let room_id = self.space_id.clone().unwrap_or_default();
@@ -190,7 +189,6 @@ impl State {
                             },
                         );
                     }
-                }
                 Task::none()
             }
             Message::AvatarUploaded(res) => {
@@ -208,8 +206,8 @@ impl State {
                 Task::none()
             }
             Message::LoadChildren => {
-                if let Some(matrix) = matrix {
-                    if let Some(space_id) = &self.space_id {
+                if let Some(matrix) = matrix
+                    && let Some(space_id) = &self.space_id {
                         self.is_loading_children = true;
                         let engine = matrix.clone();
                         let space_id_clone = space_id.clone();
@@ -227,7 +225,6 @@ impl State {
                             },
                         );
                     }
-                }
                 Task::none()
             }
             Message::ChildrenLoaded(res) => {
@@ -307,8 +304,8 @@ impl State {
                 Task::none()
             }
             Message::AddChild => {
-                if let Some(matrix) = matrix {
-                    if let Some(space_id) = &self.space_id {
+                if let Some(matrix) = matrix
+                    && let Some(space_id) = &self.space_id {
                         self.is_adding_child = true;
                         let engine = matrix.clone();
                         let space_id_clone = space_id.clone();
@@ -327,7 +324,6 @@ impl State {
                             },
                         );
                     }
-                }
                 Task::none()
             }
             Message::ChildAdded(res) => {
@@ -346,8 +342,8 @@ impl State {
                 Task::none()
             }
             Message::RemoveChild(child_id) => {
-                if let Some(matrix) = matrix {
-                    if let Some(space_id) = &self.space_id {
+                if let Some(matrix) = matrix
+                    && let Some(space_id) = &self.space_id {
                         let engine = matrix.clone();
                         let space_id_clone = space_id.clone();
                         let child_id_clone = child_id.clone();
@@ -367,7 +363,6 @@ impl State {
                             },
                         );
                     }
-                }
                 Task::none()
             }
             Message::ChildRemoved(_child_id, res) => {

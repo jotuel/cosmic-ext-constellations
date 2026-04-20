@@ -313,8 +313,8 @@ impl State {
                 Task::none()
             }
             Message::SaveProfile => {
-                if let Some(matrix) = matrix {
-                    if self.display_name != self.original_display_name {
+                if let Some(matrix) = matrix
+                    && self.display_name != self.original_display_name {
                         self.is_saving = true;
                         self.error = None;
                         let matrix = matrix.clone();
@@ -341,7 +341,6 @@ impl State {
                             },
                         );
                     }
-                }
                 Task::none()
             }
             Message::ProfileSaved(res) => {
@@ -756,8 +755,8 @@ impl State {
                 Task::none()
             }
             Message::SaveDeviceName(ref device_id) => {
-                if let Some(matrix) = matrix {
-                    if let Some(device) =
+                if let Some(matrix) = matrix
+                    && let Some(device) =
                         self.devices.iter_mut().find(|d| d.device_id == *device_id)
                     {
                         device.is_renaming = false;
@@ -785,7 +784,6 @@ impl State {
                             },
                         );
                     }
-                }
                 Task::none()
             }
             Message::DeviceRenamed(ref device_id, res) => {
@@ -804,8 +802,8 @@ impl State {
                 Task::none()
             }
             Message::DeleteDevice(ref device_id) => {
-                if let Some(matrix) = matrix {
-                    if let Some(device) =
+                if let Some(matrix) = matrix
+                    && let Some(device) =
                         self.devices.iter_mut().find(|d| d.device_id == *device_id)
                     {
                         device.is_deleting = true;
@@ -853,7 +851,6 @@ impl State {
                             },
                         );
                     }
-                }
                 Task::none()
             }
             Message::DeviceDeleted(ref device_id, res) => {

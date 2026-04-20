@@ -286,7 +286,7 @@ impl ConstellationsItem {
                     profile
                         .display_name
                         .as_deref()
-                        .unwrap_or(&event.sender().to_string())
+                        .unwrap_or(event.sender().as_ref())
                         .to_string(),
                     profile.avatar_url.as_ref().map(|uri| uri.to_string()),
                 ),
@@ -384,13 +384,12 @@ impl Constellations {
             let mut rooms = Vec::new();
             if let Some(matrix) = &self.matrix {
                 for room in self.room_list.iter().filter(|r| !r.is_space) {
-                    if let Ok(room_id) = matrix_sdk::ruma::RoomId::parse(&*room.id) {
-                        if matrix.is_in_space_sync(&room_id, selected_space)
+                    if let Ok(room_id) = matrix_sdk::ruma::RoomId::parse(&*room.id)
+                        && matrix.is_in_space_sync(&room_id, selected_space)
                             && filter_by_search(room)
                         {
                             rooms.push(room.clone());
                         }
-                    }
                 }
             }
             self.filtered_room_list = rooms;
@@ -731,11 +730,10 @@ impl Application for Constellations {
             |res| Action::from(Message::EngineReady(res)),
         ));
 
-        if let Some(uri) = flags {
-            if let Ok(url) = Url::parse(&uri) {
+        if let Some(uri) = flags
+            && let Ok(url) = Url::parse(&uri) {
                 tasks.push(Task::done(Action::from(Message::OidcCallback(url))));
             }
-        }
 
         let mut app = Constellations {
             core: core.clone(),
@@ -832,9 +830,9 @@ impl Application for Constellations {
                 self.composer_preview_events = parse_markdown(&text);
                 self.composer_text = text;
 
-                if self.app_settings.send_typing_notifications {
-                    if let Some(matrix) = &self.matrix {
-                        if let Some(room_id) = &self.selected_room {
+                if self.app_settings.send_typing_notifications
+                    && let Some(matrix) = &self.matrix
+                        && let Some(room_id) = &self.selected_room {
                             let matrix = matrix.clone();
                             let room_id = room_id.clone();
                             let typing = !self.composer_text.is_empty();
@@ -845,8 +843,6 @@ impl Application for Constellations {
                                 |_| Action::from(Message::NoOp),
                             );
                         }
-                    }
-                }
 
                 Task::none()
             }
@@ -1068,14 +1064,13 @@ impl Application for Constellations {
                             &self.matrix,
                         );
                     }
-                } else if panel == SettingsPanel::Space {
-                    if let Some(space_id) = &self.selected_space {
+                } else if panel == SettingsPanel::Space
+                    && let Some(space_id) = &self.selected_space {
                         return self.space_settings.update(
                             settings::space::Message::LoadSpace(space_id.to_string()),
                             &self.matrix,
                         );
                     }
-                }
                 Task::none()
             }
             Message::CloseSettings => {
