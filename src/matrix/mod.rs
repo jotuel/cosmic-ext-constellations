@@ -17,7 +17,7 @@ pub use matrix_sdk_ui::timeline::{
     RoomExt, Timeline, TimelineEventItemId, TimelineItem, VirtualTimelineItem,
 };
 use oo7::Keyring;
-use rand::Rng;
+use rand::{RngCore, rngs::OsRng};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -1457,7 +1457,7 @@ impl MatrixEngine {
         Ok(())
     }
 
-    async fn get_or_create_store_passphrase() -> Result<String> {
+    pub(crate) async fn get_or_create_store_passphrase() -> Result<String> {
         let keyring = Keyring::new().await?;
         let mut attributes = HashMap::new();
         attributes.insert("app_id", "fi.joonastuomi.CosmicExtConstellations");
@@ -1473,7 +1473,8 @@ impl MatrixEngine {
         }
 
         let mut buf = [0u8; 32];
-        rand::rng().fill_bytes(&mut buf);
+        OsRng.try_fill_bytes(&mut buf)
+            .context("Failed to generate secure random bytes for store passphrase")?;
 
         let passphrase: String = buf.iter().map(|b| format!("{:02x}", b)).collect();
 
