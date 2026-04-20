@@ -115,6 +115,37 @@ fn test_space_hierarchy_multiple_parents() {
 }
 
 #[test]
+fn test_space_hierarchy_remove_child() {
+    let mut hierarchy = SpaceHierarchy::new();
+    let space_1 = RoomId::parse("!space1:example.com").unwrap();
+    let space_2 = RoomId::parse("!space2:example.com").unwrap();
+    let room = RoomId::parse("!room:example.com").unwrap();
+
+    // Add child to space_1 and space_2
+    hierarchy.add_child(space_1.clone(), room.clone());
+    hierarchy.add_child(space_2.clone(), room.clone());
+
+    assert!(hierarchy.is_in_space(&room, &space_1));
+    assert!(hierarchy.is_in_space(&room, &space_2));
+
+    // Remove child from space_1
+    hierarchy.remove_child(&space_1, &room);
+
+    // Verify it is no longer in space_1 but still in space_2
+    assert!(!hierarchy.is_in_space(&room, &space_1));
+    assert!(hierarchy.is_in_space(&room, &space_2));
+
+    // Remove child from space_1 again (should be a no-op)
+    hierarchy.remove_child(&space_1, &room);
+    assert!(!hierarchy.is_in_space(&room, &space_1));
+
+    // Remove a non-existent child
+    let unknown_room = RoomId::parse("!unknown:example.com").unwrap();
+    hierarchy.remove_child(&space_1, &unknown_room);
+    assert!(!hierarchy.is_in_space(&unknown_room, &space_1));
+}
+
+#[test]
 fn test_room_data_space_serialization() {
     let room_data = RoomData {
         id: "!room:example.com".into(),
