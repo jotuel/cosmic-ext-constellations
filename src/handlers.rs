@@ -80,7 +80,10 @@ impl Constellations {
                         let uri = matrix_sdk::ruma::OwnedMxcUri::from(avatar_url.as_str());
                         let source = matrix_sdk::ruma::events::room::MediaSource::Plain(uri);
                         media_fetches.push(async move {
-                            let res = matrix_clone.fetch_media(source).await.map_err(|e| e.to_string());
+                            let res = matrix_clone
+                                .fetch_media(source)
+                                .await
+                                .map_err(|e| e.to_string());
                             (url_str, res)
                         });
                     }
@@ -108,7 +111,7 @@ impl Constellations {
     ) -> Task<Action<<Constellations as Application>::Message>> {
         let mut tasks = Vec::new();
         let mut media_fetches = Vec::new();
-        let mut check_item = |item: &std::sync::Arc<matrix::TimelineItem>, fetches: &mut Vec<_>| {
+        let check_item = |item: &std::sync::Arc<matrix::TimelineItem>, fetches: &mut Vec<_>| {
             if let Some(event) = item.as_event() {
                 if let matrix_sdk_ui::timeline::TimelineDetails::Ready(profile) =
                     event.sender_profile()
@@ -122,8 +125,11 @@ impl Constellations {
                                     avatar_url.clone(),
                                 );
                                 fetches.push(async move {
-                                    let res = matrix_clone.fetch_media(source).await.map_err(|e| e.to_string());
-                                    (mxc_url, res)
+                                    let res = matrix_clone
+                                        .fetch_media(source)
+                                        .await
+                                        .map_err(|e| e.to_string());
+                                    (url_str, res)
                                 });
                             }
                         }
@@ -137,8 +143,12 @@ impl Constellations {
             eyeball_im::VectorDiff::Set { value, .. } => check_item(value, &mut media_fetches),
             eyeball_im::VectorDiff::PushBack { value } => check_item(value, &mut media_fetches),
             eyeball_im::VectorDiff::PushFront { value } => check_item(value, &mut media_fetches),
-            eyeball_im::VectorDiff::Append { values } => values.iter().for_each(|v| check_item(v, &mut media_fetches)),
-            eyeball_im::VectorDiff::Reset { values } => values.iter().for_each(|v| check_item(v, &mut media_fetches)),
+            eyeball_im::VectorDiff::Append { values } => values
+                .iter()
+                .for_each(|v| check_item(v, &mut media_fetches)),
+            eyeball_im::VectorDiff::Reset { values } => values
+                .iter()
+                .for_each(|v| check_item(v, &mut media_fetches)),
             _ => {}
         }
 
@@ -440,7 +450,9 @@ impl Constellations {
                             .map_err(|e| e.to_string());
                         (space_id, res)
                     },
-                    move |(space_id, res)| Action::from(Message::SpaceChildrenFetched(space_id, res)),
+                    move |(space_id, res)| {
+                        Action::from(Message::SpaceChildrenFetched(space_id, res))
+                    },
                 ));
             } else {
                 self.other_rooms.clear();
