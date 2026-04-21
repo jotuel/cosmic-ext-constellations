@@ -9,6 +9,8 @@ pub struct State {
     pub space_id: Option<String>,
     pub name: String,
     pub original_name: String,
+    pub canonical_alias: String,
+    pub original_canonical_alias: String,
     pub is_loading: bool,
     pub is_saving: bool,
     pub error: Option<String>,
@@ -30,6 +32,7 @@ pub enum Message {
     SpaceLoaded(Result<SpaceInfo, String>),
     NameChanged(String),
     TopicChanged(String),
+    CanonicalAliasChanged(String),
     SaveSpace,
     SpaceSaved(Result<(), String>),
     DismissError,
@@ -50,6 +53,7 @@ pub enum Message {
 pub struct SpaceInfo {
     pub name: String,
     pub topic: String,
+    pub canonical_alias: Option<String>,
     pub avatar_url: Option<String>,
 }
 
@@ -79,6 +83,7 @@ impl State {
                             Ok(SpaceInfo {
                                 name: room.name().unwrap_or_default(),
                                 topic: room.topic().unwrap_or_default(),
+                                canonical_alias: room.canonical_alias().map(|a| a.to_string()),
                                 avatar_url: room.avatar_url().map(|u| u.to_string()),
                             })
                         },
@@ -98,6 +103,9 @@ impl State {
                         self.original_name = info.name;
                         self.topic = info.topic.clone();
                         self.original_topic = info.topic;
+                        self.canonical_alias = info.canonical_alias.clone().unwrap_or_default();
+                        self.original_canonical_alias =
+                            info.canonical_alias.clone().unwrap_or_default();
                         self.avatar_url = info.avatar_url;
                         self.error = None;
 
@@ -248,6 +256,10 @@ impl State {
                 self.topic = topic;
                 Task::none()
             }
+            Message::CanonicalAliasChanged(alias) => {
+                self.canonical_alias = alias;
+                Task::none()
+            }
             Message::SaveSpace => {
                 if let Some(matrix) = matrix {
                     if let Some(space_id) = &self.space_id {
@@ -257,9 +269,11 @@ impl State {
                         let engine = matrix.clone();
                         let new_name = self.name.clone();
                         let new_topic = self.topic.clone();
+                        let new_alias = self.canonical_alias.clone();
                         let space_id_clone = space_id.clone();
                         let original_name = self.original_name.clone();
                         let original_topic = self.original_topic.clone();
+                        let original_alias = self.original_canonical_alias.clone();
 
                         Task::perform(
                             async move {
@@ -272,6 +286,19 @@ impl State {
                                 if new_topic != original_topic {
                                     engine
                                         .set_room_topic(&space_id_clone, new_topic)
+                                        .await
+                                        .map_err(|e| e.to_string())?;
+                                }
+                                if new_alias != original_alias {
+                                    engine
+                                        .set_canonical_alias(
+                                            &space_id_clone,
+                                            if new_alias.is_empty() {
+                                                None
+                                            } else {
+                                                Some(new_alias)
+                                            },
+                                        )
                                         .await
                                         .map_err(|e| e.to_string())?;
                                 }
@@ -296,6 +323,7 @@ impl State {
                     Ok(_) => {
                         self.original_name = self.name.clone();
                         self.original_topic = self.topic.clone();
+                        self.original_canonical_alias = self.canonical_alias.clone();
                         self.error = None;
                     }
                     Err(e) => {
@@ -455,13 +483,25 @@ impl State {
                 .push(text_input::text_input("Topic", &self.topic).on_input(Message::TopicChanged)),
         );
 
+        col = col.push(
+            Column::new()
+                .spacing(5)
+                .push(text::body("Canonical Alias").size(12))
+                .push(
+                    text_input::text_input("#space_name:server.com", &self.canonical_alias)
+                        .on_input(Message::CanonicalAliasChanged),
+                ),
+        );
+
         let mut save_btn = button::text(if self.is_saving {
             "Saving..."
         } else {
             "Save Changes"
         });
 
-        let has_changes = self.name != self.original_name || self.topic != self.original_topic;
+        let has_changes = self.name != self.original_name
+            || self.topic != self.original_topic
+            || self.canonical_alias != self.original_canonical_alias;
 
         if has_changes && !self.is_saving {
             save_btn = save_btn.on_press(Message::SaveSpace);
@@ -529,5 +569,42 @@ impl State {
         );
 
         col.into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_name_changed() {
+        let mut state = State::default();
+        let _ = state.update(Message::NameChanged("New Space Name".to_string()), &None);
+        assert_eq!(state.name, "New Space Name");
+    }
+
+    #[test]
+    fn test_topic_changed() {
+        let mut state = State::default();
+        let _ = state.update(Message::TopicChanged("New Topic".to_string()), &None);
+        assert_eq!(state.topic, "New Topic");
+    }
+
+    #[test]
+    fn test_canonical_alias_changed() {
+        let mut state = State::default();
+        let _ = state.update(
+            Message::CanonicalAliasChanged("#new_alias:example.com".to_string()),
+            &None,
+        );
+        assert_eq!(state.canonical_alias, "#new_alias:example.com");
+    }
+
+    #[test]
+    fn test_dismiss_error() {
+        let mut state = State::default();
+        state.error = Some("An error occurred".to_string());
+        let _ = state.update(Message::DismissError, &None);
+        assert_eq!(state.error, None);
     }
 }

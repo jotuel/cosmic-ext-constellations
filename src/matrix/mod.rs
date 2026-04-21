@@ -987,6 +987,30 @@ impl MatrixEngine {
         Ok(())
     }
 
+    pub async fn set_canonical_alias(&self, room_id: &str, alias: Option<String>) -> Result<()> {
+        let room_id_parsed = RoomId::parse(room_id)?;
+        let client = self.client().await;
+        let room = client.get_room(&room_id_parsed).context("Room not found")?;
+
+        use matrix_sdk::ruma::events::room::canonical_alias::RoomCanonicalAliasEventContent;
+        use matrix_sdk::ruma::room::RoomAliasId;
+
+        let mut content = room
+            .get_state_event_static::<RoomCanonicalAliasEventContent>()
+            .await?
+            .and_then(|e| e.deserialize().ok())
+            .and_then(|e| e.as_original().map(|o| o.content.clone()))
+            .unwrap_or_else(RoomCanonicalAliasEventContent::new);
+
+        content.alias = alias
+            .filter(|s| !s.is_empty())
+            .map(RoomAliasId::parse)
+            .transpose()?;
+
+        room.send_state_event_for_key("", content).await?;
+        Ok(())
+    }
+
     pub async fn upload_room_avatar(&self, room_id: &str, data: Vec<u8>, mime: &str) -> Result<()> {
         let room_id_parsed = RoomId::parse(room_id)?;
         let client = self.client().await;
