@@ -7,6 +7,7 @@ use cosmic::{Action, Element, Task};
 use matrix_sdk::encryption::verification::{
     SasState, SasVerification, VerificationRequest, VerificationRequestState,
 };
+use matrix_sdk::ruma::OwnedUserId;
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
@@ -57,11 +58,21 @@ pub struct State {
     pub global_notification_mode_group:
         Option<matrix_sdk::notification_settings::RoomNotificationMode>,
     pub is_loading_global_notifications: bool,
+    pub ignored_users: Vec<OwnedUserId>,
+    pub is_loading_ignored_users: bool,
+    pub new_ignore_user_id: String,
 }
 
 #[derive(Debug, Clone)]
 pub enum Message {
     LoadProfile,
+    LoadIgnoredUsers,
+    IgnoredUsersLoaded(Result<Vec<OwnedUserId>, String>),
+    NewIgnoreUserIdChanged(String),
+    IgnoreUser,
+    UserIgnored(Result<(), String>),
+    UnignoreUser(OwnedUserId),
+    UserUnignored(OwnedUserId, Result<(), String>),
     ProfileLoaded(Result<Option<String>, String>),
     AvatarUrlLoaded(Result<Option<String>, String>),
     AvatarMediaFetched(Result<Vec<u8>, String>),
@@ -194,7 +205,111 @@ impl State {
                         },
                     );
 
-                    return Task::batch(vec![t_name, t_avatar, t_devices, t_dm, t_group]);
+                    let t_ignored = Task::perform(async move {}, |_| {
+                        Action::from(crate::Message::UserSettings(Message::LoadIgnoredUsers))
+                    });
+
+                    return Task::batch(vec![
+                        t_name, t_avatar, t_devices, t_dm, t_group, t_ignored,
+                    ]);
+                }
+                Task::none()
+            }
+            Message::LoadIgnoredUsers => {
+                if let Some(matrix) = matrix {
+                    self.is_loading_ignored_users = true;
+                    let matrix = matrix.clone();
+                    return Task::perform(
+                        async move { matrix.ignored_users().await.map_err(|e| e.to_string()) },
+                        |res| {
+                            Action::from(crate::Message::UserSettings(Message::IgnoredUsersLoaded(
+                                res,
+                            )))
+                        },
+                    );
+                }
+                Task::none()
+            }
+            Message::IgnoredUsersLoaded(res) => {
+                self.is_loading_ignored_users = false;
+                match res {
+                    Ok(users) => {
+                        self.ignored_users = users;
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to load ignored users: {}", e));
+                    }
+                }
+                Task::none()
+            }
+            Message::NewIgnoreUserIdChanged(user_id) => {
+                self.new_ignore_user_id = user_id;
+                Task::none()
+            }
+            Message::IgnoreUser => {
+                if let Some(matrix) = matrix
+                    && !self.new_ignore_user_id.is_empty()
+                {
+                    let matrix = matrix.clone();
+                    let user_id_str = self.new_ignore_user_id.clone();
+                    self.is_loading_ignored_users = true;
+                    return Task::perform(
+                        async move {
+                            let user_id = matrix_sdk::ruma::UserId::parse(&user_id_str)
+                                .map_err(|e| e.to_string())?;
+                            matrix
+                                .ignore_user(&user_id)
+                                .await
+                                .map_err(|e| e.to_string())
+                        },
+                        |res| Action::from(crate::Message::UserSettings(Message::UserIgnored(res))),
+                    );
+                }
+                Task::none()
+            }
+            Message::UserIgnored(res) => {
+                self.is_loading_ignored_users = false;
+                match res {
+                    Ok(_) => {
+                        self.new_ignore_user_id.clear();
+                        return self.update(Message::LoadIgnoredUsers, matrix);
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to ignore user: {}", e));
+                    }
+                }
+                Task::none()
+            }
+            Message::UnignoreUser(user_id) => {
+                if let Some(matrix) = matrix {
+                    let matrix = matrix.clone();
+                    let user_id_clone = user_id.clone();
+                    self.is_loading_ignored_users = true;
+                    return Task::perform(
+                        async move {
+                            matrix
+                                .unignore_user(&user_id_clone)
+                                .await
+                                .map_err(|e| e.to_string())
+                        },
+                        move |res| {
+                            Action::from(crate::Message::UserSettings(Message::UserUnignored(
+                                user_id, res,
+                            )))
+                        },
+                    );
+                }
+                Task::none()
+            }
+            Message::UserUnignored(_, res) => {
+                self.is_loading_ignored_users = false;
+                match res {
+                    Ok(_) => {
+                        return self.update(Message::LoadIgnoredUsers, matrix);
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to unignore user: {}", e));
+                    }
                 }
                 Task::none()
             }
@@ -1173,6 +1288,52 @@ impl State {
         devices_col.into()
     }
 
+    fn view_ignored_users<'a>(&'a self) -> Element<'a, Message> {
+        let mut col = Column::new()
+            .spacing(10)
+            .push(text::title3("Ignored Users"));
+
+        if self.is_loading_ignored_users && self.ignored_users.is_empty() {
+            col = col.push(text::body("Loading ignored users..."));
+        } else {
+            for user_id in &self.ignored_users {
+                let mut row = Row::new()
+                    .spacing(10)
+                    .align_y(Alignment::Center)
+                    .push(text::body(user_id.as_str()).size(14))
+                    .push(cosmic::widget::space().width(cosmic::iced::Length::Fill));
+
+                let mut unignore_btn = button::destructive("Unignore");
+                if !self.is_loading_ignored_users {
+                    unignore_btn = unignore_btn.on_press(Message::UnignoreUser(user_id.clone()));
+                }
+                row = row.push(unignore_btn);
+                col = col.push(row);
+            }
+
+            let mut ignore_btn = button::destructive("Ignore User");
+            if !self.is_loading_ignored_users && !self.new_ignore_user_id.is_empty() {
+                ignore_btn = ignore_btn.on_press(Message::IgnoreUser);
+            }
+
+            let input_row = Row::new()
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .push(
+                    text_input(
+                        "User ID (e.g. @alice:example.com)",
+                        &self.new_ignore_user_id,
+                    )
+                    .on_input(Message::NewIgnoreUserIdChanged)
+                    .on_submit(Message::IgnoreUser),
+                )
+                .push(ignore_btn);
+            col = col.push(input_row);
+        }
+
+        col.into()
+    }
+
     fn view_verification<'a>(&'a self) -> Element<'a, Message> {
         let mut col = Column::new().spacing(10);
         match &self.verification_ui_state {
@@ -1246,6 +1407,8 @@ impl State {
 
         col = col.push(self.view_password_change());
 
+        col = col.push(self.view_ignored_users());
+
         col = col.push(self.view_devices());
 
         col = col.push(self.view_verification());
@@ -1273,13 +1436,19 @@ mod tests {
     fn test_password_changed() {
         let mut state = State::default();
 
-        let _ = state.update(Message::CurrentPasswordChanged("old_pass".to_string()), &None);
+        let _ = state.update(
+            Message::CurrentPasswordChanged("old_pass".to_string()),
+            &None,
+        );
         assert_eq!(state.current_password, "old_pass");
 
         let _ = state.update(Message::NewPasswordChanged("new_pass".to_string()), &None);
         assert_eq!(state.new_password, "new_pass");
 
-        let _ = state.update(Message::ConfirmNewPasswordChanged("new_pass".to_string()), &None);
+        let _ = state.update(
+            Message::ConfirmNewPasswordChanged("new_pass".to_string()),
+            &None,
+        );
         assert_eq!(state.confirm_new_password, "new_pass");
     }
 
@@ -1313,7 +1482,10 @@ mod tests {
         assert_eq!(state.devices[0].edit_name, "My Phone");
 
         // Edit name
-        let _ = state.update(Message::EditDeviceNameChanged(device_id.clone(), "My New Phone".to_string()), &None);
+        let _ = state.update(
+            Message::EditDeviceNameChanged(device_id.clone(), "My New Phone".to_string()),
+            &None,
+        );
         assert_eq!(state.devices[0].edit_name, "My New Phone");
 
         // Cancel rename
@@ -1321,5 +1493,27 @@ mod tests {
         assert!(!state.devices[0].is_renaming);
         // edit_name should be preserved as it was updated
         assert_eq!(state.devices[0].edit_name, "My New Phone");
+    }
+
+    #[test]
+    fn test_ignored_users_flow() {
+        let mut state = State::default();
+        let user_id = OwnedUserId::try_from("@alice:example.com").unwrap();
+
+        // Load ignored users
+        let _ = state.update(Message::IgnoredUsersLoaded(Ok(vec![user_id.clone()])), &None);
+        assert_eq!(state.ignored_users.len(), 1);
+        assert_eq!(state.ignored_users[0], user_id);
+
+        // Update new ignore user ID input
+        let _ = state.update(
+            Message::NewIgnoreUserIdChanged("@bob:example.com".to_string()),
+            &None,
+        );
+        assert_eq!(state.new_ignore_user_id, "@bob:example.com");
+
+        // After successful ignore, input should be cleared
+        let _ = state.update(Message::UserIgnored(Ok(())), &None);
+        assert_eq!(state.new_ignore_user_id, "");
     }
 }

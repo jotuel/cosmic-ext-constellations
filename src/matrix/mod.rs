@@ -1513,6 +1513,30 @@ impl MatrixEngine {
         Ok(results)
     }
 
+    pub async fn ignored_users(&self) -> Result<Vec<matrix_sdk::ruma::OwnedUserId>> {
+        let client = self.client().await;
+        let ignored = client.account().ignored_users().await?;
+        Ok(ignored)
+    }
+
+    pub async fn ignore_user(&self, user_id: &UserId) -> Result<()> {
+        let client = self.client().await;
+        client.account().ignore_user(user_id).await?;
+        Ok(())
+    }
+
+    pub async fn unignore_user(&self, user_id: &UserId) -> Result<()> {
+        let client = self.client().await;
+        client.account().unignore_user(user_id).await?;
+        Ok(())
+    }
+
+    pub async fn is_user_ignored(&self, user_id: &UserId) -> Result<bool> {
+        let client = self.client().await;
+        let ignored = client.account().ignored_users().await?;
+        Ok(ignored.contains(&user_id.to_owned()))
+    }
+
     async fn setup_client(data_dir: PathBuf, homeserver_url: &str) -> Result<Client> {
         let store_path = data_dir.join("matrix-store");
         let search_index_path = data_dir.join("search-index");
