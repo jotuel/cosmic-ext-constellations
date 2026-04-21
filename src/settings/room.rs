@@ -1158,3 +1158,63 @@ impl State {
         col.into()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_name_changed() {
+        let mut state = State::default();
+        let _ = state.update(Message::NameChanged("New Room Name".to_string()), &None);
+        assert_eq!(state.name, "New Room Name");
+    }
+
+    #[test]
+    fn test_topic_changed() {
+        let mut state = State::default();
+        let _ = state.update(Message::TopicChanged("New Topic".to_string()), &None);
+        assert_eq!(state.topic, "New Topic");
+    }
+
+    #[test]
+    fn test_load_room_no_matrix() {
+        let mut state = State::default();
+        let room_id: Arc<str> = Arc::from("!some_room:example.com");
+        let _ = state.update(Message::LoadRoom(room_id.clone()), &None);
+
+        // Without matrix engine, it shouldn't try to load
+        assert_eq!(state.is_loading, false);
+        assert_eq!(state.room_id, None);
+    }
+
+    #[test]
+    fn test_dismiss_error() {
+        let mut state = State::default();
+        state.error = Some("An error occurred".to_string());
+
+        let _ = state.update(Message::DismissError, &None);
+        assert_eq!(state.error, None);
+    }
+
+    #[test]
+    fn test_invite_user_id_changed() {
+        let mut state = State::default();
+        let _ = state.update(Message::InviteUserIdChanged("@user:example.com".to_string()), &None);
+        assert_eq!(state.invite_user_id, "@user:example.com");
+    }
+
+    #[test]
+    fn test_action_reason_changed() {
+        let mut state = State::default();
+        let _ = state.update(Message::ActionReasonChanged("Spam".to_string()), &None);
+        assert_eq!(state.action_reason, "Spam");
+    }
+
+    #[test]
+    fn test_member_filter_changed() {
+        let mut state = State::default();
+        let _ = state.update(Message::MemberFilterChanged("John".to_string()), &None);
+        assert_eq!(state.member_filter, "John");
+    }
+}
