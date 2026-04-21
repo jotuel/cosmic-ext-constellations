@@ -103,26 +103,25 @@ impl State {
 
                         let mut tasks = Vec::new();
 
-                        if let Some(url) = &self.avatar_url {
-                            if let Some(matrix) = matrix {
-                                let engine = matrix.clone();
-                                let mxc = url.clone();
-                                self.is_loading_avatar = true;
-                                tasks.push(Task::perform(
-                                    async move {
-                                        use matrix_sdk::ruma::events::room::MediaSource;
-                                        let mxc_uri =
-                                            <&matrix_sdk::ruma::MxcUri>::from(mxc.as_str());
-                                        let source = MediaSource::Plain(mxc_uri.to_owned());
-                                        engine.fetch_media(source).await.map_err(|e| e.to_string())
-                                    },
-                                    |res| {
-                                        Action::from(crate::Message::SpaceSettings(
-                                            Message::AvatarMediaFetched(res),
-                                        ))
-                                    },
-                                ));
-                            }
+                        if let Some(url) = &self.avatar_url
+                            && let Some(matrix) = matrix
+                        {
+                            let engine = matrix.clone();
+                            let mxc = url.clone();
+                            self.is_loading_avatar = true;
+                            tasks.push(Task::perform(
+                                async move {
+                                    use matrix_sdk::ruma::events::room::MediaSource;
+                                    let mxc_uri = <&matrix_sdk::ruma::MxcUri>::from(mxc.as_str());
+                                    let source = MediaSource::Plain(mxc_uri.to_owned());
+                                    engine.fetch_media(source).await.map_err(|e| e.to_string())
+                                },
+                                |res| {
+                                    Action::from(crate::Message::SpaceSettings(
+                                        Message::AvatarMediaFetched(res),
+                                    ))
+                                },
+                            ));
                         }
 
                         tasks.push(Task::done(Action::from(crate::Message::SpaceSettings(
@@ -165,31 +164,30 @@ impl State {
                 },
             ),
             Message::AvatarFileSelected(path_opt) => {
-                if let Some(path) = path_opt {
-                    if let Some(matrix) = matrix {
-                        self.is_uploading_avatar = true;
-                        let engine = matrix.clone();
-                        let room_id = self.space_id.clone().unwrap_or_default();
+                if let Some(path) = path_opt
+                    && let Some(matrix) = matrix
+                {
+                    self.is_uploading_avatar = true;
+                    let engine = matrix.clone();
+                    let room_id = self.space_id.clone().unwrap_or_default();
 
-                        return Task::perform(
-                            async move {
-                                let data =
-                                    tokio::fs::read(&path).await.map_err(|e| e.to_string())?;
-                                let mime = mime_guess::from_path(&path)
-                                    .first_raw()
-                                    .unwrap_or("image/jpeg");
-                                engine
-                                    .upload_room_avatar(&room_id, data, mime)
-                                    .await
-                                    .map_err(|e| e.to_string())
-                            },
-                            |res| {
-                                Action::from(crate::Message::SpaceSettings(
-                                    Message::AvatarUploaded(res),
-                                ))
-                            },
-                        );
-                    }
+                    return Task::perform(
+                        async move {
+                            let data = tokio::fs::read(&path).await.map_err(|e| e.to_string())?;
+                            let mime = mime_guess::from_path(&path)
+                                .first_raw()
+                                .unwrap_or("image/jpeg");
+                            engine
+                                .upload_room_avatar(&room_id, data, mime)
+                                .await
+                                .map_err(|e| e.to_string())
+                        },
+                        |res| {
+                            Action::from(crate::Message::SpaceSettings(Message::AvatarUploaded(
+                                res,
+                            )))
+                        },
+                    );
                 }
                 Task::none()
             }
@@ -208,25 +206,25 @@ impl State {
                 Task::none()
             }
             Message::LoadChildren => {
-                if let Some(matrix) = matrix {
-                    if let Some(space_id) = &self.space_id {
-                        self.is_loading_children = true;
-                        let engine = matrix.clone();
-                        let space_id_clone = space_id.clone();
-                        return Task::perform(
-                            async move {
-                                engine
-                                    .get_space_children(&space_id_clone)
-                                    .await
-                                    .map_err(|e| e.to_string())
-                            },
-                            |res| {
-                                Action::from(crate::Message::SpaceSettings(
-                                    Message::ChildrenLoaded(res),
-                                ))
-                            },
-                        );
-                    }
+                if let Some(matrix) = matrix
+                    && let Some(space_id) = &self.space_id
+                {
+                    self.is_loading_children = true;
+                    let engine = matrix.clone();
+                    let space_id_clone = space_id.clone();
+                    return Task::perform(
+                        async move {
+                            engine
+                                .get_space_children(&space_id_clone)
+                                .await
+                                .map_err(|e| e.to_string())
+                        },
+                        |res| {
+                            Action::from(crate::Message::SpaceSettings(Message::ChildrenLoaded(
+                                res,
+                            )))
+                        },
+                    );
                 }
                 Task::none()
             }
@@ -307,26 +305,22 @@ impl State {
                 Task::none()
             }
             Message::AddChild => {
-                if let Some(matrix) = matrix {
-                    if let Some(space_id) = &self.space_id {
-                        self.is_adding_child = true;
-                        let engine = matrix.clone();
-                        let space_id_clone = space_id.clone();
-                        let child_id_clone = self.new_child_id.clone();
-                        return Task::perform(
-                            async move {
-                                engine
-                                    .add_space_child(&space_id_clone, &child_id_clone)
-                                    .await
-                                    .map_err(|e| e.to_string())
-                            },
-                            |res| {
-                                Action::from(crate::Message::SpaceSettings(Message::ChildAdded(
-                                    res,
-                                )))
-                            },
-                        );
-                    }
+                if let Some(matrix) = matrix
+                    && let Some(space_id) = &self.space_id
+                {
+                    self.is_adding_child = true;
+                    let engine = matrix.clone();
+                    let space_id_clone = space_id.clone();
+                    let child_id_clone = self.new_child_id.clone();
+                    return Task::perform(
+                        async move {
+                            engine
+                                .add_space_child(&space_id_clone, &child_id_clone)
+                                .await
+                                .map_err(|e| e.to_string())
+                        },
+                        |res| Action::from(crate::Message::SpaceSettings(Message::ChildAdded(res))),
+                    );
                 }
                 Task::none()
             }
@@ -346,27 +340,27 @@ impl State {
                 Task::none()
             }
             Message::RemoveChild(child_id) => {
-                if let Some(matrix) = matrix {
-                    if let Some(space_id) = &self.space_id {
-                        let engine = matrix.clone();
-                        let space_id_clone = space_id.clone();
-                        let child_id_clone = child_id.clone();
-                        let child_id_for_task = child_id.clone();
-                        return Task::perform(
-                            async move {
-                                engine
-                                    .remove_space_child(&space_id_clone, &child_id_for_task)
-                                    .await
-                                    .map_err(|e| e.to_string())
-                            },
-                            move |res| {
-                                Action::from(crate::Message::SpaceSettings(Message::ChildRemoved(
-                                    child_id_clone,
-                                    res,
-                                )))
-                            },
-                        );
-                    }
+                if let Some(matrix) = matrix
+                    && let Some(space_id) = &self.space_id
+                {
+                    let engine = matrix.clone();
+                    let space_id_clone = space_id.clone();
+                    let child_id_clone = child_id.clone();
+                    let child_id_for_task = child_id.clone();
+                    return Task::perform(
+                        async move {
+                            engine
+                                .remove_space_child(&space_id_clone, &child_id_for_task)
+                                .await
+                                .map_err(|e| e.to_string())
+                        },
+                        move |res| {
+                            Action::from(crate::Message::SpaceSettings(Message::ChildRemoved(
+                                child_id_clone,
+                                res,
+                            )))
+                        },
+                    );
                 }
                 Task::none()
             }

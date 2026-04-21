@@ -1,3 +1,5 @@
+use cosmic::Theme;
+use cosmic::widget::{Container, Text};
 use cosmic::{
     Action, Element, Task,
     iced::{
@@ -145,7 +147,8 @@ impl Constellations {
                     .padding([2, 4]),
             )
             .on_press(Message::OpenReactionPicker(None));
-            reaction_row = reaction_row.push(cancel_btn);
+            let cancel_tooltip = tooltip(cancel_btn, text::body("Close Picker"), Position::Top);
+            reaction_row = reaction_row.push(cancel_tooltip);
         } else {
             // "Add reaction" button
             let btn = button::custom(
@@ -153,7 +156,8 @@ impl Constellations {
                     .padding(2),
             )
             .on_press(Message::OpenReactionPicker(Some(item_id.clone())));
-            reaction_row = reaction_row.push(btn);
+            let btn_tooltip = tooltip(btn, text::body("Add Reaction"), Position::Top);
+            reaction_row = reaction_row.push(btn_tooltip);
         }
 
         reaction_row
@@ -248,78 +252,78 @@ impl Constellations {
         bubble_col
     }
 
+    fn view_markdown_text<'a>(&self, t: &'a str) -> Text<'a, Theme> {
+        Text::new(t).size(if self.app_settings.compact_mode {
+            12
+        } else {
+            14
+        })
+    }
+
+    fn view_markdown_code<'a>(&self, c: &'a str) -> Container<'a, Message, Theme> {
+        Container::new(text::body(c).size(if self.app_settings.compact_mode {
+            10
+        } else {
+            12
+        }))
+        .padding(2)
+    }
+
+    fn view_markdown<'a>(&'a self, markdown: &'a [PreviewEvent]) -> Column<'a, Message, Theme> {
+        let mut md_col: Column<'a, Message, Theme> =
+            Column::new().spacing(if self.app_settings.compact_mode { 2 } else { 5 });
+        let mut current_row = Row::new().spacing(0).align_y(Alignment::Center);
+        let mut row_has_content = false;
+
+        for event in markdown {
+            match event {
+                PreviewEvent::StartHeading => {
+                    if row_has_content {
+                        md_col = md_col.push(current_row);
+                        current_row = Row::new().spacing(0).align_y(Alignment::Center);
+                        row_has_content = false;
+                    }
+                }
+                PreviewEvent::EndBlock => {
+                    if row_has_content {
+                        md_col = md_col.push(current_row);
+                        current_row = Row::new().spacing(0).align_y(Alignment::Center);
+                        row_has_content = false;
+                    }
+                }
+                PreviewEvent::Text(t) => {
+                    current_row = current_row.push(self.view_markdown_text(t.as_str()));
+                    row_has_content = true;
+                }
+                PreviewEvent::Code(c) => {
+                    current_row = current_row.push(self.view_markdown_code(c.as_str()));
+                    row_has_content = true;
+                }
+                PreviewEvent::Break => {
+                    if row_has_content {
+                        md_col = md_col.push(current_row);
+                        current_row = Row::new().spacing(0).align_y(Alignment::Center);
+                        row_has_content = false;
+                    }
+                }
+            }
+        }
+        if row_has_content {
+            md_col = md_col.push(current_row);
+        }
+        md_col
+    }
+
     fn view_message_text<'a>(
         &'a self,
         message: &'a matrix_sdk::ruma::events::room::message::MessageType,
         markdown: &'a [PreviewEvent],
-    ) -> Column<'a, Message, cosmic::Theme> {
-        let mut bubble_col = Column::new();
+    ) -> Column<'a, Message, Theme> {
+        let mut bubble_col: Column<'a, Message, Theme> = Column::new();
         if self.app_settings.render_markdown {
-            let mut md_col =
-                Column::new().spacing(if self.app_settings.compact_mode { 2 } else { 5 });
-            let mut current_row = Row::new().spacing(0).align_y(Alignment::Center);
-            let mut row_has_content = false;
-
-            for event in markdown {
-                match event {
-                    PreviewEvent::StartHeading => {
-                        if row_has_content {
-                            md_col = md_col.push(current_row);
-                            current_row = Row::new().spacing(0).align_y(Alignment::Center);
-                            row_has_content = false;
-                        }
-                    }
-                    PreviewEvent::EndBlock => {
-                        if row_has_content {
-                            md_col = md_col.push(current_row);
-                            current_row = Row::new().spacing(0).align_y(Alignment::Center);
-                            row_has_content = false;
-                        }
-                    }
-                    PreviewEvent::Text(t) => {
-                        current_row = current_row.push(text::body(t.as_str()).size(
-                            if self.app_settings.compact_mode {
-                                12
-                            } else {
-                                14
-                            },
-                        ));
-                        row_has_content = true;
-                    }
-                    PreviewEvent::Code(c) => {
-                        current_row = current_row.push(
-                            container(text::body(c.as_str()).size(
-                                if self.app_settings.compact_mode {
-                                    10
-                                } else {
-                                    12
-                                },
-                            ))
-                            .padding(2),
-                        );
-                        row_has_content = true;
-                    }
-                    PreviewEvent::Break => {
-                        if row_has_content {
-                            md_col = md_col.push(current_row);
-                            current_row = Row::new().spacing(0).align_y(Alignment::Center);
-                            row_has_content = false;
-                        }
-                    }
-                }
-            }
-            if row_has_content {
-                md_col = md_col.push(current_row);
-            }
-            bubble_col = bubble_col.push(md_col);
+            bubble_col = bubble_col.push(self.view_markdown(markdown));
         } else {
-            bubble_col = bubble_col.push(text::body(message.body()).size(
-                if self.app_settings.compact_mode {
-                    12
-                } else {
-                    14
-                },
-            ));
+            bubble_col = bubble_col.push(self.view_markdown_text(message.body()));
         }
         bubble_col
     }
@@ -612,10 +616,11 @@ impl Constellations {
         let mut bottom_content = Column::new().spacing(10).align_x(Alignment::Center);
 
         let plus_btn = button::icon(Named::new("list-add-symbolic"));
+        let plus_tooltip = tooltip(plus_btn, text::body("Create"), Position::Right);
         let key_binds = std::collections::HashMap::new();
 
         let menu_tree = menu::Tree::with_children(
-            RcElementWrapper::new(Element::from(plus_btn)),
+            RcElementWrapper::new(Element::from(plus_tooltip)),
             menu::items(
                 &key_binds,
                 vec![
@@ -638,5 +643,349 @@ impl Constellations {
             .align_x(Alignment::Center);
 
         container(layout).width(60).padding(5).into()
+    }
+
+    pub fn view_sidebar(&self) -> Element<'_, Message> {
+        let mut room_list = Column::new().spacing(5);
+
+        if self.creating_room || self.creating_space {
+            let label = if self.creating_room {
+                "Room Name"
+            } else {
+                "Space Name"
+            };
+
+            let mut name_input =
+                text_input(label, &self.new_room_name).on_input(Message::NewRoomNameChanged);
+
+            let is_empty = self.new_room_name.trim().is_empty();
+
+            let mut create_btn = button::text("Create");
+            if !is_empty {
+                if self.creating_room {
+                    name_input =
+                        name_input.on_submit(|_| Message::CreateRoom(self.new_room_name.clone()));
+                    create_btn =
+                        create_btn.on_press(Message::CreateRoom(self.new_room_name.clone()));
+                } else {
+                    name_input =
+                        name_input.on_submit(|_| Message::CreateSpace(self.new_room_name.clone()));
+                    create_btn =
+                        create_btn.on_press(Message::CreateSpace(self.new_room_name.clone()));
+                }
+            }
+
+            let create_btn_widget: Element<'_, Message> = if is_empty {
+                tooltip(
+                    create_btn,
+                    text::body(format!(
+                        "Enter a {} name to create",
+                        if self.creating_room { "room" } else { "space" }
+                    )),
+                    Position::Top,
+                )
+                .into()
+            } else {
+                create_btn.into()
+            };
+
+            let cancel_msg = if self.creating_room {
+                Message::ToggleCreateRoom
+            } else {
+                Message::ToggleCreateSpace
+            };
+
+            let create_ui = Column::new().spacing(5).push(name_input).push(
+                Row::new()
+                    .spacing(5)
+                    .push(create_btn_widget)
+                    .push(button::text("Cancel").on_press(cancel_msg)),
+            );
+
+            room_list = room_list.push(container(create_ui).padding(5));
+        }
+
+        if let Some(selected_space) = &self.selected_space {
+            let space_name = self
+                .room_list
+                .iter()
+                .find(|r| r.id.as_ref() == selected_space.as_str())
+                .and_then(|r| r.name.as_deref())
+                .unwrap_or("Space");
+            let space_header = Row::new()
+                .align_y(Alignment::Center)
+                .push(text::title3(space_name))
+                .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
+                .push(
+                    button::icon(Named::new("emblem-system"))
+                        .tooltip("Space Settings")
+                        .on_press(Message::OpenSettings(crate::SettingsPanel::Space)),
+                );
+            room_list = room_list.push(container(space_header).padding(5));
+
+            if !self.other_rooms.is_empty() {
+                room_list = room_list
+                    .push(container(text::title3("Joined Rooms").size(14)).padding([10, 5, 5, 5]));
+            }
+        }
+
+        for room in &self.filtered_room_list {
+            let name = room.name.as_deref().unwrap_or("Unknown Room");
+            let room_id = room.id.clone();
+
+            let mut room_content = Column::new().spacing(2);
+
+            let mut header = Row::new().spacing(10).align_y(Alignment::Center);
+
+            if let Some(avatar_url) = &room.avatar_url {
+                if let Some(handle) = self.media_cache.get(avatar_url) {
+                    header =
+                        header.push(cosmic::widget::image(handle.clone()).width(24).height(24));
+                } else {
+                    header = header.push(
+                        container(text::body("#"))
+                            .width(24)
+                            .height(24)
+                            .align_x(Alignment::Center)
+                            .align_y(Alignment::Center),
+                    );
+                }
+            } else {
+                header = header.push(
+                    container(text::body("#"))
+                        .width(24)
+                        .height(24)
+                        .align_x(Alignment::Center)
+                        .align_y(Alignment::Center),
+                );
+            }
+
+            header = header.push(text::body(name));
+
+            if let Some(unread_str) = &room.unread_count_str {
+                header = header.push(text::body(unread_str.as_str()).size(12));
+            }
+
+            room_content = room_content.push(header);
+
+            if let Some(last_msg) = &room.last_message {
+                // Optimization: Avoid allocating a new String on every render frame
+                room_content = room_content.push(text::body(last_msg.as_str()).size(12));
+            }
+
+            let btn = button::custom(
+                container(room_content)
+                    .padding(5)
+                    .width(cosmic::iced::Length::Fill),
+            )
+            .on_press(Message::RoomSelected(room_id));
+
+            room_list = room_list.push(btn);
+        }
+
+        if !self.other_rooms.is_empty() {
+            room_list = room_list
+                .push(container(text::title3("Other Rooms").size(14)).padding([10, 5, 5, 5]));
+
+            for room in &self.other_rooms {
+                let name = room.name.as_deref().unwrap_or_else(|| {
+                    let id = &room.id;
+                    id.strip_prefix('!')
+                        .and_then(|s| s.split(':').next())
+                        .unwrap_or(id)
+                });
+                let room_id = room.id.clone();
+
+                let mut room_content = Column::new().spacing(2);
+
+                let mut header = Row::new().spacing(10).align_y(Alignment::Center);
+
+                if let Some(avatar_url) = &room.avatar_url {
+                    if let Some(handle) = self.media_cache.get(avatar_url) {
+                        header =
+                            header.push(cosmic::widget::image(handle.clone()).width(24).height(24));
+                    } else {
+                        header = header.push(
+                            container(text::body("#"))
+                                .width(24)
+                                .height(24)
+                                .align_x(Alignment::Center)
+                                .align_y(Alignment::Center),
+                        );
+                    }
+                } else {
+                    header = header.push(
+                        container(text::body("#"))
+                            .width(24)
+                            .height(24)
+                            .align_x(Alignment::Center)
+                            .align_y(Alignment::Center),
+                    );
+                }
+
+                header = header.push(text::body(name));
+
+                if let Some(unread_str) = &room.unread_count_str {
+                    header = header.push(text::body(unread_str.as_str()).size(12));
+                }
+
+                room_content = room_content.push(header);
+
+                if let Some(last_msg) = &room.last_message {
+                    room_content = room_content.push(text::body(last_msg.as_str()).size(12));
+                }
+
+                let btn = button::custom(
+                    container(room_content)
+                        .padding(5)
+                        .width(cosmic::iced::Length::Fill),
+                );
+
+                let join_btn = button::text("Join").on_press(Message::JoinRoom(room_id.clone()));
+
+                room_list = room_list.push(
+                    Row::new()
+                        .align_y(Alignment::Center)
+                        .push(btn)
+                        .push(container(join_btn).padding([0, 5])),
+                );
+            }
+        }
+
+        container(scrollable(room_list))
+            .width(250)
+            .padding(10)
+            .into()
+    }
+
+    pub fn view_main_content(&self, status_text: String) -> Element<'_, Message> {
+        let mut content = Column::new()
+            .spacing(20)
+            .padding(20)
+            .width(cosmic::iced::Length::Fill);
+
+        if matches!(
+            self.sync_status,
+            matrix::SyncStatus::Error(_) | matrix::SyncStatus::MissingSlidingSyncSupport
+        ) {
+            content = content.push(text::body(status_text).size(14));
+        }
+
+        if let Some(room_id) = &self.selected_room {
+            let room_name = self
+                .room_list
+                .iter()
+                .find(|r| &r.id == room_id)
+                .and_then(|r| r.name.as_deref())
+                .unwrap_or("Room");
+            let room_header = Row::new()
+                .align_y(Alignment::Center)
+                .push(text::title3(room_name))
+                .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
+                .push(
+                    button::icon(Named::new("emblem-system"))
+                        .tooltip("Room Settings")
+                        .on_press(Message::OpenSettings(crate::SettingsPanel::Room)),
+                );
+            content = content.push(room_header);
+
+            content = content.push(self.view_timeline());
+
+            let composer = if self.composer_is_preview {
+                self.view_preview()
+            } else {
+                container(
+                    text_input("Type a message...", &self.composer_text)
+                        .on_input(Message::ComposerChanged)
+                        .on_submit(|_| Message::SendMessage),
+                )
+                .padding(10)
+                .into()
+            };
+
+            let mut attachments_view = Column::new().spacing(5);
+            if !self.composer_attachments.is_empty() {
+                attachments_view = attachments_view.push(text::body("Attachments:").size(12));
+                for (i, path) in self.composer_attachments.iter().enumerate() {
+                    let filename = path.file_name().unwrap_or_default().to_string_lossy();
+                    let attachment_row = Row::new()
+                        .spacing(10)
+                        .align_y(Alignment::Center)
+                        .push(text::body(filename).size(12))
+                        .push(button::text("Remove").on_press(Message::RemoveAttachment(i)));
+                    attachments_view = attachments_view.push(attachment_row);
+                }
+            }
+
+            let is_empty =
+                self.composer_text.trim().is_empty() && self.composer_attachments.is_empty();
+
+            let mut send_btn = button::text("Send");
+            if !is_empty {
+                send_btn = send_btn.on_press(Message::SendMessage);
+            }
+
+            let send_btn_widget: Element<'_, Message> = if is_empty {
+                tooltip(
+                    send_btn,
+                    text::body("Type a message or attach a file to send"),
+                    Position::Top,
+                )
+                .into()
+            } else {
+                send_btn.into()
+            };
+
+            let controls = Row::new()
+                .spacing(10)
+                .push(button::text("Attach").on_press(Message::AddAttachment))
+                .push(
+                    button::text(if self.composer_is_preview {
+                        "Edit"
+                    } else {
+                        "Preview"
+                    })
+                    .on_press(Message::TogglePreview),
+                )
+                .push(send_btn_widget);
+
+            content = content.push(
+                Column::new()
+                    .spacing(10)
+                    .push(attachments_view)
+                    .push(composer)
+                    .push(controls),
+            );
+        } else {
+            let empty_state = container(
+                Column::new()
+                    .spacing(10)
+                    .align_x(Alignment::Center)
+                    .push(text::title1("No room selected"))
+                    .push(text::body(
+                        "Select a room from the sidebar to start chatting.",
+                    )),
+            )
+            .width(cosmic::iced::Length::Fill)
+            .height(cosmic::iced::Length::Fill)
+            .align_x(Alignment::Center)
+            .align_y(Alignment::Center);
+
+            content = content.push(empty_state);
+        }
+
+        if let Some(error) = &self.error {
+            let error_bar = container(
+                Row::new()
+                    .spacing(10)
+                    .align_y(Alignment::Center)
+                    .push(text::body(error))
+                    .push(button::text("Dismiss").on_press(Message::DismissError)),
+            )
+            .padding(10);
+            content = content.push(error_bar);
+        }
+
+        content.into()
     }
 }

@@ -40,3 +40,13 @@
 ## 2025-03-05 - Batching Iced Tasks for Network Requests
 **Learning:** Submitting many isolated `Task::perform` calls concurrently in Iced immediate mode can impact framework performance. Capping the concurrency via `futures::stream::StreamExt::buffer_unordered` within a single task reduces UI overhead.
 **Action:** When making multiple simultaneous network requests or expensive async operations inside a loop, collect the futures and execute them through an `iter` stream with `buffer_unordered`, then map the collected result vector to a single "Batch" Message variant instead of dispatching N individual Messages.
+## 2026-04-20 - HashSet over Vec for SpaceHierarchy
+**Learning:** SpaceHierarchy lookup operations using Vec required O(N) contain checks, migrating to HashSet gave O(1) performance. However, migrating requires auditing methods like `.first()` that don't exist on HashSet and must be rewritten to `.iter().next()`. It's also important to update downstream removals from `.retain()` to `.remove()`.
+**Action:** When migrating an inner structure from `Vec` to `HashSet`, grep for usage of specific `Vec` methods (e.g., `retain`, `first`, `push`) and replace them with their `HashSet` equivalents (`remove`, `iter().next()`, `insert`).
+## 2024-04-20 - Buffered Iced Futures
+**Learning:** Immediate-mode tasks like `Task::perform` in `iced` executing large numbers of I/O operations without concurrency limits can cause spikes and DoS constraints. Combining concurrent futures in `futures::stream::iter()` with `.buffer_unordered(N)` prevents excessive task spawning and aggregates results cleanly back into the UI thread via batch messaging.
+**Action:** For loops that spawn `Task::perform`, accumulate the asynchronous closures into a collection, wrap them in a stream, throttle them with `buffer_unordered`, and emit a batch variant message.
+## 2024-05-19 - Testing `SpaceHierarchy` modification logic
+**Testing Improvement:** Added tests for `SpaceHierarchy::remove_child`, child insertion idempotency, and the `known_spaces` behavior.
+**Learning:** When `cargo check` fails globally due to upstream dependency limits (e.g., the `matrix-sdk` recursion limit error), you can perform syntax and edition validation on individual files without full compilation using `rustc --edition 2024 <file> --crate-type lib` or format validation using `rustfmt --edition 2024 --check <file>`. Also, standalone Rust scripts are effective for bypassing large dependency trees when validating isolated data structure logic.
+**Action:** Extract core data structures to `test_opt.rs` locally to verify isolated logic tests without requiring the full `matrix-sdk` crate.
