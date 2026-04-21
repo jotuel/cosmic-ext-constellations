@@ -883,4 +883,22 @@ mod tests {
         // Ensure nothing was inserted into the cache
         assert!(app.media_cache.is_empty());
     }
+
+    #[test]
+    fn test_handle_engine_ready_err() {
+        let mut app = create_dummy_constellations();
+
+        // Ensure initial state
+        app.is_initializing = true;
+        assert_eq!(app.error, None);
+
+        let err_res = Err(matrix::SyncError::Generic("Initial sync failed".to_string()));
+        let _task = app.handle_engine_ready(err_res);
+
+        assert_eq!(
+            app.error,
+            Some("Failed to initialize Matrix engine: Error: Initial sync failed".to_string())
+        );
+        assert_eq!(app.is_initializing, false);
+    }
 }
