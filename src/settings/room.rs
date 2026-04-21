@@ -146,7 +146,15 @@ impl State {
                                 .ok()
                                 .flatten()
                                 .and_then(|e| e.deserialize().ok())
-                                .map(|c| c.join_rule);
+                                .and_then(|e| match e {
+                                    matrix_sdk_base::deserialized_responses::SyncOrStrippedState::Sync(
+                                        matrix_sdk::ruma::events::SyncStateEvent::Original(ev),
+                                    ) => Some(ev.content.join_rule),
+                                    matrix_sdk_base::deserialized_responses::SyncOrStrippedState::Stripped(
+                                        ev,
+                                    ) => Some(ev.content.join_rule),
+                                    _ => None,
+                                });
 
                             Ok(RoomInfo {
                                 name: room.name().unwrap_or_default(),
@@ -776,6 +784,7 @@ impl State {
                 {
                     let engine = matrix.clone();
                     let room_id_clone = room_id.clone();
+                    let room_id_clone_reload = room_id.clone();
                     return Task::perform(
                         async move {
                             engine
@@ -783,11 +792,11 @@ impl State {
                                 .await
                                 .map_err(|e| e.to_string())
                         },
-                        |res| {
+                        move |res| {
                             Action::from(crate::Message::RoomSettings(match res {
                                 Ok(_) => {
                                     // Reload room data to reflect changes
-                                    Message::LoadRoom(room_id.clone())
+                                    Message::LoadRoom(room_id_clone_reload.clone())
                                 }
                                 Err(e) => Message::RoomSaved(Err(e)),
                             }))
