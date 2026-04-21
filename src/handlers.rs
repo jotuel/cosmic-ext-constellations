@@ -524,10 +524,19 @@ impl Constellations {
                     }
                 }
 
-                self.other_rooms = children
+                let mut other_rooms: Vec<_> = children
                     .into_iter()
                     .filter(|r| !self.joined_room_ids.contains(r.id.as_ref()) && !r.is_space)
                     .collect();
+
+                other_rooms.sort_by(|a, b| match (&a.order, &b.order) {
+                    (Some(oa), Some(ob)) => oa.cmp(ob).then_with(|| a.id.cmp(&b.id)),
+                    (Some(_), None) => std::cmp::Ordering::Less,
+                    (None, Some(_)) => std::cmp::Ordering::Greater,
+                    (None, None) => a.id.cmp(&b.id),
+                });
+
+                self.other_rooms = other_rooms;
             }
             Err(e) => {
                 self.error = Some(format!("Failed to fetch space children: {}", e));
