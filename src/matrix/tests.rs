@@ -726,11 +726,14 @@ async fn test_get_or_create_store_passphrase() {
     match result {
         Ok(passphrase) => {
             assert_eq!(passphrase.len(), 64); // 32 bytes hex encoded = 64 chars
-        },
+        }
         Err(e) => {
             // If it fails because of D-Bus/Keyring, it's acceptable in some CI environments,
             // but it shouldn't be a random generation failure.
-            info!("get_or_create_store_passphrase failed (likely due to missing Keyring): {}", e);
+            info!(
+                "get_or_create_store_passphrase failed (likely due to missing Keyring): {}",
+                e
+            );
         }
     }
 }
