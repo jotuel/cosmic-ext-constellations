@@ -8,10 +8,12 @@ mod view;
 
 use anyhow::Result;
 use cosmic::iced::widget::image;
+use cosmic::iced::widget::tooltip;
 use cosmic::iced::{Alignment, Subscription};
 use cosmic::widget::icon::Named;
 use cosmic::widget::menu::action::MenuAction;
-use cosmic::widget::{Column, RcElementWrapper, Row, button, container, menu, text_input};
+use cosmic::widget::tooltip::Position;
+use cosmic::widget::{Column, RcElementWrapper, Row, button, container, menu, text, text_input};
 use cosmic::{Action, Application, Core, Element, Task};
 use eyeball_im::Vector;
 use matrix_sdk::ruma::OwnedRoomId;
@@ -658,11 +660,12 @@ impl Application for Constellations {
         let mut start = Vec::new();
 
         if self.is_search_active {
+            let search_btn =
+                button::icon(Named::new("edit-find-symbolic")).on_press(Message::ToggleSearch);
+            let search_tooltip = tooltip(search_btn, text::body("Close Search"), Position::Bottom);
             let row = Row::new()
                 .align_y(Alignment::Center)
-                .push(
-                    button::icon(Named::new("edit-find-symbolic")).on_press(Message::ToggleSearch),
-                )
+                .push(search_tooltip)
                 .push(
                     text_input("Search...", &self.search_query)
                         .on_input(Message::SearchQueryChanged)
@@ -670,11 +673,10 @@ impl Application for Constellations {
                 );
             start.push(row.into());
         } else {
-            start.push(
-                button::icon(Named::new("edit-find-symbolic"))
-                    .on_press(Message::ToggleSearch)
-                    .into(),
-            );
+            let search_btn =
+                button::icon(Named::new("edit-find-symbolic")).on_press(Message::ToggleSearch);
+            let search_tooltip = tooltip(search_btn, text::body("Search"), Position::Bottom);
+            start.push(search_tooltip.into());
         }
 
         start
@@ -685,10 +687,11 @@ impl Application for Constellations {
 
         if self.user_id.is_some() {
             let user_btn = button::icon(Named::new("user-available-symbolic"));
+            let user_tooltip = tooltip(user_btn, text::body("User Menu"), Position::Bottom);
             let key_binds = std::collections::HashMap::new();
 
             let menu_tree = menu::Tree::with_children(
-                RcElementWrapper::new(Element::from(user_btn)),
+                RcElementWrapper::new(Element::from(user_tooltip)),
                 menu::items(
                     &key_binds,
                     vec![
