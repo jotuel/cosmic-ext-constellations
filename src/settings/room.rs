@@ -985,9 +985,10 @@ impl State {
                 if haystack.len() < needle_lower.len() {
                     return false;
                 }
-                haystack.as_bytes().windows(needle_lower.len()).any(|window| {
-                    window.eq_ignore_ascii_case(needle_lower.as_bytes())
-                })
+                haystack
+                    .as_bytes()
+                    .windows(needle_lower.len())
+                    .any(|window| window.eq_ignore_ascii_case(needle_lower.as_bytes()))
             }
 
             for (user_id, level) in users {
