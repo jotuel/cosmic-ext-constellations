@@ -63,7 +63,7 @@ pub struct SpaceInfo {
     pub name: String,
     pub topic: String,
     pub avatar_url: Option<String>,
-    pub visibility: matrix_sdk::ruma::api::client::room::get_room_visibility::v3::Visibility,
+    pub visibility: matrix_sdk::ruma::api::client::room::Visibility,
     pub join_rule: matrix_sdk::ruma::events::room::join_rules::JoinRule,
 }
 
@@ -91,7 +91,7 @@ impl State {
                                 .ok_or_else(|| "Space not found".to_string())?;
 
                             let visibility = engine.get_room_visibility(&space_id).await.unwrap_or(
-                                matrix_sdk::ruma::api::client::room::get_room_visibility::v3::Visibility::Private,
+                                matrix_sdk::ruma::api::client::room::Visibility::Private,
                             );
                             let join_rule = engine.get_room_join_rule(&space_id).await.unwrap_or(
                                 matrix_sdk::ruma::events::room::join_rules::JoinRule::Invite,
@@ -123,7 +123,7 @@ impl State {
                         self.original_topic = info.topic;
                         self.avatar_url = info.avatar_url;
                         self.is_public = info.visibility
-                            == matrix_sdk::ruma::api::client::room::get_room_visibility::v3::Visibility::Public;
+                            == matrix_sdk::ruma::api::client::room::Visibility::Public;
                         self.original_is_public = self.is_public;
                         self.is_invite_only = info.join_rule
                             == matrix_sdk::ruma::events::room::join_rules::JoinRule::Invite;
@@ -318,9 +318,9 @@ impl State {
                                 }
                                 if new_is_public != original_is_public {
                                     let visibility = if new_is_public {
-                                        matrix_sdk::ruma::api::client::room::get_room_visibility::v3::Visibility::Public
+                                        matrix_sdk::ruma::api::client::room::Visibility::Public
                                     } else {
-                                        matrix_sdk::ruma::api::client::room::get_room_visibility::v3::Visibility::Private
+                                        matrix_sdk::ruma::api::client::room::Visibility::Private
                                     };
                                     engine
                                         .set_room_visibility(&space_id_clone, visibility)
@@ -586,8 +586,7 @@ impl State {
                         .push(text::body("Publicly discoverable"))
                         .push(
                             text::body("Show this space in the server's directory")
-                                .size(12)
-                                .color(cosmic::theme::active().container().on.into_rgba()),
+                                .size(12),
                         ),
                 )
                 .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
@@ -605,8 +604,7 @@ impl State {
                         .push(text::body("Invite only"))
                         .push(
                             text::body("New members must be invited to join")
-                                .size(12)
-                                .color(cosmic::theme::active().container().on.into_rgba()),
+                                .size(12),
                         ),
                 )
                 .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
@@ -648,20 +646,18 @@ impl State {
         } else {
             for child in &self.children {
                 let name = child.name.as_deref().unwrap_or(&child.id);
-                let child_id = child.id.to_string();
-                let current_order = child.order.clone().unwrap_or_default();
-                let pending_order = self.pending_child_orders.get(&child_id);
-                let order_to_show = pending_order.unwrap_or(&current_order);
+                let current_order = child.order.as_deref().unwrap_or_default();
+                let order_to_show = self.pending_child_orders.get(child.id.as_ref()).map(|s| s.as_str()).unwrap_or(current_order);
 
                 let mut row = Row::new().spacing(10).align_y(Alignment::Center).push(
                     Column::new()
-                        .push(text::body(name))
-                        .push(text::body(&child_id).size(10)),
+                        .push(text::body(name.to_string()))
+                        .push(text::body(child.id.to_string()).size(10)),
                 );
 
                 row = row.push(cosmic::widget::space().width(cosmic::iced::Length::Fill));
 
-                let child_id_clone = child_id.clone();
+                let child_id_clone = child.id.to_string();
                 row = row.push(
                     text_input::text_input("Order", order_to_show)
                         .on_input(move |new_order| {
@@ -670,17 +666,15 @@ impl State {
                         .width(100),
                 );
 
-                if let Some(pending) = pending_order
-                    && pending != &current_order
-                {
+                if order_to_show != current_order {
                     row = row.push(
-                        button::text("Apply").on_press(Message::SaveChildOrder(child_id.clone())),
+                        button::text("Apply").on_press(Message::SaveChildOrder(child.id.to_string())),
                     );
                 }
 
                 row = row.push(
                     button::destructive("Remove")
-                        .on_press(Message::RemoveChild(child_id.clone())),
+                        .on_press(Message::RemoveChild(child.id.to_string())),
                 );
 
                 children_col = children_col.push(row);

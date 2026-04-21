@@ -460,7 +460,7 @@ impl MatrixEngine {
                             inner_write.space_hierarchy.add_child(
                                 space_id.clone(),
                                 child_id.clone(),
-                                ev.content.order.clone(),
+                                ev.content.order.as_ref().map(|o| o.to_string()),
                             );
                                 info!(
                                 "Space hierarchy updated: {} is child of {} (order: {:?})",
@@ -1024,27 +1024,28 @@ impl MatrixEngine {
     pub async fn get_room_visibility(
         &self,
         room_id: &str,
-    ) -> Result<matrix_sdk::ruma::api::client::room::get_room_visibility::v3::Visibility> {
-        let room_id_parsed = RoomId::parse(room_id)?;
+    ) -> Result<matrix_sdk::ruma::api::client::room::Visibility> {
+        let room_id_parsed = RoomId::parse(room_id).map_err(|e| anyhow::anyhow!(e))?;
         let client = self.client().await;
-        let visibility = client
-            .room_directory()
-            .get_room_visibility(&room_id_parsed)
-            .await?;
-        Ok(visibility)
+        let request = matrix_sdk::ruma::api::client::directory::get_room_visibility::v3::Request::new(
+            room_id_parsed,
+        );
+        let response = client.send(request).await?;
+        Ok(response.visibility)
     }
 
     pub async fn set_room_visibility(
         &self,
         room_id: &str,
-        visibility: matrix_sdk::ruma::api::client::room::get_room_visibility::v3::Visibility,
+        visibility: matrix_sdk::ruma::api::client::room::Visibility,
     ) -> Result<()> {
-        let room_id_parsed = RoomId::parse(room_id)?;
+        let room_id_parsed = RoomId::parse(room_id).map_err(|e| anyhow::anyhow!(e))?;
         let client = self.client().await;
-        client
-            .room_directory()
-            .set_room_visibility(&room_id_parsed, visibility)
-            .await?;
+        let request = matrix_sdk::ruma::api::client::directory::set_room_visibility::v3::Request::new(
+            room_id_parsed,
+            visibility,
+        );
+        client.send(request).await?;
         Ok(())
     }
 
@@ -1055,7 +1056,7 @@ impl MatrixEngine {
         let room_id_parsed = RoomId::parse(room_id)?;
         let client = self.client().await;
         let room = client.get_room(&room_id_parsed).context("Room not found")?;
-        Ok(room.join_rule())
+        Ok(room.join_rule().unwrap_or(matrix_sdk::ruma::events::room::join_rules::JoinRule::Invite))
     }
 
     pub async fn set_room_join_rule(
@@ -1226,14 +1227,14 @@ impl MatrixEngine {
                     ) => {
                         if !ev.content.via.is_empty() {
                             if let Ok(cid) = RoomId::parse(ev.state_key.as_str()) {
-                                child_orders.insert(cid, ev.content.order.clone());
+                                child_orders.insert(cid, ev.content.order.as_ref().map(|o| o.to_string()));
                             }
                         }
                     }
                     matrix_sdk_base::deserialized_responses::SyncOrStrippedState::Stripped(ev) => {
                         if !ev.content.via.as_ref().map(|v| v.is_empty()).unwrap_or(true) {
                             if let Ok(cid) = RoomId::parse(ev.state_key.as_str()) {
-                                child_orders.insert(cid, ev.content.order.clone());
+                                child_orders.insert(cid, ev.content.order.as_ref().map(|o| o.to_string()));
                             }
                         }
                     }
@@ -1341,7 +1342,7 @@ impl MatrixEngine {
         }
 
         let mut content = SpaceChildEventContent::new(via);
-        content.order = order;
+        content.order = order.map(|o| matrix_sdk::ruma::OwnedSpaceChildOrder::try_from(o).unwrap());
         space
             .send_state_event_for_key(&child_id_parsed, content)
             .await?;
