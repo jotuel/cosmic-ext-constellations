@@ -19,11 +19,35 @@ async fn test_matrix_engine_init() {
 
 #[test]
 fn test_markdown_to_html() {
+    // Basic formatting
     let markdown = "# Hello\nThis is **bold** and *italic*.";
     let html = markdown_to_html(markdown);
     assert!(html.contains("<h1>Hello</h1>"));
     assert!(html.contains("<strong>bold</strong>"));
     assert!(html.contains("<em>italic</em>"));
+
+    // Strikethrough
+    let markdown = "This is ~~strikethrough~~ text.";
+    let html = markdown_to_html(markdown);
+    assert!(html.contains("<del>strikethrough</del>"));
+
+    // Lists and Links
+    let markdown = "- Item 1\n- [Link](https://example.com)";
+    let html = markdown_to_html(markdown);
+    assert!(html.contains("<ul>"));
+    assert!(html.contains("<li>Item 1</li>"));
+    assert!(html.contains("<a href=\"https://example.com\">Link</a>"));
+
+    // Edge Cases
+    let empty_html = markdown_to_html("");
+    assert_eq!(empty_html, "");
+
+    let plain_text = markdown_to_html("Just plain text");
+    assert_eq!(plain_text.trim(), "<p>Just plain text</p>");
+
+    // XSS / Raw HTML (pulldown-cmark escapes or passes raw HTML, let's verify what it does)
+    let raw_html = markdown_to_html("<script>alert(1)</script>");
+    assert!(raw_html.contains("<script>alert(1)</script>"));
 }
 
 #[test]
