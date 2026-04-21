@@ -1,4 +1,4 @@
-#![recursion_limit = "512"]
+#![recursion_limit = "1024"]
 
 mod handlers;
 mod ipc;
@@ -1597,7 +1597,10 @@ mod tests {
         let engine = match matrix::MatrixEngine::new(tmp_dir.path().to_path_buf()).await {
             Ok(e) => e,
             Err(e) => {
-                tracing::info!("Skipping test due to engine initialization failure (likely dbus/keyring): {}", e);
+                tracing::info!(
+                    "Skipping test due to engine initialization failure (likely dbus/keyring): {}",
+                    e
+                );
                 return;
             }
         };
