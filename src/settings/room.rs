@@ -184,25 +184,24 @@ impl State {
 
                         let mut tasks = Vec::new();
 
-                        if let Some(url) = &self.avatar_url {
-                            if let Some(matrix) = matrix {
-                                let engine = matrix.clone();
-                                let mxc = url.clone();
-                                self.is_loading_avatar = true;
-                                tasks.push(Task::perform(
-                                    async move {
-                                        let mxc_uri =
-                                            <&matrix_sdk::ruma::MxcUri>::from(mxc.as_str());
-                                        let source = MediaSource::Plain(mxc_uri.to_owned());
-                                        engine.fetch_media(source).await.map_err(|e| e.to_string())
-                                    },
-                                    |res| {
-                                        Action::from(crate::Message::RoomSettings(
-                                            Message::AvatarMediaFetched(res),
-                                        ))
-                                    },
-                                ));
-                            }
+                        if let Some(url) = &self.avatar_url
+                            && let Some(matrix) = matrix
+                        {
+                            let engine = matrix.clone();
+                            let mxc = url.clone();
+                            self.is_loading_avatar = true;
+                            tasks.push(Task::perform(
+                                async move {
+                                    let mxc_uri = <&matrix_sdk::ruma::MxcUri>::from(mxc.as_str());
+                                    let source = MediaSource::Plain(mxc_uri.to_owned());
+                                    engine.fetch_media(source).await.map_err(|e| e.to_string())
+                                },
+                                |res| {
+                                    Action::from(crate::Message::RoomSettings(
+                                        Message::AvatarMediaFetched(res),
+                                    ))
+                                },
+                            ));
                         }
 
                         tasks.push(Task::done(Action::from(crate::Message::RoomSettings(
@@ -217,44 +216,43 @@ impl State {
                 Task::none()
             }
             Message::LoadPowerLevels => {
-                if let Some(matrix) = matrix {
-                    if let Some(room_id) = &self.room_id {
-                        self.is_loading_power_levels = true;
-                        let engine = matrix.clone();
-                        let room_id_clone = room_id.clone();
-                        return Task::perform(
-                            async move {
-                                let (default, users) = engine
-                                    .get_room_power_levels(&room_id_clone)
-                                    .await
-                                    .map_err(|e| e.to_string())?;
-                                let client = engine.client().await;
-                                let user_id = client.user_id().ok_or("No user ID")?;
-                                let room = client
-                                    .get_room(
-                                        &RoomId::parse(&room_id_clone)
-                                            .map_err(|e| e.to_string())?,
-                                    )
-                                    .ok_or("Room not found")?;
-                                let my_level = match room.get_user_power_level(user_id).await {
+                if let Some(matrix) = matrix
+                    && let Some(room_id) = &self.room_id
+                {
+                    self.is_loading_power_levels = true;
+                    let engine = matrix.clone();
+                    let room_id_clone = room_id.clone();
+                    return Task::perform(
+                        async move {
+                            let (default, users) = engine
+                                .get_room_power_levels(&room_id_clone)
+                                .await
+                                .map_err(|e| e.to_string())?;
+                            let client = engine.client().await;
+                            let user_id = client.user_id().ok_or("No user ID")?;
+                            let room = client
+                                .get_room(
+                                    &RoomId::parse(&room_id_clone).map_err(|e| e.to_string())?,
+                                )
+                                .ok_or("Room not found")?;
+                            let my_level = match room.get_user_power_level(user_id).await {
                                     Ok(matrix_sdk::ruma::events::room::power_levels::UserPowerLevel::Int(l)) => l.into(),
                                     Ok(matrix_sdk::ruma::events::room::power_levels::UserPowerLevel::Infinite) => 100, // Room creators are basically 100+
                                     Ok(_) => 100, // Handle future versions gracefully
                                     Err(_) => default,
                                 };
-                                Ok(PowerLevelInfo {
-                                    default_level: default,
-                                    users,
-                                    my_level,
-                                })
-                            },
-                            |res| {
-                                Action::from(crate::Message::RoomSettings(
-                                    Message::PowerLevelsLoaded(res),
-                                ))
-                            },
-                        );
-                    }
+                            Ok(PowerLevelInfo {
+                                default_level: default,
+                                users,
+                                my_level,
+                            })
+                        },
+                        |res| {
+                            Action::from(crate::Message::RoomSettings(Message::PowerLevelsLoaded(
+                                res,
+                            )))
+                        },
+                    );
                 }
                 Task::none()
             }
@@ -272,25 +270,21 @@ impl State {
                 Task::none()
             }
             Message::InviteUser => {
-                if let Some(matrix) = matrix {
-                    if let Some(room_id) = &self.room_id {
-                        let engine = matrix.clone();
-                        let room_id_clone = room_id.clone();
-                        let user_id_clone = self.invite_user_id.clone();
-                        return Task::perform(
-                            async move {
-                                engine
-                                    .invite_user(&room_id_clone, &user_id_clone)
-                                    .await
-                                    .map_err(|e| e.to_string())
-                            },
-                            |res| {
-                                Action::from(crate::Message::RoomSettings(Message::UserInvited(
-                                    res,
-                                )))
-                            },
-                        );
-                    }
+                if let Some(matrix) = matrix
+                    && let Some(room_id) = &self.room_id
+                {
+                    let engine = matrix.clone();
+                    let room_id_clone = room_id.clone();
+                    let user_id_clone = self.invite_user_id.clone();
+                    return Task::perform(
+                        async move {
+                            engine
+                                .invite_user(&room_id_clone, &user_id_clone)
+                                .await
+                                .map_err(|e| e.to_string())
+                        },
+                        |res| Action::from(crate::Message::RoomSettings(Message::UserInvited(res))),
+                    );
                 }
                 Task::none()
             }
@@ -310,32 +304,32 @@ impl State {
                 Task::none()
             }
             Message::KickUser(user_id) => {
-                if let Some(matrix) = matrix {
-                    if let Some(room_id) = &self.room_id {
-                        let engine = matrix.clone();
-                        let room_id_clone = room_id.clone();
-                        let user_id_clone = user_id.clone();
-                        let user_id_for_task = user_id.clone();
-                        let reason = if self.action_reason.is_empty() {
-                            None
-                        } else {
-                            Some(self.action_reason.clone())
-                        };
-                        return Task::perform(
-                            async move {
-                                engine
-                                    .kick_user(&room_id_clone, &user_id_for_task, reason)
-                                    .await
-                                    .map_err(|e| e.to_string())
-                            },
-                            move |res| {
-                                Action::from(crate::Message::RoomSettings(Message::UserKicked(
-                                    user_id_clone,
-                                    res,
-                                )))
-                            },
-                        );
-                    }
+                if let Some(matrix) = matrix
+                    && let Some(room_id) = &self.room_id
+                {
+                    let engine = matrix.clone();
+                    let room_id_clone = room_id.clone();
+                    let user_id_clone = user_id.clone();
+                    let user_id_for_task = user_id.clone();
+                    let reason = if self.action_reason.is_empty() {
+                        None
+                    } else {
+                        Some(self.action_reason.clone())
+                    };
+                    return Task::perform(
+                        async move {
+                            engine
+                                .kick_user(&room_id_clone, &user_id_for_task, reason)
+                                .await
+                                .map_err(|e| e.to_string())
+                        },
+                        move |res| {
+                            Action::from(crate::Message::RoomSettings(Message::UserKicked(
+                                user_id_clone,
+                                res,
+                            )))
+                        },
+                    );
                 }
                 Task::none()
             }
@@ -355,32 +349,32 @@ impl State {
                 Task::none()
             }
             Message::BanUser(user_id) => {
-                if let Some(matrix) = matrix {
-                    if let Some(room_id) = &self.room_id {
-                        let engine = matrix.clone();
-                        let room_id_clone = room_id.clone();
-                        let user_id_clone = user_id.clone();
-                        let user_id_for_task = user_id.clone();
-                        let reason = if self.action_reason.is_empty() {
-                            None
-                        } else {
-                            Some(self.action_reason.clone())
-                        };
-                        return Task::perform(
-                            async move {
-                                engine
-                                    .ban_user(&room_id_clone, &user_id_for_task, reason)
-                                    .await
-                                    .map_err(|e| e.to_string())
-                            },
-                            move |res| {
-                                Action::from(crate::Message::RoomSettings(Message::UserBanned(
-                                    user_id_clone,
-                                    res,
-                                )))
-                            },
-                        );
-                    }
+                if let Some(matrix) = matrix
+                    && let Some(room_id) = &self.room_id
+                {
+                    let engine = matrix.clone();
+                    let room_id_clone = room_id.clone();
+                    let user_id_clone = user_id.clone();
+                    let user_id_for_task = user_id.clone();
+                    let reason = if self.action_reason.is_empty() {
+                        None
+                    } else {
+                        Some(self.action_reason.clone())
+                    };
+                    return Task::perform(
+                        async move {
+                            engine
+                                .ban_user(&room_id_clone, &user_id_for_task, reason)
+                                .await
+                                .map_err(|e| e.to_string())
+                        },
+                        move |res| {
+                            Action::from(crate::Message::RoomSettings(Message::UserBanned(
+                                user_id_clone,
+                                res,
+                            )))
+                        },
+                    );
                 }
                 Task::none()
             }
@@ -412,31 +406,28 @@ impl State {
                 Task::none()
             }
             Message::UpdatePowerLevel(user_id, level) => {
-                if let Some(matrix) = matrix {
-                    if let Some(room_id) = &self.room_id {
-                        self.updating_power_level_for = Some(user_id.clone());
-                        let engine = matrix.clone();
-                        let room_id_clone = room_id.clone();
-                        let user_id_clone = user_id.clone();
-                        let user_id_for_task = user_id.clone();
-                        return Task::perform(
-                            async move {
-                                engine
-                                    .update_user_power_level(
-                                        &room_id_clone,
-                                        &user_id_for_task,
-                                        level,
-                                    )
-                                    .await
-                                    .map_err(|e| e.to_string())
-                            },
-                            move |res| {
-                                Action::from(crate::Message::RoomSettings(
-                                    Message::PowerLevelUpdated(user_id_clone, res),
-                                ))
-                            },
-                        );
-                    }
+                if let Some(matrix) = matrix
+                    && let Some(room_id) = &self.room_id
+                {
+                    self.updating_power_level_for = Some(user_id.clone());
+                    let engine = matrix.clone();
+                    let room_id_clone = room_id.clone();
+                    let user_id_clone = user_id.clone();
+                    let user_id_for_task = user_id.clone();
+                    return Task::perform(
+                        async move {
+                            engine
+                                .update_user_power_level(&room_id_clone, &user_id_for_task, level)
+                                .await
+                                .map_err(|e| e.to_string())
+                        },
+                        move |res| {
+                            Action::from(crate::Message::RoomSettings(Message::PowerLevelUpdated(
+                                user_id_clone,
+                                res,
+                            )))
+                        },
+                    );
                 }
                 Task::none()
             }
@@ -621,30 +612,28 @@ impl State {
                 },
             ),
             Message::AvatarFileSelected(path_opt) => {
-                if let Some(path) = path_opt {
-                    if let Some(matrix) = matrix {
-                        self.is_uploading_avatar = true;
-                        let engine = matrix.clone();
-                        let room_id = self.room_id.clone().unwrap_or_default();
+                if let Some(path) = path_opt
+                    && let Some(matrix) = matrix
+                {
+                    self.is_uploading_avatar = true;
+                    let engine = matrix.clone();
+                    let room_id = self.room_id.clone().unwrap_or_default();
 
-                        return Task::perform(
-                            async move {
-                                let data = std::fs::read(&path).map_err(|e| e.to_string())?;
-                                let mime = mime_guess::from_path(&path)
-                                    .first_raw()
-                                    .unwrap_or("image/jpeg");
-                                engine
-                                    .upload_room_avatar(&room_id, data, mime)
-                                    .await
-                                    .map_err(|e| e.to_string())
-                            },
-                            |res| {
-                                Action::from(crate::Message::RoomSettings(Message::AvatarUploaded(
-                                    res,
-                                )))
-                            },
-                        );
-                    }
+                    return Task::perform(
+                        async move {
+                            let data = std::fs::read(&path).map_err(|e| e.to_string())?;
+                            let mime = mime_guess::from_path(&path)
+                                .first_raw()
+                                .unwrap_or("image/jpeg");
+                            engine
+                                .upload_room_avatar(&room_id, data, mime)
+                                .await
+                                .map_err(|e| e.to_string())
+                        },
+                        |res| {
+                            Action::from(crate::Message::RoomSettings(Message::AvatarUploaded(res)))
+                        },
+                    );
                 }
                 Task::none()
             }
@@ -664,23 +653,21 @@ impl State {
                 Task::none()
             }
             Message::LeaveRoom => {
-                if let Some(matrix) = matrix {
-                    if let Some(room_id) = &self.room_id {
-                        self.is_saving = true;
-                        let engine = matrix.clone();
-                        let room_id_clone = room_id.clone();
-                        return Task::perform(
-                            async move {
-                                engine
-                                    .leave_room(&room_id_clone)
-                                    .await
-                                    .map_err(|e| e.to_string())
-                            },
-                            |res| {
-                                Action::from(crate::Message::RoomSettings(Message::RoomLeft(res)))
-                            },
-                        );
-                    }
+                if let Some(matrix) = matrix
+                    && let Some(room_id) = &self.room_id
+                {
+                    self.is_saving = true;
+                    let engine = matrix.clone();
+                    let room_id_clone = room_id.clone();
+                    return Task::perform(
+                        async move {
+                            engine
+                                .leave_room(&room_id_clone)
+                                .await
+                                .map_err(|e| e.to_string())
+                        },
+                        |res| Action::from(crate::Message::RoomSettings(Message::RoomLeft(res))),
+                    );
                 }
                 Task::none()
             }
@@ -700,25 +687,23 @@ impl State {
                 Task::none()
             }
             Message::ForgetRoom => {
-                if let Some(matrix) = matrix {
-                    if let Some(room_id) = &self.room_id {
-                        self.is_saving = true;
-                        let engine = matrix.clone();
-                        let room_id_clone = room_id.clone();
-                        return Task::perform(
-                            async move {
-                                engine
-                                    .forget_room(&room_id_clone)
-                                    .await
-                                    .map_err(|e| e.to_string())
-                            },
-                            |res| {
-                                Action::from(crate::Message::RoomSettings(Message::RoomForgotten(
-                                    res,
-                                )))
-                            },
-                        );
-                    }
+                if let Some(matrix) = matrix
+                    && let Some(room_id) = &self.room_id
+                {
+                    self.is_saving = true;
+                    let engine = matrix.clone();
+                    let room_id_clone = room_id.clone();
+                    return Task::perform(
+                        async move {
+                            engine
+                                .forget_room(&room_id_clone)
+                                .await
+                                .map_err(|e| e.to_string())
+                        },
+                        |res| {
+                            Action::from(crate::Message::RoomSettings(Message::RoomForgotten(res)))
+                        },
+                    );
                 }
                 Task::none()
             }
@@ -736,29 +721,28 @@ impl State {
                 Task::none()
             }
             Message::NotificationModeChanged(mode) => {
-                if let Some(matrix) = matrix {
-                    if let Some(room_id) = &self.room_id {
-                        self.is_loading_notifications = true;
-                        self.notification_mode = Some(mode);
-                        let engine = matrix.clone();
-                        let room_id_clone = room_id.clone();
-                        return Task::perform(
-                            async move {
-                                let client = engine.client().await;
-                                let ns = client.notification_settings().await;
-                                let rid =
-                                    RoomId::parse(&room_id_clone).map_err(|e| e.to_string())?;
-                                ns.set_room_notification_mode(&rid, mode)
-                                    .await
-                                    .map_err(|e| e.to_string())
-                            },
-                            |res| {
-                                Action::from(crate::Message::RoomSettings(
-                                    Message::NotificationModeSet(res),
-                                ))
-                            },
-                        );
-                    }
+                if let Some(matrix) = matrix
+                    && let Some(room_id) = &self.room_id
+                {
+                    self.is_loading_notifications = true;
+                    self.notification_mode = Some(mode);
+                    let engine = matrix.clone();
+                    let room_id_clone = room_id.clone();
+                    return Task::perform(
+                        async move {
+                            let client = engine.client().await;
+                            let ns = client.notification_settings().await;
+                            let rid = RoomId::parse(&room_id_clone).map_err(|e| e.to_string())?;
+                            ns.set_room_notification_mode(&rid, mode)
+                                .await
+                                .map_err(|e| e.to_string())
+                        },
+                        |res| {
+                            Action::from(crate::Message::RoomSettings(
+                                Message::NotificationModeSet(res),
+                            ))
+                        },
+                    );
                 }
                 Task::none()
             }
@@ -811,18 +795,14 @@ impl State {
     }
 
     fn view_error(&self) -> Option<Element<'_, Message>> {
-        if let Some(error) = &self.error {
-            Some(
-                Row::new()
-                    .spacing(10)
-                    .align_y(Alignment::Center)
-                    .push(text::body(error))
-                    .push(button::text("Dismiss").on_press(Message::DismissError))
-                    .into(),
-            )
-        } else {
-            None
-        }
+        self.error.as_ref().map(|error| {
+            Row::new()
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .push(text::body(error))
+                .push(button::text("Dismiss").on_press(Message::DismissError))
+                .into()
+        })
     }
 
     fn view_profile(&self) -> Element<'_, Message> {
@@ -1173,5 +1153,65 @@ impl State {
         }
 
         col.into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_name_changed() {
+        let mut state = State::default();
+        let _ = state.update(Message::NameChanged("New Room Name".to_string()), &None);
+        assert_eq!(state.name, "New Room Name");
+    }
+
+    #[test]
+    fn test_topic_changed() {
+        let mut state = State::default();
+        let _ = state.update(Message::TopicChanged("New Topic".to_string()), &None);
+        assert_eq!(state.topic, "New Topic");
+    }
+
+    #[test]
+    fn test_load_room_no_matrix() {
+        let mut state = State::default();
+        let room_id: Arc<str> = Arc::from("!some_room:example.com");
+        let _ = state.update(Message::LoadRoom(room_id.clone()), &None);
+
+        // Without matrix engine, it shouldn't try to load
+        assert_eq!(state.is_loading, false);
+        assert_eq!(state.room_id, None);
+    }
+
+    #[test]
+    fn test_dismiss_error() {
+        let mut state = State::default();
+        state.error = Some("An error occurred".to_string());
+
+        let _ = state.update(Message::DismissError, &None);
+        assert_eq!(state.error, None);
+    }
+
+    #[test]
+    fn test_invite_user_id_changed() {
+        let mut state = State::default();
+        let _ = state.update(Message::InviteUserIdChanged("@user:example.com".to_string()), &None);
+        assert_eq!(state.invite_user_id, "@user:example.com");
+    }
+
+    #[test]
+    fn test_action_reason_changed() {
+        let mut state = State::default();
+        let _ = state.update(Message::ActionReasonChanged("Spam".to_string()), &None);
+        assert_eq!(state.action_reason, "Spam");
+    }
+
+    #[test]
+    fn test_member_filter_changed() {
+        let mut state = State::default();
+        let _ = state.update(Message::MemberFilterChanged("John".to_string()), &None);
+        assert_eq!(state.member_filter, "John");
     }
 }

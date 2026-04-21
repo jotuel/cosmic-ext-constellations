@@ -71,24 +71,34 @@ impl Constellations {
         tasks.push(title_task);
 
         if let Some(matrix) = &self.matrix {
+            let mut media_fetches = Vec::new();
             for room in self.room_list.iter() {
-                if let Some(avatar_url) = &room.avatar_url {
-                    if !self.media_cache.contains_key(avatar_url) {
-                        let matrix_clone = matrix.clone();
-                        let url_str = avatar_url.clone();
-                        let uri = matrix_sdk::ruma::OwnedMxcUri::from(avatar_url.as_str());
-                        let source = matrix_sdk::ruma::events::room::MediaSource::Plain(uri);
-                        tasks.push(Task::perform(
-                            async move {
-                                matrix_clone
-                                    .fetch_media(source)
-                                    .await
-                                    .map_err(|e| e.to_string())
-                            },
-                            move |res| Message::MediaFetched(url_str.clone(), res).into(),
-                        ));
-                    }
+                if let Some(avatar_url) = &room.avatar_url
+                    && !self.media_cache.contains_key(avatar_url)
+                {
+                    let matrix_clone = matrix.clone();
+                    let url_str = avatar_url.clone();
+                    let uri = matrix_sdk::ruma::OwnedMxcUri::from(avatar_url.as_str());
+                    let source = matrix_sdk::ruma::events::room::MediaSource::Plain(uri);
+                    media_fetches.push(async move {
+                        let res = matrix_clone
+                            .fetch_media(source)
+                            .await
+                            .map_err(|e| e.to_string());
+                        (url_str, res)
+                    });
                 }
+            }
+            if !media_fetches.is_empty() {
+                tasks.push(Task::perform(
+                    async move {
+                        futures::stream::iter(media_fetches)
+                            .buffer_unordered(10)
+                            .collect::<Vec<_>>()
+                            .await
+                    },
+                    |results| Message::MediaFetchedBatch(results).into(),
+                ));
             }
         }
 
@@ -100,44 +110,55 @@ impl Constellations {
         diff: eyeball_im::VectorDiff<std::sync::Arc<matrix::TimelineItem>>,
     ) -> Task<Action<<Constellations as Application>::Message>> {
         let mut tasks = Vec::new();
-        let mut check_item = |item: &std::sync::Arc<matrix::TimelineItem>| {
-            if let Some(event) = item.as_event() {
-                if let matrix_sdk_ui::timeline::TimelineDetails::Ready(profile) =
+        let mut media_fetches = Vec::new();
+        let check_item = |item: &std::sync::Arc<matrix::TimelineItem>, fetches: &mut Vec<_>| {
+            if let Some(event) = item.as_event()
+                && let matrix_sdk_ui::timeline::TimelineDetails::Ready(profile) =
                     event.sender_profile()
+                && let Some(avatar_url) = &profile.avatar_url
+            {
+                let url_str = avatar_url.to_string();
+                if !self.media_cache.contains_key(&url_str)
+                    && let Some(matrix) = &self.matrix
                 {
-                    if let Some(avatar_url) = &profile.avatar_url {
-                        let url_str = avatar_url.to_string();
-                        if !self.media_cache.contains_key(&url_str) {
-                            if let Some(matrix) = &self.matrix {
-                                let matrix_clone = matrix.clone();
-                                let mxc_url = url_str.clone();
-                                let source = matrix_sdk::ruma::events::room::MediaSource::Plain(
-                                    avatar_url.clone(),
-                                );
-                                tasks.push(cosmic::iced::Task::perform(
-                                    async move {
-                                        matrix_clone
-                                            .fetch_media(source)
-                                            .await
-                                            .map_err(|e| e.to_string())
-                                    },
-                                    move |res| Message::MediaFetched(mxc_url.clone(), res).into(),
-                                ));
-                            }
-                        }
-                    }
+                    let matrix_clone = matrix.clone();
+                    let source =
+                        matrix_sdk::ruma::events::room::MediaSource::Plain(avatar_url.clone());
+                    fetches.push(async move {
+                        let res = matrix_clone
+                            .fetch_media(source)
+                            .await
+                            .map_err(|e| e.to_string());
+                        (url_str, res)
+                    });
                 }
             }
         };
 
         match &diff {
-            eyeball_im::VectorDiff::Insert { value, .. } => check_item(value),
-            eyeball_im::VectorDiff::Set { value, .. } => check_item(value),
-            eyeball_im::VectorDiff::PushBack { value } => check_item(value),
-            eyeball_im::VectorDiff::PushFront { value } => check_item(value),
-            eyeball_im::VectorDiff::Append { values } => values.iter().for_each(&mut check_item),
-            eyeball_im::VectorDiff::Reset { values } => values.iter().for_each(&mut check_item),
+            eyeball_im::VectorDiff::Insert { value, .. } => check_item(value, &mut media_fetches),
+            eyeball_im::VectorDiff::Set { value, .. } => check_item(value, &mut media_fetches),
+            eyeball_im::VectorDiff::PushBack { value } => check_item(value, &mut media_fetches),
+            eyeball_im::VectorDiff::PushFront { value } => check_item(value, &mut media_fetches),
+            eyeball_im::VectorDiff::Append { values } => values
+                .iter()
+                .for_each(|v| check_item(v, &mut media_fetches)),
+            eyeball_im::VectorDiff::Reset { values } => values
+                .iter()
+                .for_each(|v| check_item(v, &mut media_fetches)),
             _ => {}
+        }
+
+        if !media_fetches.is_empty() {
+            tasks.push(cosmic::iced::Task::perform(
+                async move {
+                    futures::stream::iter(media_fetches)
+                        .buffer_unordered(10)
+                        .collect::<Vec<_>>()
+                        .await
+                },
+                |results| Message::MediaFetchedBatch(results).into(),
+            ));
         }
 
         let mapped_diff = match diff {
@@ -302,7 +323,7 @@ impl Constellations {
     ) -> Task<Action<<Constellations as Application>::Message>> {
         if let (Some(matrix), Some(room_id)) = (&self.matrix, &self.selected_room) {
             let body = self.composer_text.clone();
-            let attachments = self.composer_attachments.clone();
+            let attachments = std::mem::take(&mut self.composer_attachments);
 
             if body.is_empty() && attachments.is_empty() {
                 return Task::none();
@@ -335,20 +356,18 @@ impl Constellations {
             for path in attachments {
                 let matrix_clone = matrix.clone();
                 let room_id_clone = room_id.clone();
-                let path_clone = path.clone();
 
                 tasks.push(Task::perform(
                     async move {
-                        matrix_clone
-                            .send_attachment(&room_id_clone, &path_clone)
+                        let res = matrix_clone
+                            .send_attachment(&room_id_clone, &path)
                             .await
-                            .map_err(|e| e.to_string())
+                            .map_err(|e| e.to_string());
+                        (path, res)
                     },
-                    move |res| Action::from(Message::AttachmentSent(path.clone(), res)),
+                    move |(path, res)| Action::from(Message::AttachmentSent(path, res)),
                 ));
             }
-
-            self.composer_attachments.clear();
 
             Task::batch(tasks)
         } else {
@@ -420,16 +439,17 @@ impl Constellations {
 
             if let Some(space_id) = space_id {
                 let matrix_clone = matrix.clone();
-                let sid_inner = space_id.clone();
-                let sid_res = space_id.clone();
                 tasks.push(Task::perform(
                     async move {
-                        matrix_clone
-                            .get_space_children(sid_inner.as_str())
+                        let res = matrix_clone
+                            .get_space_children(space_id.as_str())
                             .await
-                            .map_err(|e| e.to_string())
+                            .map_err(|e| e.to_string());
+                        (space_id, res)
                     },
-                    move |res| Action::from(Message::SpaceChildrenFetched(sid_res.clone(), res)),
+                    move |(space_id, res)| {
+                        Action::from(Message::SpaceChildrenFetched(space_id, res))
+                    },
                 ));
             } else {
                 self.other_rooms.clear();
@@ -464,13 +484,12 @@ impl Constellations {
                 if let Some(matrix) = &self.matrix {
                     let mut urls_to_fetch = Vec::new();
                     for child in &children {
-                        if let Some(avatar_url) = &child.avatar_url {
-                            if !self.media_cache.contains_key(avatar_url) {
-                                let uri = matrix_sdk::ruma::OwnedMxcUri::from(avatar_url.as_str());
-                                let source =
-                                    matrix_sdk::ruma::events::room::MediaSource::Plain(uri);
-                                urls_to_fetch.push((avatar_url.clone(), source));
-                            }
+                        if let Some(avatar_url) = &child.avatar_url
+                            && !self.media_cache.contains_key(avatar_url)
+                        {
+                            let uri = matrix_sdk::ruma::OwnedMxcUri::from(avatar_url.as_str());
+                            let source = matrix_sdk::ruma::events::room::MediaSource::Plain(uri);
+                            urls_to_fetch.push((avatar_url.clone(), source));
                         }
                     }
 
@@ -591,8 +610,7 @@ impl Constellations {
             let matrix = matrix.clone();
             let homeserver = self.login_homeserver.clone();
             let username = self.login_username.clone();
-            let password = self.login_password.clone();
-            self.login_password.clear();
+            let password = std::mem::take(&mut self.login_password);
 
             Task::perform(
                 async move {
@@ -650,8 +668,7 @@ impl Constellations {
             let matrix = matrix.clone();
             let homeserver = self.login_homeserver.clone();
             let username = self.login_username.clone();
-            let password = self.login_password.clone();
-            self.login_password.clear();
+            let password = std::mem::take(&mut self.login_password);
 
             Task::perform(
                 async move {
@@ -840,7 +857,7 @@ mod tests {
             app_settings: crate::settings::app::State::default(),
             composer_attachments: Vec::new(),
             active_reaction_picker: None,
-            creating_space: todo!(),
+            creating_space: false,
         }
     }
 
@@ -865,5 +882,23 @@ mod tests {
 
         // Ensure nothing was inserted into the cache
         assert!(app.media_cache.is_empty());
+    }
+
+    #[test]
+    fn test_handle_engine_ready_err() {
+        let mut app = create_dummy_constellations();
+
+        // Ensure initial state
+        app.is_initializing = true;
+        assert_eq!(app.error, None);
+
+        let err_res = Err(matrix::SyncError::Generic("Initial sync failed".to_string()));
+        let _task = app.handle_engine_ready(err_res);
+
+        assert_eq!(
+            app.error,
+            Some("Failed to initialize Matrix engine: Error: Initial sync failed".to_string())
+        );
+        assert_eq!(app.is_initializing, false);
     }
 }

@@ -31,3 +31,6 @@
 ## 2026-04-19 - Tooltips for Disabled Save Buttons
 **Learning:** Users can easily become confused when 'Save' or 'Save Changes' buttons are disabled without context. The previous UI did not explicitly communicate that unsaved modifications are required to enable these action buttons.
 **Action:** When conditionally disabling save buttons based on pending changes, wrap the disabled button in a `cosmic::widget::tooltip` (e.g., explaining "Make changes to save") to proactively guide the user on why the button is inactive.
+## 2026-05-30 - Tooltips for Icon-Only Buttons
+**Learning:** Icon-only buttons (like `button::icon` or `button::custom` wrapping icons) are frequently used across the application for actions like search, opening menus, creating spaces, and reacting. However, without text labels, they lack context for screen readers and new users.
+**Action:** When creating or modifying icon-only buttons in `libcosmic`, always ensure they are wrapped in a `cosmic::widget::tooltip` with a descriptive `text::body` (e.g., "Search", "User Menu", "Add Reaction") and an appropriate `Position` (like `Position::Bottom` or `Position::Top`) to guarantee accessibility and immediate clarity.

@@ -58,6 +58,42 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    async fn test_call_handle_callback() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        // Start the server which claims the DBus name
+        let _server_conn = start_server(tx).await.expect("Failed to start DBus server");
+
+        // The valid callback URI must start with fi.joonastuomi.CosmicExtConstellations://callback
+        let valid_uri = "fi.joonastuomi.CosmicExtConstellations://callback/?code=12345".to_string();
+        call_handle_callback(valid_uri.clone()).await.expect("Failed to call proxy");
+
+        // The server should receive the URI on the mpsc channel
+        let received = rx.recv().await.expect("Did not receive URI on channel");
+        assert_eq!(received, valid_uri);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_call_handle_callback_invalid_uri() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        // Start the server which claims the DBus name
+        let _server_conn = start_server(tx).await.expect("Failed to start DBus server");
+
+        // Invalid URI that does not start with the required prefix
+        let invalid_uri = "https://invalid.com/callback".to_string();
+        call_handle_callback(invalid_uri.clone()).await.expect("Failed to call proxy");
+
+        // The interface drops invalid URIs and doesn't send them on tx.
+        // Try to read with a timeout to verify nothing is sent.
+        let result = tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv()).await;
+        assert!(
+            result.is_err(),
+            "Expected timeout since invalid URI should not be forwarded"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn test_start_server_dbus_error() {
         // Save the original DBUS_SESSION_BUS_ADDRESS
         let original_dbus_address = env::var("DBUS_SESSION_BUS_ADDRESS").ok();

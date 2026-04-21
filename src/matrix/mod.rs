@@ -90,9 +90,9 @@ pub type TimelineDiff<T> = VectorDiff<Arc<T>>;
 #[derive(Debug, Default, Clone)]
 pub struct SpaceHierarchy {
     /// Maps a space ID to its children (rooms or sub-spaces)
-    pub children: HashMap<OwnedRoomId, Vec<OwnedRoomId>>,
+    pub children: HashMap<OwnedRoomId, HashSet<OwnedRoomId>>,
     /// Maps a room/space ID to its parent spaces
-    pub parents: HashMap<OwnedRoomId, Vec<OwnedRoomId>>,
+    pub parents: HashMap<OwnedRoomId, HashSet<OwnedRoomId>>,
     /// Set of all known space IDs
     pub known_spaces: HashSet<OwnedRoomId>,
 }
@@ -113,22 +113,18 @@ impl SpaceHierarchy {
     pub fn add_child(&mut self, space_id: OwnedRoomId, child_id: OwnedRoomId) {
         self.add_space(space_id.clone());
         let children = self.children.entry(space_id.clone()).or_default();
-        if !children.contains(&child_id) {
-            children.push(child_id.clone());
-        }
+        children.insert(child_id.clone());
 
         let parents = self.parents.entry(child_id).or_default();
-        if !parents.contains(&space_id) {
-            parents.push(space_id);
-        }
+        parents.insert(space_id);
     }
 
     pub fn remove_child(&mut self, space_id: &RoomId, child_id: &RoomId) {
         if let Some(children) = self.children.get_mut(space_id) {
-            children.retain(|id| id != child_id);
+            children.remove(child_id);
         }
         if let Some(parents) = self.parents.get_mut(child_id) {
-            parents.retain(|id| id != space_id);
+            parents.remove(space_id);
         }
     }
 
@@ -369,10 +365,10 @@ impl MatrixEngine {
                     ) = event
                     {
                         // Ignore our own messages
-                        if let Some(user_id) = room.client().user_id() {
-                            if ev.sender == user_id {
-                                return;
-                            }
+                        if let Some(user_id) = room.client().user_id()
+                            && ev.sender == user_id
+                        {
+                            return;
                         }
 
                         // Avoid spamming during initial sync by checking if event is older than 5 minutes
@@ -382,11 +378,7 @@ impl MatrixEngine {
                             .as_millis();
 
                         let event_time = ev.origin_server_ts.0.into();
-                        let diff = if now > event_time {
-                            now - event_time
-                        } else {
-                            event_time - now
-                        };
+                        let diff = now.abs_diff(event_time);
 
                         if diff > 300_000 {
                             return;
@@ -878,7 +870,7 @@ impl MatrixEngine {
                 .space_hierarchy
                 .parents
                 .get(room.room_id())
-                .and_then(|parents| parents.first())
+                .and_then(|parents| parents.iter().next())
                 .map(|id| id.to_string())
         };
 
@@ -1514,19 +1506,11 @@ impl MatrixEngine {
         let inner = self.inner.read().await;
         let room = inner.client.get_room(room_id).context("Room not found")?;
 
-        #[cfg(feature = "experimental-search")]
-        {
-            let results = room
-                .search(query, max_results, None)
-                .await
-                .map_err(|e| anyhow::anyhow!(e))?;
-            Ok(results)
-        }
-        #[cfg(not(feature = "experimental-search"))]
-        {
-            let _ = (query, max_results);
-            anyhow::bail!("Search is not enabled");
-        }
+        let results = room
+            .search(query, max_results, None)
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+        Ok(results)
     }
 
     async fn setup_client(data_dir: PathBuf, homeserver_url: &str) -> Result<Client> {
@@ -1579,10 +1563,14 @@ impl MatrixEngine {
 }
 
 pub fn markdown_to_html(markdown: &str) -> String {
-    let mut html_body = String::new();
-    let parser = pulldown_cmark::Parser::new(markdown);
-    pulldown_cmark::html::push_html(&mut html_body, parser);
-    html_body
+    let mut options = pulldown_cmark::Options::empty();
+    options.insert(pulldown_cmark::Options::ENABLE_STRIKETHROUGH);
+    let parser = pulldown_cmark::Parser::new_ext(markdown, options);
+
+    let mut html_output = String::new();
+    pulldown_cmark::html::push_html(&mut html_output, parser);
+
+    html_output
 }
 
 #[cfg(test)]
