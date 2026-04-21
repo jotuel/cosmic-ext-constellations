@@ -8,12 +8,12 @@ mod view;
 
 use anyhow::Result;
 use cosmic::iced::widget::image;
+use cosmic::iced::widget::tooltip;
 use cosmic::iced::{Alignment, Subscription};
 use cosmic::widget::icon::Named;
 use cosmic::widget::menu::action::MenuAction;
-use cosmic::widget::{
-    Column, RcElementWrapper, Row, button, container, menu, text_input,
-};
+use cosmic::widget::tooltip::Position;
+use cosmic::widget::{Column, RcElementWrapper, Row, button, container, menu, text, text_input};
 use cosmic::{Action, Application, Core, Element, Task};
 use eyeball_im::Vector;
 use matrix_sdk::ruma::OwnedRoomId;
@@ -384,10 +384,10 @@ impl Constellations {
                 for room in self.room_list.iter().filter(|r| !r.is_space) {
                     if let Ok(room_id) = matrix_sdk::ruma::RoomId::parse(&*room.id)
                         && matrix.is_in_space_sync(&room_id, selected_space)
-                            && filter_by_search(room)
-                        {
-                            rooms.push(room.clone());
-                        }
+                        && filter_by_search(room)
+                    {
+                        rooms.push(room.clone());
+                    }
                 }
             }
             self.filtered_room_list = rooms;
@@ -660,11 +660,12 @@ impl Application for Constellations {
         let mut start = Vec::new();
 
         if self.is_search_active {
+            let search_btn =
+                button::icon(Named::new("edit-find-symbolic")).on_press(Message::ToggleSearch);
+            let search_tooltip = tooltip(search_btn, text::body("Close Search"), Position::Bottom);
             let row = Row::new()
                 .align_y(Alignment::Center)
-                .push(
-                    button::icon(Named::new("edit-find-symbolic")).on_press(Message::ToggleSearch),
-                )
+                .push(search_tooltip)
                 .push(
                     text_input("Search...", &self.search_query)
                         .on_input(Message::SearchQueryChanged)
@@ -672,11 +673,10 @@ impl Application for Constellations {
                 );
             start.push(row.into());
         } else {
-            start.push(
-                button::icon(Named::new("edit-find-symbolic"))
-                    .on_press(Message::ToggleSearch)
-                    .into(),
-            );
+            let search_btn =
+                button::icon(Named::new("edit-find-symbolic")).on_press(Message::ToggleSearch);
+            let search_tooltip = tooltip(search_btn, text::body("Search"), Position::Bottom);
+            start.push(search_tooltip.into());
         }
 
         start
@@ -687,10 +687,11 @@ impl Application for Constellations {
 
         if self.user_id.is_some() {
             let user_btn = button::icon(Named::new("user-available-symbolic"));
+            let user_tooltip = tooltip(user_btn, text::body("User Menu"), Position::Bottom);
             let key_binds = std::collections::HashMap::new();
 
             let menu_tree = menu::Tree::with_children(
-                RcElementWrapper::new(Element::from(user_btn)),
+                RcElementWrapper::new(Element::from(user_tooltip)),
                 menu::items(
                     &key_binds,
                     vec![
@@ -729,9 +730,10 @@ impl Application for Constellations {
         ));
 
         if let Some(uri) = flags
-            && let Ok(url) = Url::parse(&uri) {
-                tasks.push(Task::done(Action::from(Message::OidcCallback(url))));
-            }
+            && let Ok(url) = Url::parse(&uri)
+        {
+            tasks.push(Task::done(Action::from(Message::OidcCallback(url))));
+        }
 
         let mut app = Constellations {
             core: core.clone(),
@@ -830,17 +832,18 @@ impl Application for Constellations {
 
                 if self.app_settings.send_typing_notifications
                     && let Some(matrix) = &self.matrix
-                        && let Some(room_id) = &self.selected_room {
-                            let matrix = matrix.clone();
-                            let room_id = room_id.clone();
-                            let typing = !self.composer_text.is_empty();
-                            return Task::perform(
-                                async move {
-                                    let _ = matrix.typing_notice(&room_id, typing).await;
-                                },
-                                |_| Action::from(Message::NoOp),
-                            );
-                        }
+                    && let Some(room_id) = &self.selected_room
+                {
+                    let matrix = matrix.clone();
+                    let room_id = room_id.clone();
+                    let typing = !self.composer_text.is_empty();
+                    return Task::perform(
+                        async move {
+                            let _ = matrix.typing_notice(&room_id, typing).await;
+                        },
+                        |_| Action::from(Message::NoOp),
+                    );
+                }
 
                 Task::none()
             }
@@ -1063,12 +1066,13 @@ impl Application for Constellations {
                         );
                     }
                 } else if panel == SettingsPanel::Space
-                    && let Some(space_id) = &self.selected_space {
-                        return self.space_settings.update(
-                            settings::space::Message::LoadSpace(space_id.to_string()),
-                            &self.matrix,
-                        );
-                    }
+                    && let Some(space_id) = &self.selected_space
+                {
+                    return self.space_settings.update(
+                        settings::space::Message::LoadSpace(space_id.to_string()),
+                        &self.matrix,
+                    );
+                }
                 Task::none()
             }
             Message::CloseSettings => {
