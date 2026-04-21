@@ -106,7 +106,7 @@ cannot be undone).
 
  [ ] Set Suggestions: Mark certain children as "suggested" so they are highlighted to new Space members.
 
- [ ] Ordering: Define the order string in the child event to control how rooms appear in the Space sidebar.
+ [x] Ordering: Define the order string in the child event to control how rooms appear in the Space sidebar.
 
  ### *2. Space-Restricted Join Rules*
 

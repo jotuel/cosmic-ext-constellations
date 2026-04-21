@@ -15,6 +15,8 @@ pub struct State {
     pub children: Vec<RoomData>,
     pub is_loading_children: bool,
     pub new_child_id: String,
+    pub new_child_order: String,
+    pub pending_child_orders: std::collections::HashMap<String, String>,
     pub is_adding_child: bool,
     pub topic: String,
     pub original_topic: String,
@@ -40,6 +42,10 @@ pub enum Message {
     RemoveChild(String),
     ChildRemoved(String, Result<(), String>),
     NewChildIdChanged(String),
+    NewChildOrderChanged(String),
+    ChildOrderInputChanged(String, String),
+    SaveChildOrder(String),
+    ChildOrderSaved(Result<(), String>),
     AvatarMediaFetched(Result<Vec<u8>, String>),
     SelectAvatar,
     AvatarFileSelected(Option<std::path::PathBuf>),
@@ -312,10 +318,15 @@ impl State {
                     let engine = matrix.clone();
                     let space_id_clone = space_id.clone();
                     let child_id_clone = self.new_child_id.clone();
+                    let order = if self.new_child_order.trim().is_empty() {
+                        None
+                    } else {
+                        Some(self.new_child_order.clone())
+                    };
                     return Task::perform(
                         async move {
                             engine
-                                .add_space_child(&space_id_clone, &child_id_clone)
+                                .add_space_child(&space_id_clone, &child_id_clone, order)
                                 .await
                                 .map_err(|e| e.to_string())
                         },
@@ -324,11 +335,57 @@ impl State {
                 }
                 Task::none()
             }
+            Message::ChildOrderInputChanged(child_id, order) => {
+                self.pending_child_orders.insert(child_id, order);
+                Task::none()
+            }
+            Message::SaveChildOrder(child_id) => {
+                if let Some(matrix) = matrix
+                    && let Some(space_id) = &self.space_id
+                    && let Some(order_str) = self.pending_child_orders.get(&child_id)
+                {
+                    let engine = matrix.clone();
+                    let space_id_clone = space_id.clone();
+                    let order = if order_str.trim().is_empty() {
+                        None
+                    } else {
+                        Some(order_str.clone())
+                    };
+                    return Task::perform(
+                        async move {
+                            engine
+                                .add_space_child(&space_id_clone, &child_id, order)
+                                .await
+                                .map_err(|e| e.to_string())
+                        },
+                        |res| {
+                            Action::from(crate::Message::SpaceSettings(Message::ChildOrderSaved(
+                                res,
+                            )))
+                        },
+                    );
+                }
+                Task::none()
+            }
+            Message::ChildOrderSaved(res) => {
+                match res {
+                    Ok(_) => {
+                        return Task::done(Action::from(crate::Message::SpaceSettings(
+                            Message::LoadChildren,
+                        )));
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to update child order: {}", e));
+                    }
+                }
+                Task::none()
+            }
             Message::ChildAdded(res) => {
                 self.is_adding_child = false;
                 match res {
                     Ok(_) => {
                         self.new_child_id = String::new();
+                        self.new_child_order = String::new();
                         return Task::done(Action::from(crate::Message::SpaceSettings(
                             Message::LoadChildren,
                         )));
@@ -379,6 +436,10 @@ impl State {
             }
             Message::NewChildIdChanged(id) => {
                 self.new_child_id = id;
+                Task::none()
+            }
+            Message::NewChildOrderChanged(order) => {
+                self.new_child_order = order;
                 Task::none()
             }
             Message::DismissError => {
@@ -484,17 +545,42 @@ impl State {
         } else {
             for child in &self.children {
                 let name = child.name.as_deref().unwrap_or(&child.id);
-                children_col = children_col.push(
-                    Row::new()
-                        .spacing(10)
-                        .align_y(Alignment::Center)
+                let child_id = child.id.to_string();
+                let current_order = child.order.clone().unwrap_or_default();
+                let pending_order = self.pending_child_orders.get(&child_id);
+                let order_to_show = pending_order.unwrap_or(&current_order);
+
+                let mut row = Row::new().spacing(10).align_y(Alignment::Center).push(
+                    Column::new()
                         .push(text::body(name))
-                        .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
-                        .push(
-                            button::destructive("Remove")
-                                .on_press(Message::RemoveChild(child.id.to_string())),
-                        ),
+                        .push(text::body(&child_id).size(10)),
                 );
+
+                row = row.push(cosmic::widget::space().width(cosmic::iced::Length::Fill));
+
+                let child_id_clone = child_id.clone();
+                row = row.push(
+                    text_input::text_input("Order", order_to_show)
+                        .on_input(move |new_order| {
+                            Message::ChildOrderInputChanged(child_id_clone.clone(), new_order)
+                        })
+                        .width(100),
+                );
+
+                if let Some(pending) = pending_order
+                    && pending != &current_order
+                {
+                    row = row.push(
+                        button::text("Apply").on_press(Message::SaveChildOrder(child_id.clone())),
+                    );
+                }
+
+                row = row.push(
+                    button::destructive("Remove")
+                        .on_press(Message::RemoveChild(child_id.clone())),
+                );
+
+                children_col = children_col.push(row);
             }
         }
         col = col.push(children_col);
@@ -524,6 +610,11 @@ impl State {
                 .push(
                     text_input::text_input("!room_id:server.com", &self.new_child_id)
                         .on_input(Message::NewChildIdChanged),
+                )
+                .push(
+                    text_input::text_input("Order (optional)", &self.new_child_order)
+                        .on_input(Message::NewChildOrderChanged)
+                        .width(150),
                 )
                 .push(btn_widget),
         );
