@@ -314,33 +314,32 @@ impl State {
             }
             Message::SaveProfile => {
                 if let Some(matrix) = matrix
-                    && self.display_name != self.original_display_name {
-                        self.is_saving = true;
-                        self.error = None;
-                        let matrix = matrix.clone();
-                        let new_name = self.display_name.clone();
-                        return Task::perform(
-                            async move {
-                                let name_opt = if new_name.is_empty() {
-                                    None
-                                } else {
-                                    Some(new_name.as_str())
-                                };
-                                matrix
-                                    .client()
-                                    .await
-                                    .account()
-                                    .set_display_name(name_opt)
-                                    .await
-                                    .map_err(|e| e.to_string())
-                            },
-                            |res| {
-                                Action::from(crate::Message::UserSettings(Message::ProfileSaved(
-                                    res,
-                                )))
-                            },
-                        );
-                    }
+                    && self.display_name != self.original_display_name
+                {
+                    self.is_saving = true;
+                    self.error = None;
+                    let matrix = matrix.clone();
+                    let new_name = self.display_name.clone();
+                    return Task::perform(
+                        async move {
+                            let name_opt = if new_name.is_empty() {
+                                None
+                            } else {
+                                Some(new_name.as_str())
+                            };
+                            matrix
+                                .client()
+                                .await
+                                .account()
+                                .set_display_name(name_opt)
+                                .await
+                                .map_err(|e| e.to_string())
+                        },
+                        |res| {
+                            Action::from(crate::Message::UserSettings(Message::ProfileSaved(res)))
+                        },
+                    );
+                }
                 Task::none()
             }
             Message::ProfileSaved(res) => {
@@ -758,32 +757,31 @@ impl State {
                 if let Some(matrix) = matrix
                     && let Some(device) =
                         self.devices.iter_mut().find(|d| d.device_id == *device_id)
-                    {
-                        device.is_renaming = false;
-                        let new_name = device.edit_name.clone();
-                        let device_id_str = device_id.clone();
-                        let device_id_for_closure = device_id_str.clone();
-                        let matrix = matrix.clone();
-                        return Task::perform(
-                            async move {
-                                let did =
-                                    matrix_sdk::ruma::OwnedDeviceId::from(device_id_str.as_ref());
-                                matrix
-                                    .client()
-                                    .await
-                                    .rename_device(&did, &new_name)
-                                    .await
-                                    .map(|_| ())
-                                    .map_err(|e| e.to_string())
-                            },
-                            move |res| {
-                                Action::from(crate::Message::UserSettings(Message::DeviceRenamed(
-                                    device_id_for_closure,
-                                    res,
-                                )))
-                            },
-                        );
-                    }
+                {
+                    device.is_renaming = false;
+                    let new_name = device.edit_name.clone();
+                    let device_id_str = device_id.clone();
+                    let device_id_for_closure = device_id_str.clone();
+                    let matrix = matrix.clone();
+                    return Task::perform(
+                        async move {
+                            let did = matrix_sdk::ruma::OwnedDeviceId::from(device_id_str.as_ref());
+                            matrix
+                                .client()
+                                .await
+                                .rename_device(&did, &new_name)
+                                .await
+                                .map(|_| ())
+                                .map_err(|e| e.to_string())
+                        },
+                        move |res| {
+                            Action::from(crate::Message::UserSettings(Message::DeviceRenamed(
+                                device_id_for_closure,
+                                res,
+                            )))
+                        },
+                    );
+                }
                 Task::none()
             }
             Message::DeviceRenamed(ref device_id, res) => {
@@ -805,52 +803,51 @@ impl State {
                 if let Some(matrix) = matrix
                     && let Some(device) =
                         self.devices.iter_mut().find(|d| d.device_id == *device_id)
-                    {
-                        device.is_deleting = true;
-                        let matrix = matrix.clone();
-                        let device_id_str = device_id.clone();
-                        let device_id_for_closure = device_id_str.clone();
-                        let password = self.device_delete_password.clone();
-                        return Task::perform(
-                            async move {
-                                let client = matrix.client().await;
-                                let user_id = client.user_id().ok_or("No user ID")?.to_string();
-                                let did =
-                                    matrix_sdk::ruma::OwnedDeviceId::from(device_id_str.as_ref());
+                {
+                    device.is_deleting = true;
+                    let matrix = matrix.clone();
+                    let device_id_str = device_id.clone();
+                    let device_id_for_closure = device_id_str.clone();
+                    let password = self.device_delete_password.clone();
+                    return Task::perform(
+                        async move {
+                            let client = matrix.client().await;
+                            let user_id = client.user_id().ok_or("No user ID")?.to_string();
+                            let did = matrix_sdk::ruma::OwnedDeviceId::from(device_id_str.as_ref());
 
-                                if let Err(e) = client
-                                    .delete_devices(std::slice::from_ref(&did), None)
-                                    .await
-                                {
-                                    if let Some(info) = e.as_uiaa_response() {
-                                        if password.is_empty() {
-                                            return Err(
-                                                "Password required to delete device".to_string()
-                                            );
-                                        }
-
-                                        let identifier = matrix_sdk::ruma::api::client::uiaa::UserIdentifier::UserIdOrLocalpart(user_id);
-                                        let mut password_auth =
-                                            matrix_sdk::ruma::api::client::uiaa::Password::new(
-                                                identifier, password,
-                                            );
-                                        password_auth.session = info.session.clone();
-
-                                        client.delete_devices(&[did], Some(matrix_sdk::ruma::api::client::uiaa::AuthData::Password(password_auth))).await.map(|_| ()).map_err(|e| e.to_string())?;
-                                        return Ok(());
+                            if let Err(e) = client
+                                .delete_devices(std::slice::from_ref(&did), None)
+                                .await
+                            {
+                                if let Some(info) = e.as_uiaa_response() {
+                                    if password.is_empty() {
+                                        return Err(
+                                            "Password required to delete device".to_string()
+                                        );
                                     }
-                                    return Err(e.to_string());
+
+                                    let identifier = matrix_sdk::ruma::api::client::uiaa::UserIdentifier::UserIdOrLocalpart(user_id);
+                                    let mut password_auth =
+                                        matrix_sdk::ruma::api::client::uiaa::Password::new(
+                                            identifier, password,
+                                        );
+                                    password_auth.session = info.session.clone();
+
+                                    client.delete_devices(&[did], Some(matrix_sdk::ruma::api::client::uiaa::AuthData::Password(password_auth))).await.map(|_| ()).map_err(|e| e.to_string())?;
+                                    return Ok(());
                                 }
-                                Ok(())
-                            },
-                            move |res| {
-                                Action::from(crate::Message::UserSettings(Message::DeviceDeleted(
-                                    device_id_for_closure,
-                                    res,
-                                )))
-                            },
-                        );
-                    }
+                                return Err(e.to_string());
+                            }
+                            Ok(())
+                        },
+                        move |res| {
+                            Action::from(crate::Message::UserSettings(Message::DeviceDeleted(
+                                device_id_for_closure,
+                                res,
+                            )))
+                        },
+                    );
+                }
                 Task::none()
             }
             Message::DeviceDeleted(ref device_id, res) => {

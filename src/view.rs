@@ -849,7 +849,10 @@ impl Constellations {
             }
         }
 
-        container(scrollable(room_list)).width(250).padding(10).into()
+        container(scrollable(room_list))
+            .width(250)
+            .padding(10)
+            .into()
     }
 
     pub fn view_main_content(&self, status_text: String) -> Element<'_, Message> {
