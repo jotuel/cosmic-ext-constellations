@@ -5,8 +5,8 @@ use cosmic::{
         widget::{scrollable, tooltip},
     },
     widget::{
-        Column, Row, button, container, icon::Named, menu, text, text_input,
-        tooltip::Position, RcElementWrapper,
+        Column, RcElementWrapper, Row, button, container, icon::Named, menu, text, text_input,
+        tooltip::Position,
     },
 };
 use matrix_sdk::ruma::events::room::{MediaSource, message::MessageType};
