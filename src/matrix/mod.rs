@@ -1563,10 +1563,14 @@ impl MatrixEngine {
 }
 
 pub fn markdown_to_html(markdown: &str) -> String {
-    let mut html_body = String::new();
-    let parser = pulldown_cmark::Parser::new(markdown);
-    pulldown_cmark::html::push_html(&mut html_body, parser);
-    html_body
+    let mut options = pulldown_cmark::Options::empty();
+    options.insert(pulldown_cmark::Options::ENABLE_STRIKETHROUGH);
+    let parser = pulldown_cmark::Parser::new_ext(markdown, options);
+
+    let mut html_output = String::new();
+    pulldown_cmark::html::push_html(&mut html_output, parser);
+
+    html_output
 }
 
 #[cfg(test)]
