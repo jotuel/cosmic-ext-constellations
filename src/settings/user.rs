@@ -57,6 +57,9 @@ pub struct State {
     pub global_notification_mode_group:
         Option<matrix_sdk::notification_settings::RoomNotificationMode>,
     pub is_loading_global_notifications: bool,
+    pub keywords: Vec<String>,
+    pub new_keyword: String,
+    pub is_loading_keywords: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -105,6 +108,13 @@ pub enum Message {
         matrix_sdk::notification_settings::RoomNotificationMode,
     ),
     GlobalNotificationModeSet(Result<(), String>),
+    LoadKeywords,
+    KeywordsLoaded(Result<Vec<String>, String>),
+    NewKeywordChanged(String),
+    AddKeyword,
+    KeywordAdded(Result<(), String>),
+    RemoveKeyword(String),
+    KeywordRemoved(Result<(), String>),
 }
 
 impl State {
@@ -194,7 +204,13 @@ impl State {
                         },
                     );
 
-                    return Task::batch(vec![t_name, t_avatar, t_devices, t_dm, t_group]);
+                    let t_keywords = Task::done(Action::from(crate::Message::UserSettings(
+                        Message::LoadKeywords,
+                    )));
+
+                    return Task::batch(vec![
+                        t_name, t_avatar, t_devices, t_dm, t_group, t_keywords,
+                    ]);
                 }
                 Task::none()
             }
@@ -868,6 +884,103 @@ impl State {
                 }
                 Task::none()
             }
+            Message::LoadKeywords => {
+                if let Some(matrix) = matrix {
+                    self.is_loading_keywords = true;
+                    let matrix = matrix.clone();
+                    return Task::perform(
+                        async move {
+                            let client = matrix.client().await;
+                            let ns = client.notification_settings().await;
+                            ns.enabled_keywords()
+                                .await
+                                .map(|keywords| keywords.into_iter().collect())
+                                .map_err(|e| e.to_string())
+                        },
+                        |res| {
+                            Action::from(crate::Message::UserSettings(Message::KeywordsLoaded(res)))
+                        },
+                    );
+                }
+                Task::none()
+            }
+            Message::KeywordsLoaded(res) => {
+                self.is_loading_keywords = false;
+                match res {
+                    Ok(keywords) => {
+                        self.keywords = keywords;
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to load keywords: {}", e));
+                    }
+                }
+                Task::none()
+            }
+            Message::NewKeywordChanged(keyword) => {
+                self.new_keyword = keyword;
+                Task::none()
+            }
+            Message::AddKeyword => {
+                if let Some(matrix) = matrix
+                    && !self.new_keyword.is_empty()
+                {
+                    self.is_loading_keywords = true;
+                    let matrix = matrix.clone();
+                    let keyword = self.new_keyword.clone();
+                    return Task::perform(
+                        async move {
+                            let client = matrix.client().await;
+                            let ns = client.notification_settings().await;
+                            ns.add_keyword(keyword).await.map_err(|e| e.to_string())
+                        },
+                        |res| {
+                            Action::from(crate::Message::UserSettings(Message::KeywordAdded(res)))
+                        },
+                    );
+                }
+                Task::none()
+            }
+            Message::KeywordAdded(res) => {
+                match res {
+                    Ok(_) => {
+                        self.new_keyword.clear();
+                        return self.update(Message::LoadKeywords, matrix);
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to add keyword: {}", e));
+                    }
+                }
+                Task::none()
+            }
+            Message::RemoveKeyword(keyword) => {
+                if let Some(matrix) = matrix {
+                    self.is_loading_keywords = true;
+                    let matrix = matrix.clone();
+                    return Task::perform(
+                        async move {
+                            let client = matrix.client().await;
+                            let ns = client.notification_settings().await;
+                            ns.remove_keyword(&keyword).await.map_err(|e| e.to_string())
+                        },
+                        |res| {
+                            Action::from(crate::Message::UserSettings(Message::KeywordRemoved(res)))
+                        },
+                    );
+                }
+                Task::none()
+            }
+            Message::KeywordRemoved(res) => {
+                match res {
+                    Ok(_) => {
+                        return self.update(Message::LoadKeywords, matrix);
+                    }
+                    Err(e) => {
+                        self.is_loading_keywords = false;
+                        self.error = Some(format!("Failed to remove keyword: {}", e));
+                    }
+                }
+                Task::none()
+            }
         }
     }
 
@@ -930,6 +1043,49 @@ impl State {
             }
             group_row = group_row.push(btn);
         }
+        col.into()
+    }
+
+    fn view_keywords<'a>(&'a self) -> Element<'a, Message> {
+        let mut col = Column::new().spacing(10);
+        col = col.push(text::title3("Keyword Notifications"));
+
+        col = col.push(
+            text::body("Receive notifications when these keywords are mentioned in any room.")
+                .size(12),
+        );
+
+        if self.is_loading_keywords {
+            col = col.push(text::body("Loading keywords..."));
+        } else {
+            for keyword in &self.keywords {
+                let mut row = Row::new().spacing(10).align_y(Alignment::Center);
+                row = row.push(text::body(keyword).size(14));
+                row = row.push(cosmic::widget::space().width(cosmic::iced::Length::Fill));
+                row = row.push(tooltip(
+                    button::icon(Named::new("user-trash-symbolic"))
+                        .on_press(Message::RemoveKeyword(keyword.clone())),
+                    text::body("Remove Keyword"),
+                    Position::Top,
+                ));
+                col = col.push(row);
+            }
+
+            let mut add_row = Row::new().spacing(10).align_y(Alignment::Center);
+            add_row = add_row.push(
+                text_input("New keyword", &self.new_keyword)
+                    .on_input(Message::NewKeywordChanged)
+                    .on_submit(Message::AddKeyword),
+            );
+
+            let mut add_btn = button::text("Add");
+            if !self.new_keyword.is_empty() {
+                add_btn = add_btn.on_press(Message::AddKeyword);
+            }
+            add_row = add_row.push(add_btn);
+            col = col.push(add_row);
+        }
+
         col.into()
     }
 
@@ -1234,6 +1390,8 @@ impl State {
 
         col = col.push(self.view_notifications());
 
+        col = col.push(self.view_keywords());
+
         if let Some(err) = &self.error {
             col = col.push(
                 Row::new()
@@ -1273,13 +1431,19 @@ mod tests {
     fn test_password_changed() {
         let mut state = State::default();
 
-        let _ = state.update(Message::CurrentPasswordChanged("old_pass".to_string()), &None);
+        let _ = state.update(
+            Message::CurrentPasswordChanged("old_pass".to_string()),
+            &None,
+        );
         assert_eq!(state.current_password, "old_pass");
 
         let _ = state.update(Message::NewPasswordChanged("new_pass".to_string()), &None);
         assert_eq!(state.new_password, "new_pass");
 
-        let _ = state.update(Message::ConfirmNewPasswordChanged("new_pass".to_string()), &None);
+        let _ = state.update(
+            Message::ConfirmNewPasswordChanged("new_pass".to_string()),
+            &None,
+        );
         assert_eq!(state.confirm_new_password, "new_pass");
     }
 
@@ -1313,7 +1477,10 @@ mod tests {
         assert_eq!(state.devices[0].edit_name, "My Phone");
 
         // Edit name
-        let _ = state.update(Message::EditDeviceNameChanged(device_id.clone(), "My New Phone".to_string()), &None);
+        let _ = state.update(
+            Message::EditDeviceNameChanged(device_id.clone(), "My New Phone".to_string()),
+            &None,
+        );
         assert_eq!(state.devices[0].edit_name, "My New Phone");
 
         // Cancel rename
@@ -1321,5 +1488,18 @@ mod tests {
         assert!(!state.devices[0].is_renaming);
         // edit_name should be preserved as it was updated
         assert_eq!(state.devices[0].edit_name, "My New Phone");
+    }
+
+    #[test]
+    fn test_keywords_state() {
+        let mut state = State::default();
+
+        let _ = state.update(Message::NewKeywordChanged("rust".to_string()), &None);
+        assert_eq!(state.new_keyword, "rust");
+
+        let keywords = vec!["matrix".to_string(), "cosmic".to_string()];
+        let _ = state.update(Message::KeywordsLoaded(Ok(keywords.clone())), &None);
+        assert_eq!(state.keywords, keywords);
+        assert!(!state.is_loading_keywords);
     }
 }
