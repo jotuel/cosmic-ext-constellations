@@ -20,6 +20,12 @@ pub struct DeviceInfo {
     pub is_deleting: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Threepid {
+    pub address: String,
+    pub medium: matrix_sdk::ruma::api::client::account::get_3pids::v3::Medium,
+}
+
 #[derive(Debug, Clone, Default, PartialEq)]
 pub enum VerificationUIState {
     #[default]
@@ -46,6 +52,7 @@ pub struct State {
     pub confirm_new_password: String,
     pub is_changing_password: bool,
     pub password_success: Option<String>,
+    pub success_message: Option<String>,
     pub devices: Vec<DeviceInfo>,
     pub is_loading_devices: bool,
     pub active_verification_request: Option<VerificationRequest>,
@@ -57,6 +64,15 @@ pub struct State {
     pub global_notification_mode_group:
         Option<matrix_sdk::notification_settings::RoomNotificationMode>,
     pub is_loading_global_notifications: bool,
+    pub threepids: Vec<Threepid>,
+    pub is_loading_3pids: bool,
+    pub new_3pid_email: String,
+    pub new_3pid_msisdn: String,
+    pub new_3pid_country_code: String,
+    pub is_requesting_3pid_token: bool,
+    pub adding_3pid_sid: Option<String>,
+    pub adding_3pid_client_secret: Option<String>,
+    pub add_3pid_password: String,
 }
 
 #[derive(Debug, Clone)]
@@ -105,6 +121,23 @@ pub enum Message {
         matrix_sdk::notification_settings::RoomNotificationMode,
     ),
     GlobalNotificationModeSet(Result<(), String>),
+    Load3PIDs,
+    ThreepidsLoaded(Result<Vec<Threepid>, String>),
+    New3PIDEmailChanged(String),
+    New3PIDMsisdnChanged(String),
+    New3PIDCountryCodeChanged(String),
+    Request3PIDEmailToken,
+    Request3PIDMsisdnToken,
+    ThreepidTokenRequested(Result<String, String>),
+    Add3PIDPasswordChanged(String),
+    Add3PID,
+    ThreepidAdded(Result<(), String>),
+    Delete3PID(
+        String,
+        matrix_sdk::ruma::api::client::account::get_3pids::v3::Medium,
+    ),
+    ThreepidDeleted(String, Result<(), String>),
+    DismissSuccessMessage,
 }
 
 impl State {
@@ -158,6 +191,10 @@ impl State {
                         Action::from(crate::Message::UserSettings(Message::LoadDevices))
                     });
 
+                    let t_3pids = Task::perform(async move {}, |_| {
+                        Action::from(crate::Message::UserSettings(Message::Load3PIDs))
+                    });
+
                     let matrix_dm = matrix.clone();
                     let t_dm = Task::perform(
                         async move {
@@ -194,7 +231,7 @@ impl State {
                         },
                     );
 
-                    return Task::batch(vec![t_name, t_avatar, t_devices, t_dm, t_group]);
+                    return Task::batch(vec![t_name, t_avatar, t_devices, t_3pids, t_dm, t_group]);
                 }
                 Task::none()
             }
@@ -868,6 +905,246 @@ impl State {
                 }
                 Task::none()
             }
+            Message::Load3PIDs => {
+                if let Some(matrix) = matrix {
+                    self.is_loading_3pids = true;
+                    let matrix = matrix.clone();
+                    return Task::perform(
+                        async move {
+                            let client = matrix.client().await;
+                            let resp = client
+                                .account()
+                                .get_3pids()
+                                .await
+                                .map_err(|e| e.to_string())?;
+                            let threepids = resp
+                                .threepids
+                                .into_iter()
+                                .map(|t| Threepid {
+                                    address: t.address,
+                                    medium: t.medium,
+                                })
+                                .collect();
+                            Ok(threepids)
+                        },
+                        |res| {
+                            Action::from(crate::Message::UserSettings(Message::ThreepidsLoaded(
+                                res,
+                            )))
+                        },
+                    );
+                }
+                Task::none()
+            }
+            Message::ThreepidsLoaded(res) => {
+                self.is_loading_3pids = false;
+                match res {
+                    Ok(threepids) => {
+                        self.threepids = threepids;
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to load 3PIDs: {}", e));
+                    }
+                }
+                Task::none()
+            }
+            Message::New3PIDEmailChanged(email) => {
+                self.new_3pid_email = email;
+                Task::none()
+            }
+            Message::New3PIDMsisdnChanged(msisdn) => {
+                self.new_3pid_msisdn = msisdn;
+                Task::none()
+            }
+            Message::New3PIDCountryCodeChanged(cc) => {
+                self.new_3pid_country_code = cc;
+                Task::none()
+            }
+            Message::Add3PIDPasswordChanged(pw) => {
+                self.add_3pid_password = pw;
+                Task::none()
+            }
+            Message::Request3PIDEmailToken => {
+                if let Some(matrix) = matrix {
+                    self.is_requesting_3pid_token = true;
+                    self.error = None;
+                    let matrix = matrix.clone();
+                    let email = self.new_3pid_email.clone();
+                    let client_secret = matrix_sdk::ruma::api::client::account::request_3pid_management_token_via_email::v3::ClientSecret::new();
+                    self.adding_3pid_client_secret = Some(client_secret.to_string());
+
+                    return Task::perform(
+                        async move {
+                            let client = matrix.client().await;
+                            let resp = client
+                                .account()
+                                .request_3pid_email_token(
+                                    &client_secret,
+                                    &email,
+                                    matrix_sdk::ruma::uint!(1),
+                                )
+                                .await
+                                .map_err(|e| e.to_string())?;
+                            Ok(resp.sid.to_string())
+                        },
+                        |res| {
+                            Action::from(crate::Message::UserSettings(
+                                Message::ThreepidTokenRequested(res),
+                            ))
+                        },
+                    );
+                }
+                Task::none()
+            }
+            Message::Request3PIDMsisdnToken => {
+                if let Some(matrix) = matrix {
+                    self.is_requesting_3pid_token = true;
+                    self.error = None;
+                    let matrix = matrix.clone();
+                    let msisdn = self.new_3pid_msisdn.clone();
+                    let country = self.new_3pid_country_code.clone();
+                    let client_secret = matrix_sdk::ruma::api::client::account::request_3pid_management_token_via_msisdn::v3::ClientSecret::new();
+                    self.adding_3pid_client_secret = Some(client_secret.to_string());
+
+                    return Task::perform(
+                        async move {
+                            let client = matrix.client().await;
+                            let resp = client
+                                .account()
+                                .request_3pid_msisdn_token(
+                                    &client_secret,
+                                    &country,
+                                    &msisdn,
+                                    matrix_sdk::ruma::uint!(1),
+                                )
+                                .await
+                                .map_err(|e| e.to_string())?;
+                            Ok(resp.sid.to_string())
+                        },
+                        |res| {
+                            Action::from(crate::Message::UserSettings(
+                                Message::ThreepidTokenRequested(res),
+                            ))
+                        },
+                    );
+                }
+                Task::none()
+            }
+            Message::ThreepidTokenRequested(res) => {
+                self.is_requesting_3pid_token = false;
+                match res {
+                    Ok(sid) => {
+                        self.adding_3pid_sid = Some(sid);
+                        self.success_message = Some("Verification code sent. Please confirm the link/code and then provide your password to add it here.".to_string());
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to request verification token: {}", e));
+                        self.adding_3pid_client_secret = None;
+                    }
+                }
+                Task::none()
+            }
+            Message::Add3PID => {
+                if let (Some(matrix), Some(sid), Some(secret)) = (
+                    matrix,
+                    &self.adding_3pid_sid,
+                    &self.adding_3pid_client_secret,
+                ) {
+                    let matrix = matrix.clone();
+                    let sid = sid.clone();
+                    let secret = secret.clone();
+                    let password = self.add_3pid_password.clone();
+
+                    return Task::perform(
+                        async move {
+                            let client = matrix.client().await;
+                            let user_id = client.user_id().ok_or("No user ID")?.to_string();
+                            let sid_typed = matrix_sdk::ruma::api::client::account::request_3pid_management_token_via_email::v3::SessionId::from(sid);
+                            let secret_typed = matrix_sdk::ruma::api::client::account::request_3pid_management_token_via_email::v3::ClientSecret::from(secret);
+
+                            let res = client.account().add_3pid(&secret_typed, &sid_typed, None).await;
+
+                            match res {
+                                Ok(_) => Ok(()),
+                                Err(e) => {
+                                    if let Some(info) = e.as_uiaa_response() {
+                                        if password.is_empty() {
+                                            return Err("Password required to add 3PID".to_string());
+                                        }
+
+                                        let identifier = matrix_sdk::ruma::api::client::uiaa::UserIdentifier::UserIdOrLocalpart(user_id);
+                                        let mut password_auth = matrix_sdk::ruma::api::client::uiaa::Password::new(identifier, password);
+                                        password_auth.session = info.session.clone();
+
+                                        client.account().add_3pid(&secret_typed, &sid_typed, Some(matrix_sdk::ruma::api::client::uiaa::AuthData::Password(password_auth))).await.map(|_| ()).map_err(|e| e.to_string())
+                                    } else {
+                                        Err(e.to_string())
+                                    }
+                                }
+                            }
+                        },
+                        |res| {
+                            Action::from(crate::Message::UserSettings(Message::ThreepidAdded(res)))
+                        },
+                    );
+                }
+                Task::none()
+            }
+            Message::ThreepidAdded(res) => {
+                match res {
+                    Ok(_) => {
+                        self.new_3pid_email.clear();
+                        self.new_3pid_msisdn.clear();
+                        self.add_3pid_password.clear();
+                        self.adding_3pid_sid = None;
+                        self.adding_3pid_client_secret = None;
+                        return self.update(Message::Load3PIDs, matrix);
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to add 3PID: {}", e));
+                    }
+                }
+                Task::none()
+            }
+            Message::DismissSuccessMessage => {
+                self.success_message = None;
+                Task::none()
+            }
+            Message::Delete3PID(address, medium) => {
+                if let Some(matrix) = matrix {
+                    let matrix = matrix.clone();
+                    let addr = address.clone();
+                    return Task::perform(
+                        async move {
+                            let client = matrix.client().await;
+                            client
+                                .account()
+                                .delete_3pid(&addr, medium, None)
+                                .await
+                                .map(|_| ())
+                                .map_err(|e| e.to_string())
+                        },
+                        move |res| {
+                            Action::from(crate::Message::UserSettings(Message::ThreepidDeleted(
+                                address.clone(),
+                                res,
+                            )))
+                        },
+                    );
+                }
+                Task::none()
+            }
+            Message::ThreepidDeleted(address, res) => {
+                match res {
+                    Ok(_) => {
+                        self.threepids.retain(|t| t.address != address);
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to delete 3PID: {}", e));
+                    }
+                }
+                Task::none()
+            }
         }
     }
 
@@ -1173,6 +1450,102 @@ impl State {
         devices_col.into()
     }
 
+    fn view_3pids<'a>(&'a self) -> Element<'a, Message> {
+        let mut col = Column::new()
+            .spacing(10)
+            .push(text::title3("Emails & Phone Numbers"));
+
+        if self.is_loading_3pids {
+            col = col.push(text::body("Loading linked identifiers..."));
+        } else {
+            for t in &self.threepids {
+                let mut row = Row::new().spacing(10).align_y(Alignment::Center);
+                let icon = match t.medium {
+                    matrix_sdk::ruma::api::client::account::get_3pids::v3::Medium::Email => {
+                        "mail-unread-symbolic"
+                    }
+                    matrix_sdk::ruma::api::client::account::get_3pids::v3::Medium::Msisdn => {
+                        "phone-symbolic"
+                    }
+                    _ => "dialog-question-symbolic",
+                };
+
+                row = row
+                    .push(button::icon(Named::new(icon)))
+                    .push(text::body(t.address.clone()))
+                    .push(cosmic::widget::space().width(cosmic::iced::Length::Fill));
+
+                let del_btn = button::destructive("Remove")
+                    .on_press(Message::Delete3PID(t.address.clone(), t.medium.clone()));
+                row = row.push(del_btn);
+
+                col = col.push(row);
+            }
+
+            col = col.push(text::body("Add Email Address").size(14));
+            let mut email_row = Row::new().spacing(10).align_y(Alignment::Center);
+            email_row = email_row.push(
+                text_input("email@example.com", &self.new_3pid_email)
+                    .on_input(Message::New3PIDEmailChanged),
+            );
+
+            if self.adding_3pid_sid.is_none() {
+                let mut btn = button::text(if self.is_requesting_3pid_token {
+                    "Sending..."
+                } else {
+                    "Send"
+                });
+                if !self.is_requesting_3pid_token && !self.new_3pid_email.is_empty() {
+                    btn = btn.on_press(Message::Request3PIDEmailToken);
+                }
+                email_row = email_row.push(btn);
+            }
+            col = col.push(email_row);
+
+            col = col.push(text::body("Add Phone Number").size(14));
+            let mut phone_row = Row::new().spacing(10).align_y(Alignment::Center);
+            phone_row = phone_row.push(
+                text_input("Country (e.g. US)", &self.new_3pid_country_code)
+                    .on_input(Message::New3PIDCountryCodeChanged)
+                    .width(100),
+            );
+            phone_row = phone_row.push(
+                text_input("Phone Number", &self.new_3pid_msisdn)
+                    .on_input(Message::New3PIDMsisdnChanged),
+            );
+
+            if self.adding_3pid_sid.is_none() {
+                let mut btn = button::text(if self.is_requesting_3pid_token {
+                    "Sending..."
+                } else {
+                    "Send"
+                });
+                if !self.is_requesting_3pid_token
+                    && !self.new_3pid_msisdn.is_empty()
+                    && !self.new_3pid_country_code.is_empty()
+                {
+                    btn = btn.on_press(Message::Request3PIDMsisdnToken);
+                }
+                phone_row = phone_row.push(btn);
+            }
+            col = col.push(phone_row);
+
+            if let Some(_sid) = &self.adding_3pid_sid {
+                col = col.push(text::body("Complete Addition").size(14));
+                let mut complete_row = Row::new().spacing(10).align_y(Alignment::Center);
+                complete_row = complete_row.push(
+                    text_input("Account Password", &self.add_3pid_password)
+                        .password()
+                        .on_input(Message::Add3PIDPasswordChanged),
+                );
+                complete_row = complete_row.push(button::suggested("Add").on_press(Message::Add3PID));
+                col = col.push(complete_row);
+            }
+        }
+
+        col.into()
+    }
+
     fn view_verification<'a>(&'a self) -> Element<'a, Message> {
         let mut col = Column::new().spacing(10);
         match &self.verification_ui_state {
@@ -1248,6 +1621,18 @@ impl State {
 
         col = col.push(self.view_devices());
 
+        col = col.push(self.view_3pids());
+
+        if let Some(msg) = &self.success_message {
+            col = col.push(
+                Row::new()
+                    .spacing(10)
+                    .align_y(Alignment::Center)
+                    .push(text::body(msg))
+                    .push(button::text("Dismiss").on_press(Message::DismissSuccessMessage)),
+            );
+        }
+
         col = col.push(self.view_verification());
 
         col.into()
@@ -1273,13 +1658,19 @@ mod tests {
     fn test_password_changed() {
         let mut state = State::default();
 
-        let _ = state.update(Message::CurrentPasswordChanged("old_pass".to_string()), &None);
+        let _ = state.update(
+            Message::CurrentPasswordChanged("old_pass".to_string()),
+            &None,
+        );
         assert_eq!(state.current_password, "old_pass");
 
         let _ = state.update(Message::NewPasswordChanged("new_pass".to_string()), &None);
         assert_eq!(state.new_password, "new_pass");
 
-        let _ = state.update(Message::ConfirmNewPasswordChanged("new_pass".to_string()), &None);
+        let _ = state.update(
+            Message::ConfirmNewPasswordChanged("new_pass".to_string()),
+            &None,
+        );
         assert_eq!(state.confirm_new_password, "new_pass");
     }
 
@@ -1313,7 +1704,10 @@ mod tests {
         assert_eq!(state.devices[0].edit_name, "My Phone");
 
         // Edit name
-        let _ = state.update(Message::EditDeviceNameChanged(device_id.clone(), "My New Phone".to_string()), &None);
+        let _ = state.update(
+            Message::EditDeviceNameChanged(device_id.clone(), "My New Phone".to_string()),
+            &None,
+        );
         assert_eq!(state.devices[0].edit_name, "My New Phone");
 
         // Cancel rename
@@ -1321,5 +1715,43 @@ mod tests {
         assert!(!state.devices[0].is_renaming);
         // edit_name should be preserved as it was updated
         assert_eq!(state.devices[0].edit_name, "My New Phone");
+    }
+
+    #[test]
+    fn test_threepids_loaded() {
+        let mut state = State::default();
+        let threepids = vec![Threepid {
+            address: "test@example.com".to_string(),
+            medium: matrix_sdk::ruma::api::client::account::get_3pids::v3::Medium::Email,
+        }];
+
+        let _ = state.update(Message::ThreepidsLoaded(Ok(threepids.clone())), &None);
+
+        assert!(!state.is_loading_3pids);
+        assert_eq!(state.threepids, threepids);
+    }
+
+    #[test]
+    fn test_new_3pid_email_changed() {
+        let mut state = State::default();
+        let email = "new@example.com".to_string();
+
+        let _ = state.update(Message::New3PIDEmailChanged(email.clone()), &None);
+
+        assert_eq!(state.new_3pid_email, email);
+    }
+
+    #[test]
+    fn test_threepid_deleted() {
+        let mut state = State::default();
+        let address = "test@example.com".to_string();
+        state.threepids = vec![Threepid {
+            address: address.clone(),
+            medium: matrix_sdk::ruma::api::client::account::get_3pids::v3::Medium::Email,
+        }];
+
+        let _ = state.update(Message::ThreepidDeleted(address, Ok(())), &None);
+
+        assert!(state.threepids.is_empty());
     }
 }
