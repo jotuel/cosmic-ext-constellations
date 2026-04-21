@@ -23,7 +23,7 @@ pub struct DeviceInfo {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Threepid {
     pub address: String,
-    pub medium: matrix_sdk::ruma::api::client::account::get_3pids::v3::Medium,
+    pub medium: matrix_sdk::ruma::thirdparty::Medium,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -73,6 +73,9 @@ pub struct State {
     pub adding_3pid_sid: Option<String>,
     pub adding_3pid_client_secret: Option<String>,
     pub add_3pid_password: String,
+    pub keywords: Vec<String>,
+    pub new_keyword: String,
+    pub is_loading_keywords: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -132,12 +135,16 @@ pub enum Message {
     Add3PIDPasswordChanged(String),
     Add3PID,
     ThreepidAdded(Result<(), String>),
-    Delete3PID(
-        String,
-        matrix_sdk::ruma::api::client::account::get_3pids::v3::Medium,
-    ),
+    Delete3PID(String, matrix_sdk::ruma::thirdparty::Medium),
     ThreepidDeleted(String, Result<(), String>),
     DismissSuccessMessage,
+    LoadKeywords,
+    KeywordsLoaded(Vec<String>),
+    NewKeywordChanged(String),
+    AddKeyword,
+    KeywordAdded(Result<(), String>),
+    RemoveKeyword(String),
+    KeywordRemoved(Result<(), String>),
 }
 
 impl State {
@@ -231,7 +238,13 @@ impl State {
                         },
                     );
 
-                    return Task::batch(vec![t_name, t_avatar, t_devices, t_3pids, t_dm, t_group]);
+                    let t_keywords = Task::done(Action::from(crate::Message::UserSettings(
+                        Message::LoadKeywords,
+                    )));
+
+                    return Task::batch(vec![
+                        t_name, t_avatar, t_devices, t_3pids, t_dm, t_group, t_keywords,
+                    ]);
                 }
                 Task::none()
             }
@@ -970,7 +983,7 @@ impl State {
                     self.error = None;
                     let matrix = matrix.clone();
                     let email = self.new_3pid_email.clone();
-                    let client_secret = matrix_sdk::ruma::api::client::account::request_3pid_management_token_via_email::v3::ClientSecret::new();
+                    let client_secret = matrix_sdk::ruma::ClientSecret::new();
                     self.adding_3pid_client_secret = Some(client_secret.to_string());
 
                     return Task::perform(
@@ -1003,7 +1016,7 @@ impl State {
                     let matrix = matrix.clone();
                     let msisdn = self.new_3pid_msisdn.clone();
                     let country = self.new_3pid_country_code.clone();
-                    let client_secret = matrix_sdk::ruma::api::client::account::request_3pid_management_token_via_msisdn::v3::ClientSecret::new();
+                    let client_secret = matrix_sdk::ruma::ClientSecret::new();
                     self.adding_3pid_client_secret = Some(client_secret.to_string());
 
                     return Task::perform(
@@ -1059,10 +1072,13 @@ impl State {
                         async move {
                             let client = matrix.client().await;
                             let user_id = client.user_id().ok_or("No user ID")?.to_string();
-                            let sid_typed = matrix_sdk::ruma::api::client::account::request_3pid_management_token_via_email::v3::SessionId::from(sid);
-                            let secret_typed = matrix_sdk::ruma::api::client::account::request_3pid_management_token_via_email::v3::ClientSecret::from(secret);
+                            let sid_typed = matrix_sdk::ruma::SessionId::parse(sid).map_err(|e| e.to_string())?;
+                            let secret_typed = matrix_sdk::ruma::ClientSecret::parse(secret).map_err(|e| e.to_string())?;
 
-                            let res = client.account().add_3pid(&secret_typed, &sid_typed, None).await;
+                            let res = client
+                                .account()
+                                .add_3pid(&secret_typed, &sid_typed, None)
+                                .await;
 
                             match res {
                                 Ok(_) => Ok(()),
@@ -1073,7 +1089,10 @@ impl State {
                                         }
 
                                         let identifier = matrix_sdk::ruma::api::client::uiaa::UserIdentifier::UserIdOrLocalpart(user_id);
-                                        let mut password_auth = matrix_sdk::ruma::api::client::uiaa::Password::new(identifier, password);
+                                        let mut password_auth =
+                                            matrix_sdk::ruma::api::client::uiaa::Password::new(
+                                                identifier, password,
+                                            );
                                         password_auth.session = info.session.clone();
 
                                         client.account().add_3pid(&secret_typed, &sid_typed, Some(matrix_sdk::ruma::api::client::uiaa::AuthData::Password(password_auth))).await.map(|_| ()).map_err(|e| e.to_string())
@@ -1145,6 +1164,97 @@ impl State {
                 }
                 Task::none()
             }
+            Message::LoadKeywords => {
+                if let Some(matrix) = matrix {
+                    self.is_loading_keywords = true;
+                    let matrix = matrix.clone();
+                    return Task::perform(
+                        async move {
+                            let client = matrix.client().await;
+                            let ns = client.notification_settings().await;
+                            let mut res = Vec::new();
+                            for k in ns.enabled_keywords().await {
+                                res.push(k.into());
+                            }
+                            res
+                        },
+                        |res| {
+                            Action::from(crate::Message::UserSettings(Message::KeywordsLoaded(res)))
+                        },
+                    );
+                }
+                Task::none()
+            }
+            Message::KeywordsLoaded(res) => {
+                self.is_loading_keywords = false;
+                self.keywords = res;
+                Task::none()
+            }
+            Message::NewKeywordChanged(keyword) => {
+                self.new_keyword = keyword;
+                Task::none()
+            }
+            Message::AddKeyword => {
+                if let Some(matrix) = matrix
+                    && !self.new_keyword.is_empty()
+                {
+                    self.is_loading_keywords = true;
+                    let matrix = matrix.clone();
+                    let keyword = self.new_keyword.clone();
+                    return Task::perform(
+                        async move {
+                            let client = matrix.client().await;
+                            let ns = client.notification_settings().await;
+                            ns.add_keyword(keyword).await.map_err(|e| e.to_string())
+                        },
+                        |res| {
+                            Action::from(crate::Message::UserSettings(Message::KeywordAdded(res)))
+                        },
+                    );
+                }
+                Task::none()
+            }
+            Message::KeywordAdded(res) => {
+                match res {
+                    Ok(_) => {
+                        self.new_keyword.clear();
+                        return self.update(Message::LoadKeywords, matrix);
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to add keyword: {}", e));
+                    }
+                }
+                Task::none()
+            }
+            Message::RemoveKeyword(keyword) => {
+                if let Some(matrix) = matrix {
+                    self.is_loading_keywords = true;
+                    let matrix = matrix.clone();
+                    return Task::perform(
+                        async move {
+                            let client = matrix.client().await;
+                            let ns = client.notification_settings().await;
+                            ns.remove_keyword(&keyword).await.map_err(|e| e.to_string())
+                        },
+                        |res| {
+                            Action::from(crate::Message::UserSettings(Message::KeywordRemoved(res)))
+                        },
+                    );
+                }
+                Task::none()
+            }
+            Message::KeywordRemoved(res) => {
+                match res {
+                    Ok(_) => {
+                        return self.update(Message::LoadKeywords, matrix);
+                    }
+                    Err(e) => {
+                        self.is_loading_keywords = false;
+                        self.error = Some(format!("Failed to remove keyword: {}", e));
+                    }
+                }
+                Task::none()
+            }
         }
     }
 
@@ -1207,6 +1317,49 @@ impl State {
             }
             group_row = group_row.push(btn);
         }
+        col.into()
+    }
+
+    fn view_keywords<'a>(&'a self) -> Element<'a, Message> {
+        let mut col = Column::new().spacing(10);
+        col = col.push(text::title3("Keyword Notifications"));
+
+        col = col.push(
+            text::body("Receive notifications when these keywords are mentioned in any room.")
+                .size(12),
+        );
+
+        if self.is_loading_keywords {
+            col = col.push(text::body("Loading keywords..."));
+        } else {
+            for keyword in &self.keywords {
+                let mut row = Row::new().spacing(10).align_y(Alignment::Center);
+                row = row.push(text::body(keyword).size(14));
+                row = row.push(cosmic::widget::space().width(cosmic::iced::Length::Fill));
+                row = row.push(tooltip(
+                    button::icon(Named::new("user-trash-symbolic"))
+                        .on_press(Message::RemoveKeyword(keyword.clone())),
+                    text::body("Remove Keyword"),
+                    Position::Top,
+                ));
+                col = col.push(row);
+            }
+
+            let mut add_row = Row::new().spacing(10).align_y(Alignment::Center);
+            add_row = add_row.push(
+                text_input("New keyword", &self.new_keyword)
+                    .on_input(Message::NewKeywordChanged)
+                    .on_submit(|_| Message::AddKeyword),
+            );
+
+            let mut add_btn = button::text("Add");
+            if !self.new_keyword.is_empty() {
+                add_btn = add_btn.on_press(Message::AddKeyword);
+            }
+            add_row = add_row.push(add_btn);
+            col = col.push(add_row);
+        }
+
         col.into()
     }
 
@@ -1461,10 +1614,10 @@ impl State {
             for t in &self.threepids {
                 let mut row = Row::new().spacing(10).align_y(Alignment::Center);
                 let icon = match t.medium {
-                    matrix_sdk::ruma::api::client::account::get_3pids::v3::Medium::Email => {
+                    matrix_sdk::ruma::thirdparty::Medium::Email => {
                         "mail-unread-symbolic"
                     }
-                    matrix_sdk::ruma::api::client::account::get_3pids::v3::Medium::Msisdn => {
+                    matrix_sdk::ruma::thirdparty::Medium::Msisdn => {
                         "phone-symbolic"
                     }
                     _ => "dialog-question-symbolic",
@@ -1538,7 +1691,8 @@ impl State {
                         .password()
                         .on_input(Message::Add3PIDPasswordChanged),
                 );
-                complete_row = complete_row.push(button::suggested("Add").on_press(Message::Add3PID));
+                complete_row =
+                    complete_row.push(button::suggested("Add").on_press(Message::Add3PID));
                 col = col.push(complete_row);
             }
         }
@@ -1606,6 +1760,8 @@ impl State {
         col = col.push(self.view_profile());
 
         col = col.push(self.view_notifications());
+
+        col = col.push(self.view_keywords());
 
         if let Some(err) = &self.error {
             col = col.push(
@@ -1722,7 +1878,7 @@ mod tests {
         let mut state = State::default();
         let threepids = vec![Threepid {
             address: "test@example.com".to_string(),
-            medium: matrix_sdk::ruma::api::client::account::get_3pids::v3::Medium::Email,
+            medium: matrix_sdk::ruma::thirdparty::Medium::Email,
         }];
 
         let _ = state.update(Message::ThreepidsLoaded(Ok(threepids.clone())), &None);
@@ -1747,11 +1903,24 @@ mod tests {
         let address = "test@example.com".to_string();
         state.threepids = vec![Threepid {
             address: address.clone(),
-            medium: matrix_sdk::ruma::api::client::account::get_3pids::v3::Medium::Email,
+            medium: matrix_sdk::ruma::thirdparty::Medium::Email,
         }];
 
         let _ = state.update(Message::ThreepidDeleted(address, Ok(())), &None);
 
         assert!(state.threepids.is_empty());
+    }
+
+    #[test]
+    fn test_keywords_state() {
+        let mut state = State::default();
+
+        let _ = state.update(Message::NewKeywordChanged("rust".to_string()), &None);
+        assert_eq!(state.new_keyword, "rust");
+
+        let keywords = vec!["matrix".to_string(), "cosmic".to_string()];
+        let _ = state.update(Message::KeywordsLoaded(keywords.clone()), &None);
+        assert_eq!(state.keywords, keywords);
+        assert!(!state.is_loading_keywords);
     }
 }
