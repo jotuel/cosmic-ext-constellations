@@ -113,6 +113,37 @@ fn test_space_hierarchy_multiple_parents() {
 }
 
 #[test]
+fn test_space_hierarchy_remove_child() {
+    let mut hierarchy = SpaceHierarchy::new();
+    let space_1 = RoomId::parse("!space1:example.com").unwrap();
+    let space_2 = RoomId::parse("!space2:example.com").unwrap();
+    let room = RoomId::parse("!room:example.com").unwrap();
+
+    // Add child to space_1 and space_2
+    hierarchy.add_child(space_1.clone(), room.clone());
+    hierarchy.add_child(space_2.clone(), room.clone());
+
+    assert!(hierarchy.is_in_space(&room, &space_1));
+    assert!(hierarchy.is_in_space(&room, &space_2));
+
+    // Remove child from space_1
+    hierarchy.remove_child(&space_1, &room);
+
+    // Verify it is no longer in space_1 but still in space_2
+    assert!(!hierarchy.is_in_space(&room, &space_1));
+    assert!(hierarchy.is_in_space(&room, &space_2));
+
+    // Remove child from space_1 again (should be a no-op)
+    hierarchy.remove_child(&space_1, &room);
+    assert!(!hierarchy.is_in_space(&room, &space_1));
+
+    // Remove a non-existent child
+    let unknown_room = RoomId::parse("!unknown:example.com").unwrap();
+    hierarchy.remove_child(&space_1, &unknown_room);
+    assert!(!hierarchy.is_in_space(&unknown_room, &space_1));
+}
+
+#[test]
 fn test_room_data_space_serialization() {
     let room_data = RoomData {
         id: "!room:example.com".into(),
@@ -799,6 +830,23 @@ async fn test_join_room_error() {
 
     let client = logged_in_client(Some(mock_server.uri())).await;
 
+#[serial_test::serial]
+async fn test_logout_error_path() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path_regex(r"^/_matrix/client/.*?/logout$"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&mock_server)
+        .await;
+    mock_server.expect(Mock::given(method("POST")).and(path_regex(r"^/_matrix/client/.*?/logout$")).respond_with(ResponseTemplate::new(500)).expect(1).mount(&mock_server).await);
+
+    let tmp_dir = tempdir().unwrap();
+    let engine = MatrixEngine::new(tmp_dir.path().to_path_buf()).await.unwrap();
+
+    let client = logged_in_client(Some(mock_server.uri())).await;
+
+    // Override the internal client with our mocked one
     {
         let mut inner = engine.inner.write().await;
         inner.client = client;
@@ -841,6 +889,41 @@ async fn test_join_room_success() {
 
     let client = logged_in_client(Some(mock_server.uri())).await;
 
+    // Set invalid DBus so keyring doesn't hang/fail test due to DBus
+    let orig_dbus = std::env::var("DBUS_SESSION_BUS_ADDRESS").ok();
+    std::env::set_var("DBUS_SESSION_BUS_ADDRESS", "unix:path=/nonexistent");
+
+    // Call logout and ensure it completes successfully despite the 500 error from the mock server
+    let result = engine.logout().await;
+
+    // Restore DBus
+    if let Some(dbus) = orig_dbus {
+        std::env::set_var("DBUS_SESSION_BUS_ADDRESS", dbus);
+    } else {
+        std::env::remove_var("DBUS_SESSION_BUS_ADDRESS");
+    }
+
+    assert!(result.is_ok(), "Logout failed: {:?}", result.err());
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn test_logout_error_path() {
+    let mock_server = MockServer::start().await;
+
+    let _mock_guard = Mock::given(method("POST"))
+        .and(path_regex(r"^/_matrix/client/.*?/logout$"))
+        .respond_with(ResponseTemplate::new(500))
+        .expect(1)
+        .mount_as_scoped(&mock_server)
+        .await;
+
+    let tmp_dir = tempdir().unwrap();
+    let engine = MatrixEngine::new(tmp_dir.path().to_path_buf()).await.unwrap();
+
+    let client = logged_in_client(Some(mock_server.uri())).await;
+
+    // Override the internal client with our mocked one
     {
         let mut inner = engine.inner.write().await;
         inner.client = client;
@@ -850,4 +933,25 @@ async fn test_join_room_success() {
     let result = engine.join_room(&room_id).await;
 
     assert!(result.is_ok(), "Expected success when joining room, got: {:?}", result.err());
+    // Set invalid DBus so keyring doesn't hang/fail test due to DBus
+    let orig_dbus = std::env::var("DBUS_SESSION_BUS_ADDRESS").ok();
+    std::env::set_var("DBUS_SESSION_BUS_ADDRESS", "unix:path=/nonexistent");
+
+    // We can use a guard to ensure DBus is restored even on panic
+    struct DBusGuard(Option<String>);
+    impl Drop for DBusGuard {
+        fn drop(&mut self) {
+            if let Some(dbus) = &self.0 {
+                std::env::set_var("DBUS_SESSION_BUS_ADDRESS", dbus);
+            } else {
+                std::env::remove_var("DBUS_SESSION_BUS_ADDRESS");
+            }
+        }
+    }
+    let _guard = DBusGuard(orig_dbus);
+
+    // Call logout and ensure it completes successfully despite the 500 error from the mock server
+    let result = engine.logout().await;
+
+    assert!(result.is_ok(), "Logout failed: {:?}", result.err());
 }
