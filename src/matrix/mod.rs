@@ -987,6 +987,58 @@ impl MatrixEngine {
         Ok(())
     }
 
+    pub async fn get_room_visibility(
+        &self,
+        room_id: &str,
+    ) -> Result<matrix_sdk::ruma::api::client::room::get_room_visibility::v3::Visibility> {
+        let room_id_parsed = RoomId::parse(room_id)?;
+        let client = self.client().await;
+        let visibility = client
+            .room_directory()
+            .get_room_visibility(&room_id_parsed)
+            .await?;
+        Ok(visibility)
+    }
+
+    pub async fn set_room_visibility(
+        &self,
+        room_id: &str,
+        visibility: matrix_sdk::ruma::api::client::room::get_room_visibility::v3::Visibility,
+    ) -> Result<()> {
+        let room_id_parsed = RoomId::parse(room_id)?;
+        let client = self.client().await;
+        client
+            .room_directory()
+            .set_room_visibility(&room_id_parsed, visibility)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn get_room_join_rule(
+        &self,
+        room_id: &str,
+    ) -> Result<matrix_sdk::ruma::events::room::join_rules::JoinRule> {
+        let room_id_parsed = RoomId::parse(room_id)?;
+        let client = self.client().await;
+        let room = client.get_room(&room_id_parsed).context("Room not found")?;
+        Ok(room.join_rule())
+    }
+
+    pub async fn set_room_join_rule(
+        &self,
+        room_id: &str,
+        join_rule: matrix_sdk::ruma::events::room::join_rules::JoinRule,
+    ) -> Result<()> {
+        let room_id_parsed = RoomId::parse(room_id)?;
+        let client = self.client().await;
+        let room = client.get_room(&room_id_parsed).context("Room not found")?;
+
+        use matrix_sdk::ruma::events::room::join_rules::RoomJoinRulesEventContent;
+        let content = RoomJoinRulesEventContent::new(join_rule);
+        room.send_state_event(content).await?;
+        Ok(())
+    }
+
     pub async fn upload_room_avatar(&self, room_id: &str, data: Vec<u8>, mime: &str) -> Result<()> {
         let room_id_parsed = RoomId::parse(room_id)?;
         let client = self.client().await;

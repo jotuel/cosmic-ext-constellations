@@ -22,12 +22,18 @@ pub struct State {
     pub avatar_handle: Option<cosmic::iced::widget::image::Handle>,
     pub is_uploading_avatar: bool,
     pub is_loading_avatar: bool,
+    pub is_public: bool,
+    pub original_is_public: bool,
+    pub is_invite_only: bool,
+    pub original_is_invite_only: bool,
 }
 
 #[derive(Debug, Clone)]
 pub enum Message {
     LoadSpace(String),
     SpaceLoaded(Result<SpaceInfo, String>),
+    IsPublicChanged(bool),
+    IsInviteOnlyChanged(bool),
     NameChanged(String),
     TopicChanged(String),
     SaveSpace,
@@ -51,6 +57,8 @@ pub struct SpaceInfo {
     pub name: String,
     pub topic: String,
     pub avatar_url: Option<String>,
+    pub visibility: matrix_sdk::ruma::api::client::room::get_room_visibility::v3::Visibility,
+    pub join_rule: matrix_sdk::ruma::events::room::join_rules::JoinRule,
 }
 
 impl State {
@@ -76,10 +84,19 @@ impl State {
                                 .get_room(&room_id_parsed)
                                 .ok_or_else(|| "Space not found".to_string())?;
 
+                            let visibility = engine.get_room_visibility(&space_id).await.unwrap_or(
+                                matrix_sdk::ruma::api::client::room::get_room_visibility::v3::Visibility::Private,
+                            );
+                            let join_rule = engine.get_room_join_rule(&space_id).await.unwrap_or(
+                                matrix_sdk::ruma::events::room::join_rules::JoinRule::Invite,
+                            );
+
                             Ok(SpaceInfo {
                                 name: room.name().unwrap_or_default(),
                                 topic: room.topic().unwrap_or_default(),
                                 avatar_url: room.avatar_url().map(|u| u.to_string()),
+                                visibility,
+                                join_rule,
                             })
                         },
                         |res| {
@@ -99,6 +116,12 @@ impl State {
                         self.topic = info.topic.clone();
                         self.original_topic = info.topic;
                         self.avatar_url = info.avatar_url;
+                        self.is_public = info.visibility
+                            == matrix_sdk::ruma::api::client::room::get_room_visibility::v3::Visibility::Public;
+                        self.original_is_public = self.is_public;
+                        self.is_invite_only = info.join_rule
+                            == matrix_sdk::ruma::events::room::join_rules::JoinRule::Invite;
+                        self.original_is_invite_only = self.is_invite_only;
                         self.error = None;
 
                         let mut tasks = Vec::new();
@@ -240,6 +263,14 @@ impl State {
                 }
                 Task::none()
             }
+            Message::IsPublicChanged(is_public) => {
+                self.is_public = is_public;
+                Task::none()
+            }
+            Message::IsInviteOnlyChanged(is_invite_only) => {
+                self.is_invite_only = is_invite_only;
+                Task::none()
+            }
             Message::NameChanged(name) => {
                 self.name = name;
                 Task::none()
@@ -260,6 +291,10 @@ impl State {
                         let space_id_clone = space_id.clone();
                         let original_name = self.original_name.clone();
                         let original_topic = self.original_topic.clone();
+                        let new_is_public = self.is_public;
+                        let original_is_public = self.original_is_public;
+                        let new_is_invite_only = self.is_invite_only;
+                        let original_is_invite_only = self.original_is_invite_only;
 
                         Task::perform(
                             async move {
@@ -272,6 +307,28 @@ impl State {
                                 if new_topic != original_topic {
                                     engine
                                         .set_room_topic(&space_id_clone, new_topic)
+                                        .await
+                                        .map_err(|e| e.to_string())?;
+                                }
+                                if new_is_public != original_is_public {
+                                    let visibility = if new_is_public {
+                                        matrix_sdk::ruma::api::client::room::get_room_visibility::v3::Visibility::Public
+                                    } else {
+                                        matrix_sdk::ruma::api::client::room::get_room_visibility::v3::Visibility::Private
+                                    };
+                                    engine
+                                        .set_room_visibility(&space_id_clone, visibility)
+                                        .await
+                                        .map_err(|e| e.to_string())?;
+                                }
+                                if new_is_invite_only != original_is_invite_only {
+                                    let join_rule = if new_is_invite_only {
+                                        matrix_sdk::ruma::events::room::join_rules::JoinRule::Invite
+                                    } else {
+                                        matrix_sdk::ruma::events::room::join_rules::JoinRule::Public
+                                    };
+                                    engine
+                                        .set_room_join_rule(&space_id_clone, join_rule)
                                         .await
                                         .map_err(|e| e.to_string())?;
                                 }
@@ -296,6 +353,8 @@ impl State {
                     Ok(_) => {
                         self.original_name = self.name.clone();
                         self.original_topic = self.topic.clone();
+                        self.original_is_public = self.is_public;
+                        self.original_is_invite_only = self.is_invite_only;
                         self.error = None;
                     }
                     Err(e) => {
@@ -455,13 +514,57 @@ impl State {
                 .push(text_input::text_input("Topic", &self.topic).on_input(Message::TopicChanged)),
         );
 
+        col = col.push(text::title3("Discovery & Access"));
+
+        col = col.push(
+            Row::new()
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .push(
+                    Column::new()
+                        .push(text::body("Publicly discoverable"))
+                        .push(
+                            text::body("Show this space in the server's directory")
+                                .size(12)
+                                .color(cosmic::theme::active().container().on.into_rgba()),
+                        ),
+                )
+                .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
+                .push(
+                    cosmic::widget::toggler(self.is_public).on_toggle(Message::IsPublicChanged),
+                ),
+        );
+
+        col = col.push(
+            Row::new()
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .push(
+                    Column::new()
+                        .push(text::body("Invite only"))
+                        .push(
+                            text::body("New members must be invited to join")
+                                .size(12)
+                                .color(cosmic::theme::active().container().on.into_rgba()),
+                        ),
+                )
+                .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
+                .push(
+                    cosmic::widget::toggler(self.is_invite_only)
+                        .on_toggle(Message::IsInviteOnlyChanged),
+                ),
+        );
+
         let mut save_btn = button::text(if self.is_saving {
             "Saving..."
         } else {
             "Save Changes"
         });
 
-        let has_changes = self.name != self.original_name || self.topic != self.original_topic;
+        let has_changes = self.name != self.original_name
+            || self.topic != self.original_topic
+            || self.is_public != self.original_is_public
+            || self.is_invite_only != self.original_is_invite_only;
 
         if has_changes && !self.is_saving {
             save_btn = save_btn.on_press(Message::SaveSpace);
