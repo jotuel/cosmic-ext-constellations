@@ -82,6 +82,7 @@ pub struct RoomData {
     pub room_type: Option<RoomType>,
     pub is_space: bool,
     pub parent_space_id: Option<String>,
+    pub order: Option<String>,
 }
 
 pub type RoomListDiff = VectorDiff<RoomData>;
@@ -89,8 +90,8 @@ pub type TimelineDiff<T> = VectorDiff<Arc<T>>;
 
 #[derive(Debug, Default, Clone)]
 pub struct SpaceHierarchy {
-    /// Maps a space ID to its children (rooms or sub-spaces)
-    pub children: HashMap<OwnedRoomId, HashSet<OwnedRoomId>>,
+    /// Maps a space ID to its children (rooms or sub-spaces) and their order
+    pub children: HashMap<OwnedRoomId, HashMap<OwnedRoomId, Option<String>>>,
     /// Maps a room/space ID to its parent spaces
     pub parents: HashMap<OwnedRoomId, HashSet<OwnedRoomId>>,
     /// Set of all known space IDs
@@ -110,10 +111,19 @@ impl SpaceHierarchy {
         self.known_spaces.contains(room_id)
     }
 
-    pub fn add_child(&mut self, space_id: OwnedRoomId, child_id: OwnedRoomId) {
+    pub fn add_child(&mut self, space_id: OwnedRoomId, child_id: OwnedRoomId, order: Option<String>) {
         self.add_space(space_id.clone());
         let children = self.children.entry(space_id.clone()).or_default();
-        children.insert(child_id.clone());
+        children.insert(child_id.clone(), order);
+
+        let parents = self.parents.entry(child_id).or_default();
+        parents.insert(space_id);
+    }
+
+    pub fn add_relationship(&mut self, space_id: OwnedRoomId, child_id: OwnedRoomId) {
+        self.add_space(space_id.clone());
+        let children = self.children.entry(space_id.clone()).or_default();
+        children.entry(child_id.clone()).or_insert(None);
 
         let parents = self.parents.entry(child_id).or_default();
         parents.insert(space_id);
@@ -447,12 +457,14 @@ impl MatrixEngine {
                                     child_id, space_id
                                 );
                             } else {
-                                inner_write
-                                    .space_hierarchy
-                                    .add_child(space_id.clone(), child_id.clone());
+                            inner_write.space_hierarchy.add_child(
+                                space_id.clone(),
+                                child_id.clone(),
+                                ev.content.order.clone(),
+                            );
                                 info!(
-                                    "Space hierarchy updated: {} is child of {}",
-                                    child_id, space_id
+                                "Space hierarchy updated: {} is child of {} (order: {:?})",
+                                child_id, space_id, ev.content.order
                                 );
                             }
                         }
@@ -495,7 +507,7 @@ impl MatrixEngine {
                             } else {
                                 inner_write
                                     .space_hierarchy
-                                    .add_child(parent_id.clone(), child_id.clone());
+                                .add_relationship(parent_id.clone(), child_id.clone());
                                 info!(
                                     "Space hierarchy updated: {} is parent of {}",
                                     parent_id, child_id
@@ -864,14 +876,23 @@ impl MatrixEngine {
             inner.space_hierarchy.add_space(room.room_id().to_owned());
         }
 
-        let parent_space_id = {
+        let (parent_space_id, order) = {
             let inner = self.inner.read().await;
-            inner
+            let parent_id = inner
                 .space_hierarchy
                 .parents
                 .get(room.room_id())
-                .and_then(|parents| parents.iter().next())
-                .map(|id| id.to_string())
+                .and_then(|parents| parents.iter().next());
+
+            let order = parent_id.and_then(|p| {
+                inner
+                    .space_hierarchy
+                    .children
+                    .get(p)
+                    .and_then(|c| c.get(room.room_id()).cloned().flatten())
+            });
+
+            (parent_id.map(|id| id.to_string()), order)
         };
 
         let unread_count_str = if unread_count > 0 {
@@ -890,6 +911,7 @@ impl MatrixEngine {
             room_type,
             is_space,
             parent_space_id,
+            order,
         })
     }
 
@@ -984,6 +1006,58 @@ impl MatrixEngine {
         let client = self.client().await;
         let room = client.get_room(&room_id_parsed).context("Room not found")?;
         room.set_room_topic(&topic).await?;
+        Ok(())
+    }
+
+    pub async fn get_room_visibility(
+        &self,
+        room_id: &str,
+    ) -> Result<matrix_sdk::ruma::api::client::room::get_room_visibility::v3::Visibility> {
+        let room_id_parsed = RoomId::parse(room_id)?;
+        let client = self.client().await;
+        let visibility = client
+            .room_directory()
+            .get_room_visibility(&room_id_parsed)
+            .await?;
+        Ok(visibility)
+    }
+
+    pub async fn set_room_visibility(
+        &self,
+        room_id: &str,
+        visibility: matrix_sdk::ruma::api::client::room::get_room_visibility::v3::Visibility,
+    ) -> Result<()> {
+        let room_id_parsed = RoomId::parse(room_id)?;
+        let client = self.client().await;
+        client
+            .room_directory()
+            .set_room_visibility(&room_id_parsed, visibility)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn get_room_join_rule(
+        &self,
+        room_id: &str,
+    ) -> Result<matrix_sdk::ruma::events::room::join_rules::JoinRule> {
+        let room_id_parsed = RoomId::parse(room_id)?;
+        let client = self.client().await;
+        let room = client.get_room(&room_id_parsed).context("Room not found")?;
+        Ok(room.join_rule())
+    }
+
+    pub async fn set_room_join_rule(
+        &self,
+        room_id: &str,
+        join_rule: matrix_sdk::ruma::events::room::join_rules::JoinRule,
+    ) -> Result<()> {
+        let room_id_parsed = RoomId::parse(room_id)?;
+        let client = self.client().await;
+        let room = client.get_room(&room_id_parsed).context("Room not found")?;
+
+        use matrix_sdk::ruma::events::room::join_rules::RoomJoinRulesEventContent;
+        let content = RoomJoinRulesEventContent::new(join_rule);
+        room.send_state_event(content).await?;
         Ok(())
     }
 
@@ -1122,6 +1196,40 @@ impl MatrixEngine {
         let space_id_parsed = RoomId::parse(space_id)?;
         let client = self.client().await;
 
+        let space = client
+            .get_room(&space_id_parsed)
+            .context("Space not found")?;
+
+        // Fetch m.space.child events to get definitive orders
+        let children_events = space
+            .get_state_events_static::<SpaceChildEventContent>()
+            .await?;
+
+        let mut child_orders = HashMap::new();
+        for event in children_events {
+            if let Ok(event) = event.deserialize() {
+                match event {
+                    matrix_sdk_base::deserialized_responses::SyncOrStrippedState::Sync(
+                        matrix_sdk::ruma::events::SyncStateEvent::Original(ev),
+                    ) => {
+                        if !ev.content.via.is_empty() {
+                            if let Ok(cid) = RoomId::parse(ev.state_key.as_str()) {
+                                child_orders.insert(cid, ev.content.order.clone());
+                            }
+                        }
+                    }
+                    matrix_sdk_base::deserialized_responses::SyncOrStrippedState::Stripped(ev) => {
+                        if !ev.content.via.as_ref().map(|v| v.is_empty()).unwrap_or(true) {
+                            if let Ok(cid) = RoomId::parse(ev.state_key.as_str()) {
+                                child_orders.insert(cid, ev.content.order.clone());
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
         // Use the hierarchy API to get rich metadata for all rooms in the space
         let mut rooms = Vec::new();
         let mut request = matrix_sdk::ruma::api::client::space::get_hierarchy::v1::Request::new(
@@ -1139,10 +1247,13 @@ impl MatrixEngine {
                     .map(|t| t == &RoomType::Space)
                     .unwrap_or(false);
 
+                let order = child_orders.get(&room_summary.summary.room_id).cloned().flatten();
+
                 // Update local hierarchy knowledge
                 inner.space_hierarchy.add_child(
                     space_id_parsed.clone(),
                     room_summary.summary.room_id.clone(),
+                    order.clone(),
                 );
 
                 rooms.push(RoomData {
@@ -1159,69 +1270,48 @@ impl MatrixEngine {
                     room_type: room_summary.summary.room_type.clone(),
                     is_space,
                     parent_space_id: Some(space_id.to_string()),
+                    order,
                 });
             }
         } else {
             // Fallback to state events if hierarchy API fails
-            let space = client
-                .get_room(&space_id_parsed)
-                .context("Space not found")?;
+            for (child_id_parsed, order) in child_orders {
+                {
+                    let mut inner = self.inner.write().await;
+                    inner.space_hierarchy.add_child(
+                        space_id_parsed.clone(),
+                        child_id_parsed.clone(),
+                        order.clone(),
+                    );
+                }
 
-            let children_events = space
-                .get_state_events_static::<SpaceChildEventContent>()
-                .await?;
-
-            for event in children_events {
-                if let Ok(event) = event.deserialize() {
-                    let (child_id, via_empty) = match event {
-                        matrix_sdk_base::deserialized_responses::SyncOrStrippedState::Sync(
-                            matrix_sdk::ruma::events::SyncStateEvent::Original(ev),
-                        ) => (ev.state_key.to_owned(), ev.content.via.is_empty()),
-                        matrix_sdk_base::deserialized_responses::SyncOrStrippedState::Stripped(
-                            ev,
-                        ) => (
-                            ev.state_key.to_owned(),
-                            ev.content.via.map(|v| v.is_empty()).unwrap_or(true),
-                        ),
-                        _ => continue,
-                    };
-
-                    if !via_empty {
-                        let child_id_parsed = match RoomId::parse(child_id.as_str()) {
-                            Ok(id) => id,
-                            Err(_) => continue,
-                        };
-
-                        {
-                            let mut inner = self.inner.write().await;
-                            inner
-                                .space_hierarchy
-                                .add_child(space_id_parsed.clone(), child_id_parsed.clone());
-                        }
-
-                        if let Some(child_room) = client.get_room(&child_id_parsed) {
-                            rooms.push(self.fetch_room_data(&child_room).await?);
-                        } else {
-                            rooms.push(RoomData {
-                                id: child_id.as_str().into(),
-                                name: None,
-                                last_message: None,
-                                unread_count: 0,
-                                unread_count_str: None,
-                                avatar_url: None,
-                                room_type: None,
-                                is_space: false,
-                                parent_space_id: Some(space_id.to_string()),
-                            });
-                        }
-                    }
+                if let Some(child_room) = client.get_room(&child_id_parsed) {
+                    rooms.push(self.fetch_room_data(&child_room).await?);
+                } else {
+                    rooms.push(RoomData {
+                        id: child_id_parsed.as_str().into(),
+                        name: None,
+                        last_message: None,
+                        unread_count: 0,
+                        unread_count_str: None,
+                        avatar_url: None,
+                        room_type: None,
+                        is_space: false,
+                        parent_space_id: Some(space_id.to_string()),
+                        order,
+                    });
                 }
             }
         }
         Ok(rooms)
     }
 
-    pub async fn add_space_child(&self, space_id: &str, child_id: &str) -> Result<()> {
+    pub async fn add_space_child(
+        &self,
+        space_id: &str,
+        child_id: &str,
+        order: Option<String>,
+    ) -> Result<()> {
         let space_id_parsed = RoomId::parse(space_id)?;
         let child_id_parsed = RoomId::parse(child_id)?;
         let client = self.client().await;
@@ -1238,7 +1328,8 @@ impl MatrixEngine {
             via.push(server);
         }
 
-        let content = SpaceChildEventContent::new(via);
+        let mut content = SpaceChildEventContent::new(via);
+        content.order = order;
         space
             .send_state_event_for_key(&child_id_parsed, content)
             .await?;
@@ -1369,6 +1460,7 @@ impl MatrixEngine {
             }
         }
     }
+
 
     pub async fn login_oidc(&self, homeserver: &str) -> Result<Url> {
         let homeserver_url = if homeserver.starts_with("https://")

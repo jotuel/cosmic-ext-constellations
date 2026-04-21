@@ -437,18 +437,26 @@ impl Constellations {
                     }
                 }
             }
+            rooms.sort_by(|a, b| match (&a.order, &b.order) {
+                (Some(oa), Some(ob)) => oa.cmp(ob).then_with(|| a.id.cmp(&b.id)),
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (None, None) => a.id.cmp(&b.id),
+            });
             self.filtered_room_list = rooms;
 
             // Re-filter other_rooms to remove any that we've now joined
             self.other_rooms
                 .retain(|r| !self.joined_room_ids.contains(r.id.as_ref()));
         } else {
-            self.filtered_room_list = self
+            let mut rooms: Vec<_> = self
                 .room_list
                 .iter()
                 .filter(|r| !r.is_space && filter_by_search(r))
                 .cloned()
                 .collect();
+            rooms.sort_by(|a, b| a.id.cmp(&b.id));
+            self.filtered_room_list = rooms;
             self.other_rooms.clear();
         }
     }
@@ -1379,6 +1387,7 @@ mod tests {
                 room_type: None,
                 is_space: false,
                 parent_space_id: None,
+                order: None,
             },
             matrix::RoomData {
                 id: std::sync::Arc::from("!space1:matrix.org"),
@@ -1390,6 +1399,7 @@ mod tests {
                 room_type: None,
                 is_space: true,
                 parent_space_id: None,
+                order: None,
             },
         ];
 
@@ -1413,6 +1423,7 @@ mod tests {
                 room_type: None,
                 is_space: false,
                 parent_space_id: None,
+                order: None,
             },
             matrix::RoomData {
                 id: std::sync::Arc::from("!room2:matrix.org"),
@@ -1424,6 +1435,7 @@ mod tests {
                 room_type: None,
                 is_space: false,
                 parent_space_id: None,
+                order: None,
             },
         ];
 
@@ -1448,6 +1460,7 @@ mod tests {
                 room_type: None,
                 is_space: false,
                 parent_space_id: None,
+                order: None,
             },
             matrix::RoomData {
                 id: std::sync::Arc::from("!room2:matrix.org"),
@@ -1459,6 +1472,7 @@ mod tests {
                 room_type: None,
                 is_space: false,
                 parent_space_id: None,
+                order: None,
             },
         ];
 
@@ -1482,6 +1496,7 @@ mod tests {
             room_type: None,
             is_space: false,
             parent_space_id: None,
+            order: None,
         }];
 
         app.search_query = "gamma".to_string();
@@ -1503,6 +1518,7 @@ mod tests {
             room_type: None,
             is_space: false,
             parent_space_id: None,
+            order: None,
         }];
 
         app.selected_space = Some(matrix_sdk::ruma::RoomId::parse("!space1:matrix.org").unwrap());

@@ -15,6 +15,8 @@ pub struct State {
     pub children: Vec<RoomData>,
     pub is_loading_children: bool,
     pub new_child_id: String,
+    pub new_child_order: String,
+    pub pending_child_orders: std::collections::HashMap<String, String>,
     pub is_adding_child: bool,
     pub topic: String,
     pub original_topic: String,
@@ -22,12 +24,18 @@ pub struct State {
     pub avatar_handle: Option<cosmic::iced::widget::image::Handle>,
     pub is_uploading_avatar: bool,
     pub is_loading_avatar: bool,
+    pub is_public: bool,
+    pub original_is_public: bool,
+    pub is_invite_only: bool,
+    pub original_is_invite_only: bool,
 }
 
 #[derive(Debug, Clone)]
 pub enum Message {
     LoadSpace(String),
     SpaceLoaded(Result<SpaceInfo, String>),
+    IsPublicChanged(bool),
+    IsInviteOnlyChanged(bool),
     NameChanged(String),
     TopicChanged(String),
     SaveSpace,
@@ -40,6 +48,10 @@ pub enum Message {
     RemoveChild(String),
     ChildRemoved(String, Result<(), String>),
     NewChildIdChanged(String),
+    NewChildOrderChanged(String),
+    ChildOrderInputChanged(String, String),
+    SaveChildOrder(String),
+    ChildOrderSaved(Result<(), String>),
     AvatarMediaFetched(Result<Vec<u8>, String>),
     SelectAvatar,
     AvatarFileSelected(Option<std::path::PathBuf>),
@@ -51,6 +63,8 @@ pub struct SpaceInfo {
     pub name: String,
     pub topic: String,
     pub avatar_url: Option<String>,
+    pub visibility: matrix_sdk::ruma::api::client::room::get_room_visibility::v3::Visibility,
+    pub join_rule: matrix_sdk::ruma::events::room::join_rules::JoinRule,
 }
 
 impl State {
@@ -76,10 +90,19 @@ impl State {
                                 .get_room(&room_id_parsed)
                                 .ok_or_else(|| "Space not found".to_string())?;
 
+                            let visibility = engine.get_room_visibility(&space_id).await.unwrap_or(
+                                matrix_sdk::ruma::api::client::room::get_room_visibility::v3::Visibility::Private,
+                            );
+                            let join_rule = engine.get_room_join_rule(&space_id).await.unwrap_or(
+                                matrix_sdk::ruma::events::room::join_rules::JoinRule::Invite,
+                            );
+
                             Ok(SpaceInfo {
                                 name: room.name().unwrap_or_default(),
                                 topic: room.topic().unwrap_or_default(),
                                 avatar_url: room.avatar_url().map(|u| u.to_string()),
+                                visibility,
+                                join_rule,
                             })
                         },
                         |res| {
@@ -99,6 +122,12 @@ impl State {
                         self.topic = info.topic.clone();
                         self.original_topic = info.topic;
                         self.avatar_url = info.avatar_url;
+                        self.is_public = info.visibility
+                            == matrix_sdk::ruma::api::client::room::get_room_visibility::v3::Visibility::Public;
+                        self.original_is_public = self.is_public;
+                        self.is_invite_only = info.join_rule
+                            == matrix_sdk::ruma::events::room::join_rules::JoinRule::Invite;
+                        self.original_is_invite_only = self.is_invite_only;
                         self.error = None;
 
                         let mut tasks = Vec::new();
@@ -240,6 +269,14 @@ impl State {
                 }
                 Task::none()
             }
+            Message::IsPublicChanged(is_public) => {
+                self.is_public = is_public;
+                Task::none()
+            }
+            Message::IsInviteOnlyChanged(is_invite_only) => {
+                self.is_invite_only = is_invite_only;
+                Task::none()
+            }
             Message::NameChanged(name) => {
                 self.name = name;
                 Task::none()
@@ -260,6 +297,10 @@ impl State {
                         let space_id_clone = space_id.clone();
                         let original_name = self.original_name.clone();
                         let original_topic = self.original_topic.clone();
+                        let new_is_public = self.is_public;
+                        let original_is_public = self.original_is_public;
+                        let new_is_invite_only = self.is_invite_only;
+                        let original_is_invite_only = self.original_is_invite_only;
 
                         Task::perform(
                             async move {
@@ -272,6 +313,28 @@ impl State {
                                 if new_topic != original_topic {
                                     engine
                                         .set_room_topic(&space_id_clone, new_topic)
+                                        .await
+                                        .map_err(|e| e.to_string())?;
+                                }
+                                if new_is_public != original_is_public {
+                                    let visibility = if new_is_public {
+                                        matrix_sdk::ruma::api::client::room::get_room_visibility::v3::Visibility::Public
+                                    } else {
+                                        matrix_sdk::ruma::api::client::room::get_room_visibility::v3::Visibility::Private
+                                    };
+                                    engine
+                                        .set_room_visibility(&space_id_clone, visibility)
+                                        .await
+                                        .map_err(|e| e.to_string())?;
+                                }
+                                if new_is_invite_only != original_is_invite_only {
+                                    let join_rule = if new_is_invite_only {
+                                        matrix_sdk::ruma::events::room::join_rules::JoinRule::Invite
+                                    } else {
+                                        matrix_sdk::ruma::events::room::join_rules::JoinRule::Public
+                                    };
+                                    engine
+                                        .set_room_join_rule(&space_id_clone, join_rule)
                                         .await
                                         .map_err(|e| e.to_string())?;
                                 }
@@ -296,6 +359,8 @@ impl State {
                     Ok(_) => {
                         self.original_name = self.name.clone();
                         self.original_topic = self.topic.clone();
+                        self.original_is_public = self.is_public;
+                        self.original_is_invite_only = self.is_invite_only;
                         self.error = None;
                     }
                     Err(e) => {
@@ -312,10 +377,15 @@ impl State {
                     let engine = matrix.clone();
                     let space_id_clone = space_id.clone();
                     let child_id_clone = self.new_child_id.clone();
+                    let order = if self.new_child_order.trim().is_empty() {
+                        None
+                    } else {
+                        Some(self.new_child_order.clone())
+                    };
                     return Task::perform(
                         async move {
                             engine
-                                .add_space_child(&space_id_clone, &child_id_clone)
+                                .add_space_child(&space_id_clone, &child_id_clone, order)
                                 .await
                                 .map_err(|e| e.to_string())
                         },
@@ -324,11 +394,57 @@ impl State {
                 }
                 Task::none()
             }
+            Message::ChildOrderInputChanged(child_id, order) => {
+                self.pending_child_orders.insert(child_id, order);
+                Task::none()
+            }
+            Message::SaveChildOrder(child_id) => {
+                if let Some(matrix) = matrix
+                    && let Some(space_id) = &self.space_id
+                    && let Some(order_str) = self.pending_child_orders.get(&child_id)
+                {
+                    let engine = matrix.clone();
+                    let space_id_clone = space_id.clone();
+                    let order = if order_str.trim().is_empty() {
+                        None
+                    } else {
+                        Some(order_str.clone())
+                    };
+                    return Task::perform(
+                        async move {
+                            engine
+                                .add_space_child(&space_id_clone, &child_id, order)
+                                .await
+                                .map_err(|e| e.to_string())
+                        },
+                        |res| {
+                            Action::from(crate::Message::SpaceSettings(Message::ChildOrderSaved(
+                                res,
+                            )))
+                        },
+                    );
+                }
+                Task::none()
+            }
+            Message::ChildOrderSaved(res) => {
+                match res {
+                    Ok(_) => {
+                        return Task::done(Action::from(crate::Message::SpaceSettings(
+                            Message::LoadChildren,
+                        )));
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to update child order: {}", e));
+                    }
+                }
+                Task::none()
+            }
             Message::ChildAdded(res) => {
                 self.is_adding_child = false;
                 match res {
                     Ok(_) => {
                         self.new_child_id = String::new();
+                        self.new_child_order = String::new();
                         return Task::done(Action::from(crate::Message::SpaceSettings(
                             Message::LoadChildren,
                         )));
@@ -379,6 +495,10 @@ impl State {
             }
             Message::NewChildIdChanged(id) => {
                 self.new_child_id = id;
+                Task::none()
+            }
+            Message::NewChildOrderChanged(order) => {
+                self.new_child_order = order;
                 Task::none()
             }
             Message::DismissError => {
@@ -455,13 +575,57 @@ impl State {
                 .push(text_input::text_input("Topic", &self.topic).on_input(Message::TopicChanged)),
         );
 
+        col = col.push(text::title3("Discovery & Access"));
+
+        col = col.push(
+            Row::new()
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .push(
+                    Column::new()
+                        .push(text::body("Publicly discoverable"))
+                        .push(
+                            text::body("Show this space in the server's directory")
+                                .size(12)
+                                .color(cosmic::theme::active().container().on.into_rgba()),
+                        ),
+                )
+                .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
+                .push(
+                    cosmic::widget::toggler(self.is_public).on_toggle(Message::IsPublicChanged),
+                ),
+        );
+
+        col = col.push(
+            Row::new()
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .push(
+                    Column::new()
+                        .push(text::body("Invite only"))
+                        .push(
+                            text::body("New members must be invited to join")
+                                .size(12)
+                                .color(cosmic::theme::active().container().on.into_rgba()),
+                        ),
+                )
+                .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
+                .push(
+                    cosmic::widget::toggler(self.is_invite_only)
+                        .on_toggle(Message::IsInviteOnlyChanged),
+                ),
+        );
+
         let mut save_btn = button::text(if self.is_saving {
             "Saving..."
         } else {
             "Save Changes"
         });
 
-        let has_changes = self.name != self.original_name || self.topic != self.original_topic;
+        let has_changes = self.name != self.original_name
+            || self.topic != self.original_topic
+            || self.is_public != self.original_is_public
+            || self.is_invite_only != self.original_is_invite_only;
 
         if has_changes && !self.is_saving {
             save_btn = save_btn.on_press(Message::SaveSpace);
@@ -484,17 +648,42 @@ impl State {
         } else {
             for child in &self.children {
                 let name = child.name.as_deref().unwrap_or(&child.id);
-                children_col = children_col.push(
-                    Row::new()
-                        .spacing(10)
-                        .align_y(Alignment::Center)
+                let child_id = child.id.to_string();
+                let current_order = child.order.clone().unwrap_or_default();
+                let pending_order = self.pending_child_orders.get(&child_id);
+                let order_to_show = pending_order.unwrap_or(&current_order);
+
+                let mut row = Row::new().spacing(10).align_y(Alignment::Center).push(
+                    Column::new()
                         .push(text::body(name))
-                        .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
-                        .push(
-                            button::destructive("Remove")
-                                .on_press(Message::RemoveChild(child.id.to_string())),
-                        ),
+                        .push(text::body(&child_id).size(10)),
                 );
+
+                row = row.push(cosmic::widget::space().width(cosmic::iced::Length::Fill));
+
+                let child_id_clone = child_id.clone();
+                row = row.push(
+                    text_input::text_input("Order", order_to_show)
+                        .on_input(move |new_order| {
+                            Message::ChildOrderInputChanged(child_id_clone.clone(), new_order)
+                        })
+                        .width(100),
+                );
+
+                if let Some(pending) = pending_order
+                    && pending != &current_order
+                {
+                    row = row.push(
+                        button::text("Apply").on_press(Message::SaveChildOrder(child_id.clone())),
+                    );
+                }
+
+                row = row.push(
+                    button::destructive("Remove")
+                        .on_press(Message::RemoveChild(child_id.clone())),
+                );
+
+                children_col = children_col.push(row);
             }
         }
         col = col.push(children_col);
@@ -524,6 +713,11 @@ impl State {
                 .push(
                     text_input::text_input("!room_id:server.com", &self.new_child_id)
                         .on_input(Message::NewChildIdChanged),
+                )
+                .push(
+                    text_input::text_input("Order (optional)", &self.new_child_order)
+                        .on_input(Message::NewChildOrderChanged)
+                        .width(150),
                 )
                 .push(btn_widget),
         );
