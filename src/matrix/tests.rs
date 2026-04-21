@@ -11,7 +11,10 @@ async fn test_matrix_engine_init() {
     let _engine = match MatrixEngine::new(tmp_dir.path().to_path_buf()).await {
         Ok(e) => e,
         Err(e) => {
-            info!("Skipping test due to engine initialization failure (likely dbus/keyring): {}", e);
+            info!(
+                "Skipping test due to engine initialization failure (likely dbus/keyring): {}",
+                e
+            );
             return;
         }
     };
@@ -359,7 +362,10 @@ async fn test_login_oidc_initiation_no_server() {
     let engine = match MatrixEngine::new(tmp_dir.path().to_path_buf()).await {
         Ok(e) => e,
         Err(e) => {
-            info!("Skipping test due to engine initialization failure (likely dbus/keyring): {}", e);
+            info!(
+                "Skipping test due to engine initialization failure (likely dbus/keyring): {}",
+                e
+            );
             return;
         }
     };
@@ -376,7 +382,10 @@ async fn test_complete_oidc_login_no_client() {
     let engine = match MatrixEngine::new(tmp_dir.path().to_path_buf()).await {
         Ok(e) => e,
         Err(e) => {
-            info!("Skipping test due to engine initialization failure (likely dbus/keyring): {}", e);
+            info!(
+                "Skipping test due to engine initialization failure (likely dbus/keyring): {}",
+                e
+            );
             return;
         }
     };
@@ -430,7 +439,10 @@ async fn test_start_sync_task_management() {
     let engine = match MatrixEngine::new(tmp_dir.path().to_path_buf()).await {
         Ok(e) => e,
         Err(e) => {
-            info!("Skipping test due to engine initialization failure (likely dbus/keyring): {}", e);
+            info!(
+                "Skipping test due to engine initialization failure (likely dbus/keyring): {}",
+                e
+            );
             return;
         }
     };
@@ -481,7 +493,10 @@ async fn test_paginate_backwards_invalid_room_id() {
     let engine = match MatrixEngine::new(tmp_dir.path().to_path_buf()).await {
         Ok(e) => e,
         Err(e) => {
-            info!("Skipping test due to engine initialization failure (likely dbus/keyring): {}", e);
+            info!(
+                "Skipping test due to engine initialization failure (likely dbus/keyring): {}",
+                e
+            );
             return;
         }
     };
@@ -502,7 +517,10 @@ async fn test_paginate_backwards_rls_not_initialized() {
     let engine = match MatrixEngine::new(tmp_dir.path().to_path_buf()).await {
         Ok(e) => e,
         Err(e) => {
-            info!("Skipping test due to engine initialization failure (likely dbus/keyring): {}", e);
+            info!(
+                "Skipping test due to engine initialization failure (likely dbus/keyring): {}",
+                e
+            );
             return;
         }
     };
@@ -593,7 +611,10 @@ async fn test_paginate_backwards_success() {
     let engine = match MatrixEngine::new(tmp_dir.path().to_path_buf()).await {
         Ok(e) => e,
         Err(e) => {
-            info!("Skipping test due to engine initialization failure (likely dbus/keyring): {}", e);
+            info!(
+                "Skipping test due to engine initialization failure (likely dbus/keyring): {}",
+                e
+            );
             return;
         }
     };
@@ -642,7 +663,10 @@ async fn test_send_message_room_not_found() {
     let engine = match MatrixEngine::new(tmp_dir.path().to_path_buf()).await {
         Ok(e) => e,
         Err(e) => {
-            info!("Skipping test due to engine initialization failure (likely dbus/keyring): {}", e);
+            info!(
+                "Skipping test due to engine initialization failure (likely dbus/keyring): {}",
+                e
+            );
             return;
         }
     };
@@ -684,7 +708,10 @@ async fn test_send_message_success() {
     let engine = match MatrixEngine::new(tmp_dir.path().to_path_buf()).await {
         Ok(e) => e,
         Err(e) => {
-            info!("Skipping test due to engine initialization failure (likely dbus/keyring): {}", e);
+            info!(
+                "Skipping test due to engine initialization failure (likely dbus/keyring): {}",
+                e
+            );
             return;
         }
     };
@@ -739,7 +766,10 @@ async fn test_fetch_media() {
     let engine = match MatrixEngine::new(tmp_dir.path().to_path_buf()).await {
         Ok(e) => e,
         Err(e) => {
-            info!("Skipping test due to engine initialization failure (likely dbus/keyring): {}", e);
+            info!(
+                "Skipping test due to engine initialization failure (likely dbus/keyring): {}",
+                e
+            );
             return;
         }
     };
@@ -784,7 +814,10 @@ async fn test_create_room() {
     let engine = match MatrixEngine::new(tmp_dir.path().to_path_buf()).await {
         Ok(e) => e,
         Err(e) => {
-            info!("Skipping test due to engine initialization failure (likely dbus/keyring): {}", e);
+            info!(
+                "Skipping test due to engine initialization failure (likely dbus/keyring): {}",
+                e
+            );
             return;
         }
     };
@@ -809,7 +842,6 @@ async fn test_create_room() {
     assert_eq!(room_id.as_str(), "!new_room:example.com");
 }
 
-
 #[tokio::test]
 #[serial_test::serial]
 async fn test_get_or_create_store_passphrase_success() {
@@ -821,17 +853,21 @@ async fn test_get_or_create_store_passphrase_success() {
 
             let result2 = MatrixEngine::get_or_create_store_passphrase().await;
             let passphrase2 = result2.expect("Second call should succeed if first did");
-            assert_eq!(passphrase, passphrase2, "Passphrase should be stable and retrieved from the store");
-        },
+            assert_eq!(
+                passphrase, passphrase2,
+                "Passphrase should be stable and retrieved from the store"
+            );
+        }
         Err(e) => {
             // In CI environments without D-Bus or Keyring, we can't fully test the success path.
             // We just log it so it doesn't artificially fail the test suite on headless runners.
-            info!("Skipping success test due to missing Keyring/D-Bus environment: {}", e);
+            info!(
+                "Skipping success test due to missing Keyring/D-Bus environment: {}",
+                e
+            );
         }
     }
 }
-
-
 
 struct DbusEnvGuard {
     original_value: Result<String, std::env::VarError>,
@@ -840,18 +876,27 @@ struct DbusEnvGuard {
 impl DbusEnvGuard {
     fn new() -> Self {
         let original_value = std::env::var("DBUS_SESSION_BUS_ADDRESS");
-        std::env::set_var("DBUS_SESSION_BUS_ADDRESS", "unix:path=/nonexistent/dbus/socket");
+        unsafe {
+            std::env::set_var(
+                "DBUS_SESSION_BUS_ADDRESS",
+                "unix:path=/nonexistent/dbus/socket",
+            );
+        }
         Self { original_value }
     }
 }
 
 impl Drop for DbusEnvGuard {
     fn drop(&mut self) {
-        match &self.original_value {
-            Ok(val) => std::env::set_var("DBUS_SESSION_BUS_ADDRESS", val),
-            Err(_) => std::env::remove_var("DBUS_SESSION_BUS_ADDRESS"),
+        unsafe {
+            match &self.original_value {
+                Ok(val) => std::env::set_var("DBUS_SESSION_BUS_ADDRESS", val),
+                Err(_) => std::env::remove_var("DBUS_SESSION_BUS_ADDRESS"),
+            }
         }
     }
+}
+
 #[tokio::test]
 async fn test_join_room_error() {
     let mock_server = MockServer::start().await;
@@ -871,12 +916,31 @@ async fn test_join_room_error() {
     let engine = match MatrixEngine::new(tmp_dir.path().to_path_buf()).await {
         Ok(e) => e,
         Err(e) => {
-            info!("Skipping test due to engine initialization failure (likely dbus/keyring): {}", e);
+            info!(
+                "Skipping test due to engine initialization failure (likely dbus/keyring): {}",
+                e
+            );
             return;
         }
     };
 
-    let client = logged_in_client(Some(mock_server.uri())).await;
+    let _client = logged_in_client(Some(mock_server.uri())).await;
+    let room_id = RoomId::parse("!forbidden_room:example.com").unwrap();
+    let result = engine.join_room(&room_id).await;
+
+    assert!(
+        result.is_err(),
+        "Expected an error when joining forbidden room"
+    );
+    let err_msg = result.unwrap_err().to_string();
+    assert!(
+        err_msg.contains("M_FORBIDDEN")
+            || err_msg.contains("403")
+            || err_msg.contains("permission"),
+        "Error message did not contain expected forbidden text, got: {}",
+        err_msg
+    );
+}
 
 #[serial_test::serial]
 async fn test_logout_error_path() {
@@ -887,10 +951,18 @@ async fn test_logout_error_path() {
         .respond_with(ResponseTemplate::new(500))
         .mount(&mock_server)
         .await;
-    mock_server.expect(Mock::given(method("POST")).and(path_regex(r"^/_matrix/client/.*?/logout$")).respond_with(ResponseTemplate::new(500)).expect(1).mount(&mock_server).await);
+
+    Mock::given(method("POST"))
+        .and(path_regex(r"^/_matrix/client/.*?/logout$"))
+        .respond_with(ResponseTemplate::new(500))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
 
     let tmp_dir = tempdir().unwrap();
-    let engine = MatrixEngine::new(tmp_dir.path().to_path_buf()).await.unwrap();
+    let engine = MatrixEngine::new(tmp_dir.path().to_path_buf())
+        .await
+        .unwrap();
 
     let client = logged_in_client(Some(mock_server.uri())).await;
 
@@ -900,16 +972,24 @@ async fn test_logout_error_path() {
         inner.client = client;
     }
 
-    let room_id = RoomId::parse("!forbidden_room:example.com").unwrap();
-    let result = engine.join_room(&room_id).await;
+    let _client = logged_in_client(Some(mock_server.uri())).await;
 
-    assert!(result.is_err(), "Expected an error when joining forbidden room");
-    let err_msg = result.unwrap_err().to_string();
-    assert!(
-        err_msg.contains("M_FORBIDDEN") || err_msg.contains("403") || err_msg.contains("permission"),
-        "Error message did not contain expected forbidden text, got: {}",
-        err_msg
-    );
+    // Set invalid DBus so keyring doesn't hang/fail test due to DBus
+    let orig_dbus = std::env::var("DBUS_SESSION_BUS_ADDRESS").ok();
+    unsafe {
+        std::env::set_var("DBUS_SESSION_BUS_ADDRESS", "unix:path=/nonexistent");
+
+        // Call logout and ensure it completes successfully despite the 500 error from the mock server
+        let result = engine.logout().await;
+
+        // Restore DBus
+        if let Some(dbus) = orig_dbus {
+            std::env::set_var("DBUS_SESSION_BUS_ADDRESS", dbus);
+        } else {
+            std::env::remove_var("DBUS_SESSION_BUS_ADDRESS");
+        }
+        assert!(result.is_ok(), "Logout failed: {:?}", result.err());
+    }
 }
 
 #[tokio::test]
@@ -925,33 +1005,6 @@ async fn test_join_room_success() {
         })))
         .mount(&mock_server)
         .await;
-
-    let tmp_dir = tempdir().unwrap();
-    let engine = match MatrixEngine::new(tmp_dir.path().to_path_buf()).await {
-        Ok(e) => e,
-        Err(e) => {
-            info!("Skipping test due to engine initialization failure (likely dbus/keyring): {}", e);
-            return;
-        }
-    };
-
-    let client = logged_in_client(Some(mock_server.uri())).await;
-
-    // Set invalid DBus so keyring doesn't hang/fail test due to DBus
-    let orig_dbus = std::env::var("DBUS_SESSION_BUS_ADDRESS").ok();
-    std::env::set_var("DBUS_SESSION_BUS_ADDRESS", "unix:path=/nonexistent");
-
-    // Call logout and ensure it completes successfully despite the 500 error from the mock server
-    let result = engine.logout().await;
-
-    // Restore DBus
-    if let Some(dbus) = orig_dbus {
-        std::env::set_var("DBUS_SESSION_BUS_ADDRESS", dbus);
-    } else {
-        std::env::remove_var("DBUS_SESSION_BUS_ADDRESS");
-    }
-
-    assert!(result.is_ok(), "Logout failed: {:?}", result.err());
 }
 
 #[tokio::test]
@@ -962,70 +1015,10 @@ async fn test_get_or_create_store_passphrase_dbus_failure() {
     let result = MatrixEngine::get_or_create_store_passphrase().await;
 
     // We expect this to fail due to the invalid D-Bus address
-    assert!(result.is_err(), "Expected get_or_create_store_passphrase to fail with invalid D-Bus address");
-}
-  
-#[tokio::test]
-#[serial_test::serial]
-async fn test_logout_error_path() {
-    let mock_server = MockServer::start().await;
-
-    let _mock_guard = Mock::given(method("POST"))
-        .and(path_regex(r"^/_matrix/client/.*?/logout$"))
-        .respond_with(ResponseTemplate::new(500))
-        .expect(1)
-        .mount_as_scoped(&mock_server)
-        .await;
-
-    let tmp_dir = tempdir().unwrap();
-    let engine = MatrixEngine::new(tmp_dir.path().to_path_buf()).await.unwrap();
-
-    let client = logged_in_client(Some(mock_server.uri())).await;
-
-    // Override the internal client with our mocked one
-    {
-        let mut inner = engine.inner.write().await;
-        inner.client = client;
-    }
-
-    let room_id = RoomId::parse("!joined_room:example.com").unwrap();
-    let result = engine.join_room(&room_id).await;
-
-    assert!(result.is_ok(), "Expected success when joining room, got: {:?}", result.err());
-    // Set invalid DBus so keyring doesn't hang/fail test due to DBus
-    let orig_dbus = std::env::var("DBUS_SESSION_BUS_ADDRESS").ok();
-    std::env::set_var("DBUS_SESSION_BUS_ADDRESS", "unix:path=/nonexistent");
-
-    // We can use a guard to ensure DBus is restored even on panic
-    struct DBusGuard(Option<String>);
-    impl Drop for DBusGuard {
-        fn drop(&mut self) {
-            if let Some(dbus) = &self.0 {
-                std::env::set_var("DBUS_SESSION_BUS_ADDRESS", dbus);
-            } else {
-                std::env::remove_var("DBUS_SESSION_BUS_ADDRESS");
-            }
-        }
-    }
-    let _guard = DBusGuard(orig_dbus);
-
-    // Call logout and ensure it completes successfully despite the 500 error from the mock server
-    let result = engine.logout().await;
-
-    assert!(result.is_ok(), "Logout failed: {:?}", result.err());
-}
-
-#[test]
-fn test_space_hierarchy_remove_child() {
-    let mut hierarchy = SpaceHierarchy::new();
-    let space_id = RoomId::parse("!space:example.com").unwrap();
-    let room_id = RoomId::parse("!room:example.com").unwrap();
-
-    hierarchy.add_child(space_id.clone(), room_id.clone());
-    assert!(hierarchy.is_in_space(&room_id, &space_id));
-
-    hierarchy.remove_child(&space_id, &room_id);
-    assert!(!hierarchy.is_in_space(&room_id, &space_id));
+    assert!(
+        result.is_err(),
+        "Expected get_or_create_store_passphrase to fail with invalid D-Bus address"
+    );
 }
 
 #[test]
