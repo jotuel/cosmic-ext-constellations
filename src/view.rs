@@ -210,18 +210,22 @@ impl Constellations {
                 14
             },
         ));
-        if let Some(handle) = self.media_cache.get(&mxc_url) {
-            bubble_col = bubble_col.push(cosmic::widget::image(handle.clone()).width(
-                if self.app_settings.compact_mode {
-                    150
-                } else {
-                    300
-                },
-            ));
-        } else {
-            bubble_col = bubble_col.push(
-                button::text("Download Image").on_press(Message::FetchMedia(image.source.clone())),
-            );
+
+        if self.user_settings.media_previews_display_policy {
+            if let Some(handle) = self.media_cache.get(&mxc_url) {
+                bubble_col = bubble_col.push(cosmic::widget::image(handle.clone()).width(
+                    if self.app_settings.compact_mode {
+                        150
+                    } else {
+                        300
+                    },
+                ));
+            } else {
+                bubble_col = bubble_col.push(
+                    button::text("Download Image")
+                        .on_press(Message::FetchMedia(image.source.clone())),
+                );
+            }
         }
         bubble_col
     }
@@ -800,20 +804,18 @@ impl Constellations {
 
                 let mut header = Row::new().spacing(10).align_y(Alignment::Center);
 
-                if let Some(avatar_url) = &room.avatar_url {
-                    if let Some(handle) = self.media_cache.get(avatar_url) {
-                        header =
-                            header.push(cosmic::widget::image(handle.clone()).width(24).height(24));
-                    } else {
-                        header = header.push(
-                            container(text::body("#"))
-                                .width(24)
-                                .height(24)
-                                .align_x(Alignment::Center)
-                                .align_y(Alignment::Center),
-                        );
+                let mut has_avatar = false;
+                if self.user_settings.invite_avatars_display_policy {
+                    if let Some(avatar_url) = &room.avatar_url {
+                        if let Some(handle) = self.media_cache.get(avatar_url) {
+                            header = header
+                                .push(cosmic::widget::image(handle.clone()).width(24).height(24));
+                            has_avatar = true;
+                        }
                     }
-                } else {
+                }
+
+                if !has_avatar {
                     header = header.push(
                         container(text::body("#"))
                             .width(24)

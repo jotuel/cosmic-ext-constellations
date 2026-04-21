@@ -36,7 +36,7 @@ pub enum VerificationUIState {
     Cancelled,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct State {
     pub display_name: String,
     pub original_display_name: String,
@@ -59,11 +59,12 @@ pub struct State {
     pub active_sas: Option<SasVerification>,
     pub verification_ui_state: VerificationUIState,
     pub device_delete_password: String,
-    pub global_notification_mode_dm:
-        Option<matrix_sdk::notification_settings::RoomNotificationMode>,
+    pub global_notification_mode_dm: Option<matrix_sdk::notification_settings::RoomNotificationMode>,
     pub global_notification_mode_group:
         Option<matrix_sdk::notification_settings::RoomNotificationMode>,
     pub is_loading_global_notifications: bool,
+    pub media_previews_display_policy: bool,
+    pub invite_avatars_display_policy: bool,
     pub threepids: Vec<Threepid>,
     pub is_loading_3pids: bool,
     pub new_3pid_email: String,
@@ -76,6 +77,51 @@ pub struct State {
     pub keywords: Vec<String>,
     pub new_keyword: String,
     pub is_loading_keywords: bool,
+}
+
+impl Default for State {
+    fn default() -> Self {
+        Self {
+            display_name: String::new(),
+            original_display_name: String::new(),
+            is_loading: false,
+            is_saving: false,
+            error: None,
+            avatar_url: None,
+            avatar_handle: None,
+            is_uploading_avatar: false,
+            is_loading_avatar: false,
+            current_password: String::new(),
+            new_password: String::new(),
+            confirm_new_password: String::new(),
+            is_changing_password: false,
+            password_success: None,
+            success_message: None,
+            devices: Vec::new(),
+            is_loading_devices: false,
+            active_verification_request: None,
+            active_sas: None,
+            verification_ui_state: VerificationUIState::default(),
+            device_delete_password: String::new(),
+            global_notification_mode_dm: None,
+            global_notification_mode_group: None,
+            is_loading_global_notifications: false,
+            media_previews_display_policy: true,
+            invite_avatars_display_policy: true,
+            threepids: Vec::new(),
+            is_loading_3pids: false,
+            new_3pid_email: String::new(),
+            new_3pid_msisdn: String::new(),
+            new_3pid_country_code: String::new(),
+            is_requesting_3pid_token: false,
+            adding_3pid_sid: None,
+            adding_3pid_client_secret: None,
+            add_3pid_password: String::new(),
+            keywords: Vec::new(),
+            new_keyword: String::new(),
+            is_loading_keywords: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -124,6 +170,8 @@ pub enum Message {
         matrix_sdk::notification_settings::RoomNotificationMode,
     ),
     GlobalNotificationModeSet(Result<(), String>),
+    ToggleMediaPreviewsDisplayPolicy(bool),
+    ToggleInviteAvatarsDisplayPolicy(bool),
     Load3PIDs,
     ThreepidsLoaded(Result<Vec<Threepid>, String>),
     New3PIDEmailChanged(String),
@@ -363,9 +411,8 @@ impl State {
                 Task::none()
             }
             Message::SaveProfile => {
-                if let Some(matrix) = matrix
-                    && self.display_name != self.original_display_name
-                {
+                if let Some(matrix) = matrix {
+                    if self.display_name != self.original_display_name {
                     self.is_saving = true;
                     self.error = None;
                     let matrix = matrix.clone();
@@ -377,18 +424,21 @@ impl State {
                             } else {
                                 Some(new_name.as_str())
                             };
-                            matrix
-                                .client()
-                                .await
-                                .account()
-                                .set_display_name(name_opt)
-                                .await
-                                .map_err(|e| e.to_string())
-                        },
-                        |res| {
-                            Action::from(crate::Message::UserSettings(Message::ProfileSaved(res)))
-                        },
-                    );
+                                matrix
+                                    .client()
+                                    .await
+                                    .account()
+                                    .set_display_name(name_opt)
+                                    .await
+                                    .map_err(|e| e.to_string())
+                            },
+                            |res| {
+                                Action::from(crate::Message::UserSettings(Message::ProfileSaved(
+                                    res,
+                                )))
+                            },
+                        );
+                    }
                 }
                 Task::none()
             }
@@ -804,33 +854,34 @@ impl State {
                 Task::none()
             }
             Message::SaveDeviceName(ref device_id) => {
-                if let Some(matrix) = matrix
-                    && let Some(device) =
-                        self.devices.iter_mut().find(|d| d.device_id == *device_id)
-                {
+                if let Some(matrix) = matrix {
+                    if let Some(device) = self.devices.iter_mut().find(|d| d.device_id == *device_id)
+                    {
                     device.is_renaming = false;
                     let new_name = device.edit_name.clone();
                     let device_id_str = device_id.clone();
                     let device_id_for_closure = device_id_str.clone();
                     let matrix = matrix.clone();
-                    return Task::perform(
-                        async move {
-                            let did = matrix_sdk::ruma::OwnedDeviceId::from(device_id_str.as_ref());
-                            matrix
-                                .client()
-                                .await
-                                .rename_device(&did, &new_name)
-                                .await
-                                .map(|_| ())
-                                .map_err(|e| e.to_string())
-                        },
-                        move |res| {
-                            Action::from(crate::Message::UserSettings(Message::DeviceRenamed(
-                                device_id_for_closure,
-                                res,
-                            )))
-                        },
-                    );
+                        return Task::perform(
+                            async move {
+                                let did =
+                                    matrix_sdk::ruma::OwnedDeviceId::from(device_id_str.as_ref());
+                                matrix
+                                    .client()
+                                    .await
+                                    .rename_device(&did, &new_name)
+                                    .await
+                                    .map(|_| ())
+                                    .map_err(|e| e.to_string())
+                            },
+                            move |res| {
+                                Action::from(crate::Message::UserSettings(Message::DeviceRenamed(
+                                    device_id_for_closure,
+                                    res,
+                                )))
+                            },
+                        );
+                    }
                 }
                 Task::none()
             }
@@ -850,53 +901,54 @@ impl State {
                 Task::none()
             }
             Message::DeleteDevice(ref device_id) => {
-                if let Some(matrix) = matrix
-                    && let Some(device) =
-                        self.devices.iter_mut().find(|d| d.device_id == *device_id)
-                {
+                if let Some(matrix) = matrix {
+                    if let Some(device) = self.devices.iter_mut().find(|d| d.device_id == *device_id)
+                    {
                     device.is_deleting = true;
                     let matrix = matrix.clone();
                     let device_id_str = device_id.clone();
                     let device_id_for_closure = device_id_str.clone();
                     let password = self.device_delete_password.clone();
-                    return Task::perform(
-                        async move {
-                            let client = matrix.client().await;
-                            let user_id = client.user_id().ok_or("No user ID")?.to_string();
-                            let did = matrix_sdk::ruma::OwnedDeviceId::from(device_id_str.as_ref());
+                        return Task::perform(
+                            async move {
+                                let client = matrix.client().await;
+                                let user_id = client.user_id().ok_or("No user ID")?.to_string();
+                                let did =
+                                    matrix_sdk::ruma::OwnedDeviceId::from(device_id_str.as_ref());
 
-                            if let Err(e) = client
-                                .delete_devices(std::slice::from_ref(&did), None)
-                                .await
-                            {
-                                if let Some(info) = e.as_uiaa_response() {
-                                    if password.is_empty() {
-                                        return Err(
-                                            "Password required to delete device".to_string()
-                                        );
+                                if let Err(e) = client
+                                    .delete_devices(std::slice::from_ref(&did), None)
+                                    .await
+                                {
+                                    if let Some(info) = e.as_uiaa_response() {
+                                        if password.is_empty() {
+                                            return Err(
+                                                "Password required to delete device".to_string()
+                                            );
+                                        }
+
+                                        let identifier = matrix_sdk::ruma::api::client::uiaa::UserIdentifier::UserIdOrLocalpart(user_id);
+                                        let mut password_auth =
+                                            matrix_sdk::ruma::api::client::uiaa::Password::new(
+                                                identifier, password,
+                                            );
+                                        password_auth.session = info.session.clone();
+
+                                        client.delete_devices(&[did], Some(matrix_sdk::ruma::api::client::uiaa::AuthData::Password(password_auth))).await.map(|_| ()).map_err(|e| e.to_string())?;
+                                        return Ok(());
                                     }
-
-                                    let identifier = matrix_sdk::ruma::api::client::uiaa::UserIdentifier::UserIdOrLocalpart(user_id);
-                                    let mut password_auth =
-                                        matrix_sdk::ruma::api::client::uiaa::Password::new(
-                                            identifier, password,
-                                        );
-                                    password_auth.session = info.session.clone();
-
-                                    client.delete_devices(&[did], Some(matrix_sdk::ruma::api::client::uiaa::AuthData::Password(password_auth))).await.map(|_| ()).map_err(|e| e.to_string())?;
-                                    return Ok(());
+                                    return Err(e.to_string());
                                 }
-                                return Err(e.to_string());
-                            }
-                            Ok(())
-                        },
-                        move |res| {
-                            Action::from(crate::Message::UserSettings(Message::DeviceDeleted(
-                                device_id_for_closure,
-                                res,
-                            )))
-                        },
-                    );
+                                Ok(())
+                            },
+                            move |res| {
+                                Action::from(crate::Message::UserSettings(Message::DeviceDeleted(
+                                    device_id_for_closure,
+                                    res,
+                                )))
+                            },
+                        );
+                    }
                 }
                 Task::none()
             }
@@ -917,6 +969,38 @@ impl State {
                     }
                 }
                 Task::none()
+            }
+            Message::ToggleMediaPreviewsDisplayPolicy(enabled) => {
+                self.media_previews_display_policy = enabled;
+                if let Some(matrix) = matrix {
+                    let matrix = matrix.clone();
+                    return Task::perform(
+                        async move {
+                            matrix
+                                .set_media_previews_display_policy(enabled)
+                                .await
+                                .map_err(|e| e.to_string())
+                        },
+                        |_| Action::from(crate::Message::AppSettingChanged),
+                    );
+                }
+                Task::done(Action::from(crate::Message::AppSettingChanged))
+            }
+            Message::ToggleInviteAvatarsDisplayPolicy(enabled) => {
+                self.invite_avatars_display_policy = enabled;
+                if let Some(matrix) = matrix {
+                    let matrix = matrix.clone();
+                    return Task::perform(
+                        async move {
+                            matrix
+                                .set_invite_avatars_display_policy(enabled)
+                                .await
+                                .map_err(|e| e.to_string())
+                        },
+                        |_| Action::from(crate::Message::AppSettingChanged),
+                    );
+                }
+                Task::done(Action::from(crate::Message::AppSettingChanged))
             }
             Message::Load3PIDs => {
                 if let Some(matrix) = matrix {
@@ -1256,6 +1340,45 @@ impl State {
                 Task::none()
             }
         }
+    }
+
+    fn view_privacy<'a>(&'a self) -> Element<'a, Message> {
+        use cosmic::widget::toggler;
+        let mut col = Column::new().spacing(10);
+        col = col.push(text::title3("Privacy & Preferences"));
+
+        col = col.push(
+            Row::new()
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .push(text::body("Display Media Previews"))
+                .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
+                .push(
+                    toggler(self.media_previews_display_policy)
+                        .on_toggle(Message::ToggleMediaPreviewsDisplayPolicy),
+                ),
+        );
+        col = col.push(
+            text::body("Automatically load and display media previews in the chat timeline.")
+                .size(12),
+        );
+
+        col = col.push(
+            Row::new()
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .push(text::body("Display Invite Avatars"))
+                .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
+                .push(
+                    toggler(self.invite_avatars_display_policy)
+                        .on_toggle(Message::ToggleInviteAvatarsDisplayPolicy),
+                ),
+        );
+        col = col.push(
+            text::body("Display avatars for rooms and spaces you haven't joined yet.").size(12),
+        );
+
+        col.into()
     }
 
     fn view_notifications<'a>(&'a self) -> Element<'a, Message> {
@@ -1760,6 +1883,8 @@ impl State {
         col = col.push(self.view_profile());
 
         col = col.push(self.view_notifications());
+
+        col = col.push(self.view_privacy());
 
         col = col.push(self.view_keywords());
 
