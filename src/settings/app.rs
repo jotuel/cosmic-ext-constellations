@@ -102,3 +102,67 @@ impl State {
         col.into()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_update_toggle_sync_indicator() {
+        let mut state = State::default();
+        assert!(!state.show_sync_indicator);
+
+        let _ = state.update(Message::ToggleSyncIndicator(true));
+        assert!(state.show_sync_indicator);
+
+        let _ = state.update(Message::ToggleSyncIndicator(false));
+        assert!(!state.show_sync_indicator);
+    }
+
+    #[test]
+    fn test_update_toggle_typing_notifications() {
+        let mut state = State::default();
+        assert!(!state.send_typing_notifications);
+
+        let _ = state.update(Message::ToggleTypingNotifications(true));
+        assert!(state.send_typing_notifications);
+
+        let _ = state.update(Message::ToggleTypingNotifications(false));
+        assert!(!state.send_typing_notifications);
+    }
+
+    #[test]
+    fn test_update_toggle_markdown() {
+        let mut state = State::default();
+        assert!(!state.render_markdown);
+
+        let _ = state.update(Message::ToggleMarkdown(true));
+        assert!(state.render_markdown);
+
+        let _ = state.update(Message::ToggleMarkdown(false));
+        assert!(!state.render_markdown);
+    }
+
+    #[test]
+    fn test_update_toggle_compact_mode() {
+        let mut state = State::default();
+        assert!(!state.compact_mode);
+
+        let _ = state.update(Message::ToggleCompactMode(true));
+        assert!(state.compact_mode);
+
+        let _ = state.update(Message::ToggleCompactMode(false));
+        assert!(!state.compact_mode);
+    }
+
+    #[test]
+    fn test_update_clear_cache() {
+        let mut state = State::default();
+        let _ = state.update(Message::ClearCache);
+        // State doesn't change for ClearCache, just returns a task
+        assert!(!state.show_sync_indicator);
+        assert!(!state.send_typing_notifications);
+        assert!(!state.render_markdown);
+        assert!(!state.compact_mode);
+    }
+}
