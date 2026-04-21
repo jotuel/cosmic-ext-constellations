@@ -44,6 +44,7 @@ pub enum Message {
     SelectAvatar,
     AvatarFileSelected(Option<std::path::PathBuf>),
     AvatarUploaded(Result<(), String>),
+    SetChildJoinRule(String, matrix_sdk::ruma::events::room::join_rules::JoinRule),
 }
 
 #[derive(Debug, Clone)]
@@ -385,6 +386,27 @@ impl State {
                 self.error = None;
                 Task::none()
             }
+            Message::SetChildJoinRule(room_id, join_rule) => {
+                if let Some(matrix) = matrix {
+                    let engine = matrix.clone();
+                    Task::perform(
+                        async move {
+                            engine
+                                .set_room_join_rule(&room_id, join_rule)
+                                .await
+                                .map_err(|e| e.to_string())
+                        },
+                        |res| {
+                            Action::from(crate::Message::SpaceSettings(match res {
+                                Ok(_) => Message::LoadChildren,
+                                Err(e) => Message::SpaceSaved(Err(e)),
+                            }))
+                        },
+                    )
+                } else {
+                    Task::none()
+                }
+            }
         }
     }
 
@@ -484,17 +506,87 @@ impl State {
         } else {
             for child in &self.children {
                 let name = child.name.as_deref().unwrap_or(&child.id);
-                children_col = children_col.push(
-                    Row::new()
-                        .spacing(10)
-                        .align_y(Alignment::Center)
-                        .push(text::body(name))
-                        .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
-                        .push(
-                            button::destructive("Remove")
-                                .on_press(Message::RemoveChild(child.id.to_string())),
-                        ),
+                let mut row = Row::new().spacing(10).align_y(Alignment::Center);
+
+                row = row.push(text::body(name));
+
+                row = row.push(cosmic::widget::space().width(cosmic::iced::Length::Fill));
+
+                if !child.is_space {
+                    use matrix_sdk::ruma::events::room::join_rules::{
+                        AllowRule, JoinRule, Restricted,
+                    };
+
+                    let is_restricted = if let Some(JoinRule::Restricted(r)) = &child.join_rule {
+                        r.allow.iter().any(|a| {
+                            if let AllowRule::RoomAlliance(ra) = a {
+                                self.space_id.as_deref() == Some(ra.room_id.as_str())
+                            } else {
+                                false
+                            }
+                        })
+                    } else {
+                        false
+                    };
+
+                    let mut invite_btn = if !is_restricted {
+                        button::suggested("Invite Only")
+                    } else {
+                        button::text("Invite Only")
+                    };
+
+                    if is_restricted {
+                        invite_btn = invite_btn.on_press(Message::SetChildJoinRule(
+                            child.id.to_string(),
+                            JoinRule::Invite,
+                        ));
+                    }
+
+                    let mut restricted_btn = if is_restricted {
+                        button::suggested("Restricted Access")
+                    } else {
+                        button::text("Restricted Access")
+                    };
+
+                    if !is_restricted {
+                        if let Some(space_id) = &self.space_id
+                            && let Ok(space_id_parsed) =
+                                matrix_sdk::ruma::RoomId::parse(space_id.as_str())
+                        {
+                            let mut restricted = Restricted::new(vec![AllowRule::room_alliance(
+                                space_id_parsed.to_owned(),
+                            )]);
+                            // Keep other existing allowed spaces if any
+                            if let Some(JoinRule::Restricted(r)) = &child.join_rule {
+                                for allow in &r.allow {
+                                    if let AllowRule::RoomAlliance(ra) = allow {
+                                        if ra.room_id != space_id_parsed {
+                                            restricted.allow.push(allow.clone());
+                                        }
+                                    }
+                                }
+                            }
+                            restricted_btn = restricted_btn.on_press(Message::SetChildJoinRule(
+                                child.id.to_string(),
+                                JoinRule::Restricted(restricted),
+                            ));
+                        }
+                    }
+
+                    row = row.push(
+                        Row::new()
+                            .spacing(5)
+                            .push(invite_btn)
+                            .push(restricted_btn),
+                    );
+                }
+
+                row = row.push(
+                    button::destructive("Remove")
+                        .on_press(Message::RemoveChild(child.id.to_string())),
                 );
+
+                children_col = children_col.push(row);
             }
         }
         col = col.push(children_col);

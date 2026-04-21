@@ -46,6 +46,7 @@ pub struct State {
     pub member_filter: String,
     pub notification_mode: Option<matrix_sdk::notification_settings::RoomNotificationMode>,
     pub is_loading_notifications: bool,
+    pub join_rule: Option<matrix_sdk::ruma::events::room::join_rules::JoinRule>,
 }
 
 #[derive(Debug, Clone)]
@@ -84,6 +85,7 @@ pub enum Message {
     MemberFilterChanged(String),
     NotificationModeChanged(matrix_sdk::notification_settings::RoomNotificationMode),
     NotificationModeSet(Result<(), String>),
+    JoinRuleChanged(matrix_sdk::ruma::events::room::join_rules::JoinRule),
 }
 
 #[derive(Debug, Clone)]
@@ -105,6 +107,7 @@ pub struct RoomInfo {
     pub redact_level: i64,
     pub current_user_id: Option<String>,
     pub notification_mode: Option<matrix_sdk::notification_settings::RoomNotificationMode>,
+    pub join_rule: Option<matrix_sdk::ruma::events::room::join_rules::JoinRule>,
 }
 
 impl State {
@@ -137,6 +140,14 @@ impl State {
                                 .get_user_defined_room_notification_mode(&room_id_parsed)
                                 .await;
 
+                            let join_rule = room
+                                .get_state_event_static::<matrix_sdk::ruma::events::room::join_rules::RoomJoinRulesEventContent>()
+                                .await
+                                .ok()
+                                .flatten()
+                                .and_then(|e| e.deserialize().ok())
+                                .map(|c| c.join_rule);
+
                             Ok(RoomInfo {
                                 name: room.name().unwrap_or_default(),
                                 topic: room.topic().unwrap_or_default(),
@@ -148,6 +159,7 @@ impl State {
                                 redact_level: pl.redact.into(),
                                 current_user_id,
                                 notification_mode,
+                                join_rule,
                             })
                         },
                         |res| Action::from(crate::Message::RoomSettings(Message::RoomLoaded(res))),
@@ -180,6 +192,7 @@ impl State {
                         self.invite_level_str = info.invite_level.to_string();
                         self.current_user_id = info.current_user_id;
                         self.notification_mode = info.notification_mode;
+                        self.join_rule = info.join_rule;
                         self.error = None;
 
                         let mut tasks = Vec::new();
@@ -757,6 +770,32 @@ impl State {
                 self.error = None;
                 Task::none()
             }
+            Message::JoinRuleChanged(join_rule) => {
+                if let Some(matrix) = matrix
+                    && let Some(room_id) = &self.room_id
+                {
+                    let engine = matrix.clone();
+                    let room_id_clone = room_id.clone();
+                    return Task::perform(
+                        async move {
+                            engine
+                                .set_room_join_rule(&room_id_clone, join_rule)
+                                .await
+                                .map_err(|e| e.to_string())
+                        },
+                        |res| {
+                            Action::from(crate::Message::RoomSettings(match res {
+                                Ok(_) => {
+                                    // Reload room data to reflect changes
+                                    Message::LoadRoom(room_id.clone())
+                                }
+                                Err(e) => Message::RoomSaved(Err(e)),
+                            }))
+                        },
+                    );
+                }
+                Task::none()
+            }
         }
     }
 
@@ -860,8 +899,41 @@ impl State {
     }
 
     fn view_permissions(&self) -> Element<'_, Message> {
+        use matrix_sdk::ruma::events::room::join_rules::JoinRule;
+
         let mut perm_col = Column::new().spacing(10);
         perm_col = perm_col.push(text::title3("Permissions"));
+
+        let mut join_rule_row = Row::new().spacing(10).align_y(Alignment::Center);
+        join_rule_row = join_rule_row.push(text::body("Join Rule").width(100));
+
+        for rule in [JoinRule::Public, JoinRule::Invite] {
+            let label = match rule {
+                JoinRule::Public => "Public",
+                JoinRule::Invite => "Invite Only",
+                _ => unreachable!(),
+            };
+
+            let is_selected = self.join_rule.as_ref() == Some(&rule);
+            let mut btn = if is_selected {
+                button::suggested(label)
+            } else {
+                button::text(label)
+            };
+
+            if !is_selected {
+                btn = btn.on_press(Message::JoinRuleChanged(rule));
+            }
+            join_rule_row = join_rule_row.push(btn);
+        }
+
+        // Show Restricted if it's currently restricted, or if it's already allowed by some space
+        if let Some(JoinRule::Restricted(_)) = &self.join_rule {
+            join_rule_row = join_rule_row.push(button::suggested("Restricted"));
+        }
+
+        perm_col = perm_col.push(join_rule_row);
+
         perm_col = perm_col.push(
             Row::new()
                 .spacing(10)
@@ -1213,5 +1285,16 @@ mod tests {
         let mut state = State::default();
         let _ = state.update(Message::MemberFilterChanged("John".to_string()), &None);
         assert_eq!(state.member_filter, "John");
+    }
+
+    #[test]
+    fn test_join_rule_changed() {
+        use matrix_sdk::ruma::events::room::join_rules::JoinRule;
+        let mut state = State::default();
+        state.room_id = Some(Arc::from("!room:example.com"));
+        // This won't actually call the engine since we pass None, but we can check if it returns a Task
+        let task = state.update(Message::JoinRuleChanged(JoinRule::Public), &None);
+        // The task should be none since matrix engine is None
+        // We can't easily inspect Task, but we can verify it compiles and runs.
     }
 }
