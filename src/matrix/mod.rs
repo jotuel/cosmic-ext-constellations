@@ -82,6 +82,8 @@ pub struct RoomData {
     pub room_type: Option<RoomType>,
     pub is_space: bool,
     pub parent_space_id: Option<String>,
+    pub join_rule: Option<matrix_sdk::ruma::events::room::join_rules::JoinRule>,
+    pub allowed_spaces: Vec<matrix_sdk::ruma::OwnedRoomId>,
     pub order: Option<String>,
 }
 
@@ -913,6 +915,81 @@ impl MatrixEngine {
             None
         };
 
+        let (join_rule, allowed_spaces) = if let Ok(Some(event)) = room
+            .get_state_event_static::<matrix_sdk::ruma::events::room::join_rules::RoomJoinRulesEventContent>()
+            .await
+        {
+            match event.deserialize()? {
+                matrix_sdk_base::deserialized_responses::SyncOrStrippedState::Sync(
+                    matrix_sdk::ruma::events::SyncStateEvent::Original(ev),
+                ) => {
+                    let content = ev.content;
+                    let allowed_spaces = match &content.join_rule {
+                        matrix_sdk::ruma::events::room::join_rules::JoinRule::Restricted(r) => {
+                            r.allow
+                                .iter()
+                                .filter_map(|a| match a {
+                                    matrix_sdk::ruma::events::room::join_rules::AllowRule::RoomMembership(
+                                        m,
+                                    ) => Some(m.room_id.clone()),
+                                    _ => None,
+                                })
+                                .collect()
+                        }
+                        matrix_sdk::ruma::events::room::join_rules::JoinRule::KnockRestricted(
+                            r,
+                        ) => {
+                            r.allow
+                                .iter()
+                                .filter_map(|a| match a {
+                                    matrix_sdk::ruma::events::room::join_rules::AllowRule::RoomMembership(
+                                        m,
+                                    ) => Some(m.room_id.clone()),
+                                    _ => None,
+                                })
+                                .collect()
+                        }
+                        _ => Vec::new(),
+                    };
+                    (Some(content.join_rule), allowed_spaces)
+                }
+                matrix_sdk_base::deserialized_responses::SyncOrStrippedState::Stripped(ev) => {
+                    let content = ev.content;
+                    let allowed_spaces = match &content.join_rule {
+                        matrix_sdk::ruma::events::room::join_rules::JoinRule::Restricted(r) => {
+                            r.allow
+                                .iter()
+                                .filter_map(|a| match a {
+                                    matrix_sdk::ruma::events::room::join_rules::AllowRule::RoomMembership(
+                                        m,
+                                    ) => Some(m.room_id.clone()),
+                                    _ => None,
+                                })
+                                .collect()
+                        }
+                        matrix_sdk::ruma::events::room::join_rules::JoinRule::KnockRestricted(
+                            r,
+                        ) => {
+                            r.allow
+                                .iter()
+                                .filter_map(|a| match a {
+                                    matrix_sdk::ruma::events::room::join_rules::AllowRule::RoomMembership(
+                                        m,
+                                    ) => Some(m.room_id.clone()),
+                                    _ => None,
+                                })
+                                .collect()
+                        }
+                        _ => Vec::new(),
+                    };
+                    (Some(content.join_rule), allowed_spaces)
+                }
+                _ => (None, Vec::new()),
+            }
+        } else {
+            (None, Vec::new())
+        };
+
         Ok(RoomData {
             id,
             name,
@@ -923,6 +1000,8 @@ impl MatrixEngine {
             room_type,
             is_space,
             parent_space_id,
+            join_rule,
+            allowed_spaces,
             order,
         })
     }
@@ -1071,6 +1150,7 @@ impl MatrixEngine {
         use matrix_sdk::ruma::events::room::join_rules::RoomJoinRulesEventContent;
         let content = RoomJoinRulesEventContent::new(join_rule);
         room.send_state_event(content).await?;
+
         Ok(())
     }
 
@@ -1269,6 +1349,9 @@ impl MatrixEngine {
                     order.clone(),
                 );
 
+                let (join_rule, allowed_spaces) = (None, Vec::new());
+
+
                 rooms.push(RoomData {
                     id: room_summary.summary.room_id.as_str().into(),
                     name: room_summary.summary.name.clone(),
@@ -1283,6 +1366,8 @@ impl MatrixEngine {
                     room_type: room_summary.summary.room_type.clone(),
                     is_space,
                     parent_space_id: Some(space_id.to_string()),
+                    join_rule,
+                    allowed_spaces,
                     order,
                 });
             }
@@ -1311,6 +1396,8 @@ impl MatrixEngine {
                         room_type: None,
                         is_space: false,
                         parent_space_id: Some(space_id.to_string()),
+                        join_rule: None,
+                        allowed_spaces: Vec::new(),
                         order,
                     });
                 }
