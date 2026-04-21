@@ -109,7 +109,7 @@ pub enum Message {
     ),
     GlobalNotificationModeSet(Result<(), String>),
     LoadKeywords,
-    KeywordsLoaded(Result<Vec<String>, String>),
+    KeywordsLoaded(Vec<String>),
     NewKeywordChanged(String),
     AddKeyword,
     KeywordAdded(Result<(), String>),
@@ -892,10 +892,11 @@ impl State {
                         async move {
                             let client = matrix.client().await;
                             let ns = client.notification_settings().await;
-                            ns.enabled_keywords()
-                                .await
-                                .map(|keywords| keywords.into_iter().collect())
-                                .map_err(|e| e.to_string())
+                            let mut res = Vec::new();
+                            for k in ns.enabled_keywords().await {
+                                res.push(k.into());
+                            }
+                            res
                         },
                         |res| {
                             Action::from(crate::Message::UserSettings(Message::KeywordsLoaded(res)))
@@ -906,14 +907,7 @@ impl State {
             }
             Message::KeywordsLoaded(res) => {
                 self.is_loading_keywords = false;
-                match res {
-                    Ok(keywords) => {
-                        self.keywords = keywords;
-                    }
-                    Err(e) => {
-                        self.error = Some(format!("Failed to load keywords: {}", e));
-                    }
-                }
+                self.keywords = res;
                 Task::none()
             }
             Message::NewKeywordChanged(keyword) => {
@@ -1075,7 +1069,7 @@ impl State {
             add_row = add_row.push(
                 text_input("New keyword", &self.new_keyword)
                     .on_input(Message::NewKeywordChanged)
-                    .on_submit(Message::AddKeyword),
+                    .on_submit(|_| Message::AddKeyword),
             );
 
             let mut add_btn = button::text("Add");
@@ -1498,7 +1492,7 @@ mod tests {
         assert_eq!(state.new_keyword, "rust");
 
         let keywords = vec!["matrix".to_string(), "cosmic".to_string()];
-        let _ = state.update(Message::KeywordsLoaded(Ok(keywords.clone())), &None);
+        let _ = state.update(Message::KeywordsLoaded(keywords.clone()), &None);
         assert_eq!(state.keywords, keywords);
         assert!(!state.is_loading_keywords);
     }

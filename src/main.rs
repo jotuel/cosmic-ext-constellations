@@ -23,6 +23,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use url::Url;
 
+const CONSTELLATIONS_ICON: &[u8] = include_bytes!("../res/const.svg");
+
 // ⚡ Bolt Optimization:
 // We cache the parsed Markdown structure in `PreviewEvent`s to avoid running
 // `pulldown_cmark::Parser` on every single render frame inside `view_preview()`.
@@ -1156,9 +1158,9 @@ impl Application for Constellations {
         if self.is_initializing {
             let content = Column::new()
                 .push(
-                    cosmic::widget::svg(cosmic::widget::svg::Handle::from_memory(include_bytes!(
-                        "../res/const.svg"
-                    )))
+                    cosmic::widget::svg(cosmic::widget::svg::Handle::from_memory(
+                        CONSTELLATIONS_ICON,
+                    ))
                     .width(cosmic::iced::Length::Fixed(128.0))
                     .height(cosmic::iced::Length::Fixed(128.0)),
                 )
@@ -1597,7 +1599,10 @@ mod tests {
         let engine = match matrix::MatrixEngine::new(tmp_dir.path().to_path_buf()).await {
             Ok(e) => e,
             Err(e) => {
-                tracing::info!("Skipping test due to engine initialization failure (likely dbus/keyring): {}", e);
+                tracing::info!(
+                    "Skipping test due to engine initialization failure (likely dbus/keyring): {}",
+                    e
+                );
                 return;
             }
         };
