@@ -1256,3 +1256,73 @@ impl State {
         col.into()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    #[test]
+    fn test_dismiss_error() {
+        let mut state = State::default();
+        state.error = Some("Test error".to_string());
+
+        let _ = state.update(Message::DismissError, &None);
+
+        assert_eq!(state.error, None);
+    }
+
+    #[test]
+    fn test_password_changed() {
+        let mut state = State::default();
+
+        let _ = state.update(Message::CurrentPasswordChanged("old_pass".to_string()), &None);
+        assert_eq!(state.current_password, "old_pass");
+
+        let _ = state.update(Message::NewPasswordChanged("new_pass".to_string()), &None);
+        assert_eq!(state.new_password, "new_pass");
+
+        let _ = state.update(Message::ConfirmNewPasswordChanged("new_pass".to_string()), &None);
+        assert_eq!(state.confirm_new_password, "new_pass");
+    }
+
+    #[test]
+    fn test_display_name_changed() {
+        let mut state = State::default();
+
+        let _ = state.update(Message::DisplayNameChanged("Alice".to_string()), &None);
+        assert_eq!(state.display_name, "Alice");
+    }
+
+    #[test]
+    fn test_device_rename_flow() {
+        let mut state = State::default();
+        let device_id: Arc<str> = Arc::from("DEVICE_1");
+
+        // Setup initial device
+        state.devices.push(DeviceInfo {
+            device_id: device_id.clone(),
+            display_name: Some("My Phone".to_string()),
+            is_verified: true,
+            is_current: false,
+            is_renaming: false,
+            edit_name: "".to_string(),
+            is_deleting: false,
+        });
+
+        // Start rename
+        let _ = state.update(Message::StartRenameDevice(device_id.clone()), &None);
+        assert!(state.devices[0].is_renaming);
+        assert_eq!(state.devices[0].edit_name, "My Phone");
+
+        // Edit name
+        let _ = state.update(Message::EditDeviceNameChanged(device_id.clone(), "My New Phone".to_string()), &None);
+        assert_eq!(state.devices[0].edit_name, "My New Phone");
+
+        // Cancel rename
+        let _ = state.update(Message::CancelRenameDevice(device_id.clone()), &None);
+        assert!(!state.devices[0].is_renaming);
+        // edit_name should be preserved as it was updated
+        assert_eq!(state.devices[0].edit_name, "My New Phone");
+    }
+}
