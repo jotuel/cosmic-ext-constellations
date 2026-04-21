@@ -1278,7 +1278,10 @@ mod tests {
     #[test]
     fn test_invite_user_id_changed() {
         let mut state = State::default();
-        let _ = state.update(Message::InviteUserIdChanged("@user:example.com".to_string()), &None);
+        let _ = state.update(
+            Message::InviteUserIdChanged("@user:example.com".to_string()),
+            &None,
+        );
         assert_eq!(state.invite_user_id, "@user:example.com");
     }
 
@@ -1302,7 +1305,7 @@ mod tests {
         let mut state = State::default();
         state.room_id = Some(Arc::from("!room:example.com"));
         // This won't actually call the engine since we pass None, but we can check if it returns a Task
-        let task = state.update(Message::JoinRuleChanged(JoinRule::Public), &None);
+        let _task = state.update(Message::JoinRuleChanged(JoinRule::Public), &None);
         // The task should be none since matrix engine is None
         // We can't easily inspect Task, but we can verify it compiles and runs.
     }
