@@ -147,7 +147,8 @@ impl Constellations {
                     .padding([2, 4]),
             )
             .on_press(Message::OpenReactionPicker(None));
-            reaction_row = reaction_row.push(cancel_btn);
+            let cancel_tooltip = tooltip(cancel_btn, text::body("Close Picker"), Position::Top);
+            reaction_row = reaction_row.push(cancel_tooltip);
         } else {
             // "Add reaction" button
             let btn = button::custom(
@@ -155,7 +156,8 @@ impl Constellations {
                     .padding(2),
             )
             .on_press(Message::OpenReactionPicker(Some(item_id.clone())));
-            reaction_row = reaction_row.push(btn);
+            let btn_tooltip = tooltip(btn, text::body("Add Reaction"), Position::Top);
+            reaction_row = reaction_row.push(btn_tooltip);
         }
 
         reaction_row
@@ -614,10 +616,11 @@ impl Constellations {
         let mut bottom_content = Column::new().spacing(10).align_x(Alignment::Center);
 
         let plus_btn = button::icon(Named::new("list-add-symbolic"));
+        let plus_tooltip = tooltip(plus_btn, text::body("Create"), Position::Right);
         let key_binds = std::collections::HashMap::new();
 
         let menu_tree = menu::Tree::with_children(
-            RcElementWrapper::new(Element::from(plus_btn)),
+            RcElementWrapper::new(Element::from(plus_tooltip)),
             menu::items(
                 &key_binds,
                 vec![
