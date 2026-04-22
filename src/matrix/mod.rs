@@ -5,6 +5,7 @@ use matrix_sdk::media::MediaFormat;
 use matrix_sdk::ruma::events::ignored_user_list::IgnoredUserListEventContent;
 use matrix_sdk::ruma::events::room::MediaSource;
 use matrix_sdk::ruma::events::room::message::RoomMessageEventContent;
+use matrix_sdk::ruma::events::room::pinned_events::RoomPinnedEventsEventContent;
 use matrix_sdk::ruma::events::space::child::SpaceChildEventContent;
 use matrix_sdk::ruma::events::space::parent::SpaceParentEventContent;
 use matrix_sdk::ruma::events::{AnySyncMessageLikeEvent, AnySyncTimelineEvent, SyncStateEvent};
@@ -1130,6 +1131,20 @@ impl MatrixEngine {
             .map(|s| RoomAliasId::parse(s).map(|a| a.to_owned()))
             .transpose()?;
 
+        room.send_state_event(content).await?;
+        Ok(())
+    }
+
+    pub async fn set_pinned_events(
+        &self,
+        room_id: &str,
+        pinned_events: Vec<matrix_sdk::ruma::OwnedEventId>,
+    ) -> Result<()> {
+        let room_id_parsed = RoomId::parse(room_id)?;
+        let client = self.client().await;
+        let room = client.get_room(&room_id_parsed).context("Room not found")?;
+
+        let content = RoomPinnedEventsEventContent::new(pinned_events);
         room.send_state_event(content).await?;
         Ok(())
     }
