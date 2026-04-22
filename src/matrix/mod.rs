@@ -4,9 +4,7 @@ use matrix_sdk::authentication::matrix::MatrixSession;
 use matrix_sdk::media::MediaFormat;
 use matrix_sdk::ruma::events::ignored_user_list::IgnoredUserListEventContent;
 use matrix_sdk::ruma::events::room::MediaSource;
-use matrix_sdk::ruma::events::room::message::{
-    Relation, RoomMessageEventContent, Thread,
-};
+use matrix_sdk::ruma::events::room::message::{Relation, RoomMessageEventContent};
 use matrix_sdk::ruma::events::space::child::SpaceChildEventContent;
 use matrix_sdk::ruma::events::space::parent::SpaceParentEventContent;
 use matrix_sdk::ruma::events::{AnySyncMessageLikeEvent, AnySyncTimelineEvent, SyncStateEvent};
@@ -17,7 +15,7 @@ use matrix_sdk::{
 pub use matrix_sdk_ui::room_list_service::{RoomListDynamicEntriesController, RoomListService};
 use matrix_sdk_ui::sync_service::SyncService;
 pub use matrix_sdk_ui::timeline::{
-    RoomExt, Timeline, TimelineEventItemId, TimelineItem, VirtualTimelineItem,
+    RoomExt, Timeline, TimelineEventItemId, TimelineFocus, TimelineItem, VirtualTimelineItem,
 };
 use oo7::Keyring;
 use rand::{TryRng, rngs::SysRng};
@@ -1115,7 +1113,9 @@ impl MatrixEngine {
             .map_err(|e| anyhow::anyhow!("Failed to get room: {}", e))?;
         let timeline = Arc::new(
             room.timeline_builder()
-                .threaded(root_event_id.clone())
+                .with_focus(TimelineFocus::Thread {
+                    root_event_id: root_event_id.clone(),
+                })
                 .build()
                 .await?,
         );
@@ -1581,10 +1581,11 @@ impl MatrixEngine {
             RoomMessageEventContent::text_plain(body)
         };
 
-        content.relates_to = Some(Relation::Thread(Thread::new(
-            root_event_id.to_owned(),
-            root_event_id.to_owned(),
-        )));
+        content.relates_to = Some(Relation::Thread(
+            matrix_sdk::ruma::events::room::message::Thread::without_fallback(
+                root_event_id.to_owned(),
+            ),
+        ));
 
         room.send(content).await?;
         Ok(())

@@ -535,11 +535,11 @@ impl Constellations {
                     }
                 }
 
-                if let Some(thread_info) = event.content().thread_info() {
+                if let Some(thread_info) = event.content().thread_summary() {
                     let root_id = event.identifier();
                     let thread_btn = button::text(format!(
                         "View Thread ({} replies)",
-                        thread_info.reply_count
+                        thread_info.num_replies
                     ))
                     .on_press(match root_id {
                         matrix::TimelineEventItemId::EventId(id) => {
@@ -548,8 +548,10 @@ impl Constellations {
                         _ => Message::NoOp,
                     });
                     bubble_col = bubble_col.push(thread_btn);
-                } else if !event.content().is_reply() {
-                    // Option to start a thread if it's not already a reply/part of a thread
+                } else if event.content().thread_root().is_some() {
+                    // It is part of a thread but no summary? (maybe it is a reply)
+                } else if event.content().is_message() {
+                    // Option to start a thread
                     let root_id = event.identifier();
                     let start_thread_btn = button::text("Start Thread").on_press(match root_id {
                         matrix::TimelineEventItemId::EventId(id) => {
