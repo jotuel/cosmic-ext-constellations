@@ -60,3 +60,4 @@ wiremock = "0.6.5"
 
 [lints.rust]
 unused_imports = "warn"
+

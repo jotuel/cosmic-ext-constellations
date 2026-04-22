@@ -1,4 +1,4 @@
-#![recursion_limit = "512"]
+#![recursion_limit = "1024"]
 
 mod handlers;
 mod ipc;
@@ -22,6 +22,8 @@ use matrix_sdk_ui::sync_service::State as SyncServiceState;
 use std::collections::HashMap;
 use std::sync::Arc;
 use url::Url;
+
+const CONSTELLATIONS_ICON: &[u8] = include_bytes!("../res/const.svg");
 
 // ⚡ Bolt Optimization:
 // We cache the parsed Markdown structure in `PreviewEvent`s to avoid running
@@ -435,18 +437,26 @@ impl Constellations {
                     }
                 }
             }
+            rooms.sort_by(|a, b| match (&a.order, &b.order) {
+                (Some(oa), Some(ob)) => oa.cmp(ob).then_with(|| a.id.cmp(&b.id)),
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (None, None) => a.id.cmp(&b.id),
+            });
             self.filtered_room_list = rooms;
 
             // Re-filter other_rooms to remove any that we've now joined
             self.other_rooms
                 .retain(|r| !self.joined_room_ids.contains(r.id.as_ref()));
         } else {
-            self.filtered_room_list = self
+            let mut rooms: Vec<_> = self
                 .room_list
                 .iter()
                 .filter(|r| !r.is_space && filter_by_search(r))
                 .cloned()
                 .collect();
+            rooms.sort_by(|a, b| a.id.cmp(&b.id));
+            self.filtered_room_list = rooms;
             self.other_rooms.clear();
         }
     }
@@ -1156,9 +1166,9 @@ impl Application for Constellations {
         if self.is_initializing {
             let content = Column::new()
                 .push(
-                    cosmic::widget::svg(cosmic::widget::svg::Handle::from_memory(include_bytes!(
-                        "../res/const.svg"
-                    )))
+                    cosmic::widget::svg(cosmic::widget::svg::Handle::from_memory(
+                        CONSTELLATIONS_ICON,
+                    ))
                     .width(cosmic::iced::Length::Fixed(128.0))
                     .height(cosmic::iced::Length::Fixed(128.0)),
                 )
@@ -1377,6 +1387,9 @@ mod tests {
                 room_type: None,
                 is_space: false,
                 parent_space_id: None,
+                order: None,
+                join_rule: None,
+                allowed_spaces: Vec::new(),
             },
             matrix::RoomData {
                 id: std::sync::Arc::from("!space1:matrix.org"),
@@ -1388,6 +1401,9 @@ mod tests {
                 room_type: None,
                 is_space: true,
                 parent_space_id: None,
+                order: None,
+                join_rule: None,
+                allowed_spaces: Vec::new(),
             },
         ];
 
@@ -1411,6 +1427,9 @@ mod tests {
                 room_type: None,
                 is_space: false,
                 parent_space_id: None,
+                order: None,
+                join_rule: None,
+                allowed_spaces: Vec::new(),
             },
             matrix::RoomData {
                 id: std::sync::Arc::from("!room2:matrix.org"),
@@ -1422,6 +1441,9 @@ mod tests {
                 room_type: None,
                 is_space: false,
                 parent_space_id: None,
+                order: None,
+                join_rule: None,
+                allowed_spaces: Vec::new(),
             },
         ];
 
@@ -1446,6 +1468,9 @@ mod tests {
                 room_type: None,
                 is_space: false,
                 parent_space_id: None,
+                order: None,
+                join_rule: None,
+                allowed_spaces: Vec::new(),
             },
             matrix::RoomData {
                 id: std::sync::Arc::from("!room2:matrix.org"),
@@ -1457,6 +1482,9 @@ mod tests {
                 room_type: None,
                 is_space: false,
                 parent_space_id: None,
+                order: None,
+                join_rule: None,
+                allowed_spaces: Vec::new(),
             },
         ];
 
@@ -1480,6 +1508,9 @@ mod tests {
             room_type: None,
             is_space: false,
             parent_space_id: None,
+            order: None,
+            join_rule: None,
+            allowed_spaces: Vec::new(),
         }];
 
         app.search_query = "gamma".to_string();
@@ -1501,6 +1532,9 @@ mod tests {
             room_type: None,
             is_space: false,
             parent_space_id: None,
+            order: None,
+            join_rule: None,
+            allowed_spaces: Vec::new(),
         }];
 
         app.selected_space = Some(matrix_sdk::ruma::RoomId::parse("!space1:matrix.org").unwrap());
@@ -1597,7 +1631,10 @@ mod tests {
         let engine = match matrix::MatrixEngine::new(tmp_dir.path().to_path_buf()).await {
             Ok(e) => e,
             Err(e) => {
-                tracing::info!("Skipping test due to engine initialization failure (likely dbus/keyring): {}", e);
+                tracing::info!(
+                    "Skipping test due to engine initialization failure (likely dbus/keyring): {}",
+                    e
+                );
                 return;
             }
         };
