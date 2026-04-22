@@ -108,6 +108,8 @@ impl Constellations {
     pub fn handle_timeline_diff(
         &mut self,
         diff: eyeball_im::VectorDiff<std::sync::Arc<matrix::TimelineItem>>,
+        is_thread: bool,
+        root_id: Option<matrix_sdk::ruma::OwnedEventId>,
     ) -> Task<Action<<Constellations as Application>::Message>> {
         let mut tasks = Vec::new();
         let mut media_fetches = Vec::new();
@@ -200,7 +202,15 @@ impl Constellations {
             }
         };
 
-        self.timeline_items.apply_diff(mapped_diff);
+        if is_thread {
+            if let Some(root_id) = root_id {
+                if self.active_thread_root == Some(root_id) {
+                    self.threaded_timeline_items.apply_diff(mapped_diff);
+                }
+            }
+        } else {
+            self.timeline_items.apply_diff(mapped_diff);
+        }
 
         if !tasks.is_empty() {
             cosmic::iced::Task::batch(tasks)
@@ -269,7 +279,7 @@ impl Constellations {
                 self.update_filtered_rooms();
                 self.update_title()
             }
-            matrix::MatrixEvent::TimelineDiff(diff) => self.handle_timeline_diff(diff),
+            matrix::MatrixEvent::TimelineDiff(diff) => self.handle_timeline_diff(diff, false, None),
             matrix::MatrixEvent::TimelineReset => {
                 self.timeline_items.clear();
                 Task::none()
@@ -297,7 +307,9 @@ impl Constellations {
                     }
                     Ok(())
                 },
-                |res| Action::from(Message::LoadMoreFinished(res)),
+                |res: Result<(), anyhow::Error>| {
+                    Action::from(Message::LoadMoreFinished(res.map_err(|e| e.to_string())))
+                },
             )
         } else {
             Task::none()

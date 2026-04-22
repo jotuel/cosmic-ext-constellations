@@ -29,72 +29,6 @@ impl Constellations {
         }
 
         for item in &self.timeline_items {
-            if let Some(event) = item.item.as_event() {
-                if let Some(message) = event.content().as_message() {
-                    let is_me = item.is_me;
-
-                    let reaction_row = self.view_reactions(event);
-                    let sender_info = self.view_sender_info(
-                        item.avatar_url.as_deref(),
-                        item.sender_name.as_str(),
-                        item.timestamp.as_str(),
-                    );
-
-                    let mut bubble_col = Column::new()
-                        .spacing(if self.app_settings.compact_mode { 0 } else { 2 })
-                        .push(sender_info);
-
-                    match message.msgtype() {
-                        MessageType::Image(image) => {
-                            bubble_col = bubble_col.push(self.view_message_image(image));
-                        }
-                        MessageType::File(file) => {
-                            bubble_col = bubble_col.push(self.view_message_file(file));
-                        }
-                        _ => {
-                            bubble_col = bubble_col
-                                .push(self.view_message_text(message.msgtype(), &item.markdown));
-                        }
-                    }
-
-                    bubble_col = bubble_col.push(reaction_row);
-
-                    let bubble = container(bubble_col)
-                        .padding(if self.app_settings.compact_mode {
-                            5
-                        } else {
-                            10
-                        })
-                        .max_width(600);
-
-                    let bubble_wrapper = container(bubble)
-                        .width(cosmic::iced::Length::Fill)
-                        .align_x(if is_me {
-                            Alignment::End
-                        } else {
-                            Alignment::Start
-                        });
-
-                    timeline = timeline.push(bubble_wrapper);
-                }
-            }
-        }
-        timeline
-    }
-
-    pub fn view_timeline(&self) -> Element<'_, Message> {
-        let mut timeline = Column::new().spacing(10).width(cosmic::iced::Length::Fill);
-
-        if self.selected_room.is_some() {
-            timeline = timeline.push(
-                container(button::text("Load More").on_press(Message::LoadMore))
-                    .width(cosmic::iced::Length::Fill)
-                    .align_x(Alignment::Center)
-                    .padding(10),
-            );
-        }
-
-        for item in &self.timeline_items {
             if item.item.as_event().is_some() {
                 timeline = timeline.push(self.view_item(item));
             } else if let Some(matrix::VirtualTimelineItem::DateDivider(_date)) =
@@ -601,33 +535,29 @@ impl Constellations {
                     }
                 }
 
-                if let MessageType::Text(_) = message.msgtype() {
-                    if let Some(thread_info) = message.thread_info() {
-                        let root_id = event.identifier();
-                        let thread_btn = button::text(format!(
-                            "View Thread ({} replies)",
-                            thread_info.reply_count
-                        ))
-                        .on_press(match root_id {
-                            matrix::TimelineEventItemId::EventId(id) => {
-                                Message::OpenThread(id.to_owned())
-                            }
-                            _ => Message::NoOp,
-                        });
-                        bubble_col = bubble_col.push(thread_btn);
-                    } else {
-                        // Option to start a thread
-                        let root_id = event.identifier();
-                        let start_thread_btn = button::text("Start Thread").on_press(
-                            match root_id {
-                                matrix::TimelineEventItemId::EventId(id) => {
-                                    Message::OpenThread(id.to_owned())
-                                }
-                                _ => Message::NoOp,
-                            },
-                        );
-                        bubble_col = bubble_col.push(start_thread_btn);
-                    }
+                if let Some(thread_info) = event.content().thread_info() {
+                    let root_id = event.identifier();
+                    let thread_btn = button::text(format!(
+                        "View Thread ({} replies)",
+                        thread_info.reply_count
+                    ))
+                    .on_press(match root_id {
+                        matrix::TimelineEventItemId::EventId(id) => {
+                            Message::OpenThread(id.to_owned())
+                        }
+                        _ => Message::NoOp,
+                    });
+                    bubble_col = bubble_col.push(thread_btn);
+                } else if !event.content().is_reply() {
+                    // Option to start a thread if it's not already a reply/part of a thread
+                    let root_id = event.identifier();
+                    let start_thread_btn = button::text("Start Thread").on_press(match root_id {
+                        matrix::TimelineEventItemId::EventId(id) => {
+                            Message::OpenThread(id.to_owned())
+                        }
+                        _ => Message::NoOp,
+                    });
+                    bubble_col = bubble_col.push(start_thread_btn);
                 }
 
                 bubble_col = bubble_col.push(reaction_row);
