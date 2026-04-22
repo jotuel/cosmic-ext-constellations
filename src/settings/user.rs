@@ -21,6 +21,12 @@ pub struct DeviceInfo {
     pub is_deleting: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Threepid {
+    pub address: String,
+    pub medium: matrix_sdk::ruma::thirdparty::Medium,
+}
+
 #[derive(Debug, Clone, Default, PartialEq)]
 pub enum VerificationUIState {
     #[default]
@@ -31,7 +37,7 @@ pub enum VerificationUIState {
     Cancelled,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct State {
     pub display_name: String,
     pub original_display_name: String,
@@ -47,20 +53,82 @@ pub struct State {
     pub confirm_new_password: String,
     pub is_changing_password: bool,
     pub password_success: Option<String>,
+    pub success_message: Option<String>,
     pub devices: Vec<DeviceInfo>,
     pub is_loading_devices: bool,
     pub active_verification_request: Option<VerificationRequest>,
     pub active_sas: Option<SasVerification>,
     pub verification_ui_state: VerificationUIState,
     pub device_delete_password: String,
-    pub global_notification_mode_dm:
-        Option<matrix_sdk::notification_settings::RoomNotificationMode>,
+    pub global_notification_mode_dm: Option<matrix_sdk::notification_settings::RoomNotificationMode>,
     pub global_notification_mode_group:
         Option<matrix_sdk::notification_settings::RoomNotificationMode>,
     pub is_loading_global_notifications: bool,
+    pub media_previews_display_policy: bool,
+    pub invite_avatars_display_policy: bool,
+    pub threepids: Vec<Threepid>,
+    pub is_loading_3pids: bool,
+    pub new_3pid_email: String,
+    pub new_3pid_msisdn: String,
+    pub new_3pid_country_code: String,
+    pub is_requesting_3pid_token: bool,
+    pub adding_3pid_sid: Option<String>,
+    pub adding_3pid_client_secret: Option<String>,
+    pub add_3pid_password: String,
+    pub keywords: Vec<String>,
+    pub new_keyword: String,
+    pub is_loading_keywords: bool,
     pub ignored_users: Vec<OwnedUserId>,
     pub is_loading_ignored_users: bool,
     pub new_ignore_user_id: String,
+}
+
+impl Default for State {
+    fn default() -> Self {
+        Self {
+            display_name: String::new(),
+            original_display_name: String::new(),
+            is_loading: false,
+            is_saving: false,
+            error: None,
+            avatar_url: None,
+            avatar_handle: None,
+            is_uploading_avatar: false,
+            is_loading_avatar: false,
+            current_password: String::new(),
+            new_password: String::new(),
+            confirm_new_password: String::new(),
+            is_changing_password: false,
+            password_success: None,
+            success_message: None,
+            devices: Vec::new(),
+            is_loading_devices: false,
+            active_verification_request: None,
+            active_sas: None,
+            verification_ui_state: VerificationUIState::default(),
+            device_delete_password: String::new(),
+            global_notification_mode_dm: None,
+            global_notification_mode_group: None,
+            is_loading_global_notifications: false,
+            media_previews_display_policy: true,
+            invite_avatars_display_policy: true,
+            threepids: Vec::new(),
+            is_loading_3pids: false,
+            new_3pid_email: String::new(),
+            new_3pid_msisdn: String::new(),
+            new_3pid_country_code: String::new(),
+            is_requesting_3pid_token: false,
+            adding_3pid_sid: None,
+            adding_3pid_client_secret: None,
+            add_3pid_password: String::new(),
+            keywords: Vec::new(),
+            new_keyword: String::new(),
+            is_loading_keywords: false,
+            ignored_users: Vec::new(),
+            is_loading_ignored_users: false,
+            new_ignore_user_id: String::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -116,6 +184,29 @@ pub enum Message {
         matrix_sdk::notification_settings::RoomNotificationMode,
     ),
     GlobalNotificationModeSet(Result<(), String>),
+    ToggleMediaPreviewsDisplayPolicy(bool),
+    ToggleInviteAvatarsDisplayPolicy(bool),
+    Load3PIDs,
+    ThreepidsLoaded(Result<Vec<Threepid>, String>),
+    New3PIDEmailChanged(String),
+    New3PIDMsisdnChanged(String),
+    New3PIDCountryCodeChanged(String),
+    Request3PIDEmailToken,
+    Request3PIDMsisdnToken,
+    ThreepidTokenRequested(Result<String, String>),
+    Add3PIDPasswordChanged(String),
+    Add3PID,
+    ThreepidAdded(Result<(), String>),
+    Delete3PID(String, matrix_sdk::ruma::thirdparty::Medium),
+    ThreepidDeleted(String, Result<(), String>),
+    DismissSuccessMessage,
+    LoadKeywords,
+    KeywordsLoaded(Vec<String>),
+    NewKeywordChanged(String),
+    AddKeyword,
+    KeywordAdded(Result<(), String>),
+    RemoveKeyword(String),
+    KeywordRemoved(Result<(), String>),
 }
 
 impl State {
@@ -169,6 +260,10 @@ impl State {
                         Action::from(crate::Message::UserSettings(Message::LoadDevices))
                     });
 
+                    let t_3pids = Task::perform(async move {}, |_| {
+                        Action::from(crate::Message::UserSettings(Message::Load3PIDs))
+                    });
+
                     let matrix_dm = matrix.clone();
                     let t_dm = Task::perform(
                         async move {
@@ -209,8 +304,12 @@ impl State {
                         Action::from(crate::Message::UserSettings(Message::LoadIgnoredUsers))
                     });
 
+                    let t_keywords = Task::done(Action::from(crate::Message::UserSettings(
+                        Message::LoadKeywords,
+                    )));
+
                     return Task::batch(vec![
-                        t_name, t_avatar, t_devices, t_dm, t_group, t_ignored,
+                        t_name, t_avatar, t_devices, t_3pids, t_dm, t_group, t_ignored, t_keywords,
                     ]);
                 }
                 Task::none()
@@ -310,6 +409,9 @@ impl State {
                     Err(e) => {
                         self.error = Some(format!("Failed to unignore user: {}", e));
                     }
+                }
+                Task::none()
+            }
                 }
                 Task::none()
             }
@@ -428,9 +530,8 @@ impl State {
                 Task::none()
             }
             Message::SaveProfile => {
-                if let Some(matrix) = matrix
-                    && self.display_name != self.original_display_name
-                {
+                if let Some(matrix) = matrix {
+                    if self.display_name != self.original_display_name {
                     self.is_saving = true;
                     self.error = None;
                     let matrix = matrix.clone();
@@ -442,18 +543,21 @@ impl State {
                             } else {
                                 Some(new_name.as_str())
                             };
-                            matrix
-                                .client()
-                                .await
-                                .account()
-                                .set_display_name(name_opt)
-                                .await
-                                .map_err(|e| e.to_string())
-                        },
-                        |res| {
-                            Action::from(crate::Message::UserSettings(Message::ProfileSaved(res)))
-                        },
-                    );
+                                matrix
+                                    .client()
+                                    .await
+                                    .account()
+                                    .set_display_name(name_opt)
+                                    .await
+                                    .map_err(|e| e.to_string())
+                            },
+                            |res| {
+                                Action::from(crate::Message::UserSettings(Message::ProfileSaved(
+                                    res,
+                                )))
+                            },
+                        );
+                    }
                 }
                 Task::none()
             }
@@ -869,33 +973,34 @@ impl State {
                 Task::none()
             }
             Message::SaveDeviceName(ref device_id) => {
-                if let Some(matrix) = matrix
-                    && let Some(device) =
-                        self.devices.iter_mut().find(|d| d.device_id == *device_id)
-                {
+                if let Some(matrix) = matrix {
+                    if let Some(device) = self.devices.iter_mut().find(|d| d.device_id == *device_id)
+                    {
                     device.is_renaming = false;
                     let new_name = device.edit_name.clone();
                     let device_id_str = device_id.clone();
                     let device_id_for_closure = device_id_str.clone();
                     let matrix = matrix.clone();
-                    return Task::perform(
-                        async move {
-                            let did = matrix_sdk::ruma::OwnedDeviceId::from(device_id_str.as_ref());
-                            matrix
-                                .client()
-                                .await
-                                .rename_device(&did, &new_name)
-                                .await
-                                .map(|_| ())
-                                .map_err(|e| e.to_string())
-                        },
-                        move |res| {
-                            Action::from(crate::Message::UserSettings(Message::DeviceRenamed(
-                                device_id_for_closure,
-                                res,
-                            )))
-                        },
-                    );
+                        return Task::perform(
+                            async move {
+                                let did =
+                                    matrix_sdk::ruma::OwnedDeviceId::from(device_id_str.as_ref());
+                                matrix
+                                    .client()
+                                    .await
+                                    .rename_device(&did, &new_name)
+                                    .await
+                                    .map(|_| ())
+                                    .map_err(|e| e.to_string())
+                            },
+                            move |res| {
+                                Action::from(crate::Message::UserSettings(Message::DeviceRenamed(
+                                    device_id_for_closure,
+                                    res,
+                                )))
+                            },
+                        );
+                    }
                 }
                 Task::none()
             }
@@ -915,53 +1020,54 @@ impl State {
                 Task::none()
             }
             Message::DeleteDevice(ref device_id) => {
-                if let Some(matrix) = matrix
-                    && let Some(device) =
-                        self.devices.iter_mut().find(|d| d.device_id == *device_id)
-                {
+                if let Some(matrix) = matrix {
+                    if let Some(device) = self.devices.iter_mut().find(|d| d.device_id == *device_id)
+                    {
                     device.is_deleting = true;
                     let matrix = matrix.clone();
                     let device_id_str = device_id.clone();
                     let device_id_for_closure = device_id_str.clone();
                     let password = self.device_delete_password.clone();
-                    return Task::perform(
-                        async move {
-                            let client = matrix.client().await;
-                            let user_id = client.user_id().ok_or("No user ID")?.to_string();
-                            let did = matrix_sdk::ruma::OwnedDeviceId::from(device_id_str.as_ref());
+                        return Task::perform(
+                            async move {
+                                let client = matrix.client().await;
+                                let user_id = client.user_id().ok_or("No user ID")?.to_string();
+                                let did =
+                                    matrix_sdk::ruma::OwnedDeviceId::from(device_id_str.as_ref());
 
-                            if let Err(e) = client
-                                .delete_devices(std::slice::from_ref(&did), None)
-                                .await
-                            {
-                                if let Some(info) = e.as_uiaa_response() {
-                                    if password.is_empty() {
-                                        return Err(
-                                            "Password required to delete device".to_string()
-                                        );
+                                if let Err(e) = client
+                                    .delete_devices(std::slice::from_ref(&did), None)
+                                    .await
+                                {
+                                    if let Some(info) = e.as_uiaa_response() {
+                                        if password.is_empty() {
+                                            return Err(
+                                                "Password required to delete device".to_string()
+                                            );
+                                        }
+
+                                        let identifier = matrix_sdk::ruma::api::client::uiaa::UserIdentifier::UserIdOrLocalpart(user_id);
+                                        let mut password_auth =
+                                            matrix_sdk::ruma::api::client::uiaa::Password::new(
+                                                identifier, password,
+                                            );
+                                        password_auth.session = info.session.clone();
+
+                                        client.delete_devices(&[did], Some(matrix_sdk::ruma::api::client::uiaa::AuthData::Password(password_auth))).await.map(|_| ()).map_err(|e| e.to_string())?;
+                                        return Ok(());
                                     }
-
-                                    let identifier = matrix_sdk::ruma::api::client::uiaa::UserIdentifier::UserIdOrLocalpart(user_id);
-                                    let mut password_auth =
-                                        matrix_sdk::ruma::api::client::uiaa::Password::new(
-                                            identifier, password,
-                                        );
-                                    password_auth.session = info.session.clone();
-
-                                    client.delete_devices(&[did], Some(matrix_sdk::ruma::api::client::uiaa::AuthData::Password(password_auth))).await.map(|_| ()).map_err(|e| e.to_string())?;
-                                    return Ok(());
+                                    return Err(e.to_string());
                                 }
-                                return Err(e.to_string());
-                            }
-                            Ok(())
-                        },
-                        move |res| {
-                            Action::from(crate::Message::UserSettings(Message::DeviceDeleted(
-                                device_id_for_closure,
-                                res,
-                            )))
-                        },
-                    );
+                                Ok(())
+                            },
+                            move |res| {
+                                Action::from(crate::Message::UserSettings(Message::DeviceDeleted(
+                                    device_id_for_closure,
+                                    res,
+                                )))
+                            },
+                        );
+                    }
                 }
                 Task::none()
             }
@@ -983,7 +1089,415 @@ impl State {
                 }
                 Task::none()
             }
+            Message::ToggleMediaPreviewsDisplayPolicy(enabled) => {
+                self.media_previews_display_policy = enabled;
+                if let Some(matrix) = matrix {
+                    let matrix = matrix.clone();
+                    return Task::perform(
+                        async move {
+                            matrix
+                                .set_media_previews_display_policy(enabled)
+                                .await
+                                .map_err(|e| e.to_string())
+                        },
+                        |_| Action::from(crate::Message::AppSettingChanged),
+                    );
+                }
+                Task::done(Action::from(crate::Message::AppSettingChanged))
+            }
+            Message::ToggleInviteAvatarsDisplayPolicy(enabled) => {
+                self.invite_avatars_display_policy = enabled;
+                if let Some(matrix) = matrix {
+                    let matrix = matrix.clone();
+                    return Task::perform(
+                        async move {
+                            matrix
+                                .set_invite_avatars_display_policy(enabled)
+                                .await
+                                .map_err(|e| e.to_string())
+                        },
+                        |_| Action::from(crate::Message::AppSettingChanged),
+                    );
+                }
+                Task::done(Action::from(crate::Message::AppSettingChanged))
+            }
+            Message::Load3PIDs => {
+                if let Some(matrix) = matrix {
+                    self.is_loading_3pids = true;
+                    let matrix = matrix.clone();
+                    return Task::perform(
+                        async move {
+                            let client = matrix.client().await;
+                            let resp = client
+                                .account()
+                                .get_3pids()
+                                .await
+                                .map_err(|e| e.to_string())?;
+                            let threepids = resp
+                                .threepids
+                                .into_iter()
+                                .map(|t| Threepid {
+                                    address: t.address,
+                                    medium: t.medium,
+                                })
+                                .collect();
+                            Ok(threepids)
+                        },
+                        |res| {
+                            Action::from(crate::Message::UserSettings(Message::ThreepidsLoaded(
+                                res,
+                            )))
+                        },
+                    );
+                }
+                Task::none()
+            }
+            Message::ThreepidsLoaded(res) => {
+                self.is_loading_3pids = false;
+                match res {
+                    Ok(threepids) => {
+                        self.threepids = threepids;
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to load 3PIDs: {}", e));
+                    }
+                }
+                Task::none()
+            }
+            Message::New3PIDEmailChanged(email) => {
+                self.new_3pid_email = email;
+                Task::none()
+            }
+            Message::New3PIDMsisdnChanged(msisdn) => {
+                self.new_3pid_msisdn = msisdn;
+                Task::none()
+            }
+            Message::New3PIDCountryCodeChanged(cc) => {
+                self.new_3pid_country_code = cc;
+                Task::none()
+            }
+            Message::Add3PIDPasswordChanged(pw) => {
+                self.add_3pid_password = pw;
+                Task::none()
+            }
+            Message::Request3PIDEmailToken => {
+                if let Some(matrix) = matrix {
+                    self.is_requesting_3pid_token = true;
+                    self.error = None;
+                    let matrix = matrix.clone();
+                    let email = self.new_3pid_email.clone();
+                    let client_secret = matrix_sdk::ruma::ClientSecret::new();
+                    self.adding_3pid_client_secret = Some(client_secret.to_string());
+
+                    return Task::perform(
+                        async move {
+                            let client = matrix.client().await;
+                            let resp = client
+                                .account()
+                                .request_3pid_email_token(
+                                    &client_secret,
+                                    &email,
+                                    matrix_sdk::ruma::uint!(1),
+                                )
+                                .await
+                                .map_err(|e| e.to_string())?;
+                            Ok(resp.sid.to_string())
+                        },
+                        |res| {
+                            Action::from(crate::Message::UserSettings(
+                                Message::ThreepidTokenRequested(res),
+                            ))
+                        },
+                    );
+                }
+                Task::none()
+            }
+            Message::Request3PIDMsisdnToken => {
+                if let Some(matrix) = matrix {
+                    self.is_requesting_3pid_token = true;
+                    self.error = None;
+                    let matrix = matrix.clone();
+                    let msisdn = self.new_3pid_msisdn.clone();
+                    let country = self.new_3pid_country_code.clone();
+                    let client_secret = matrix_sdk::ruma::ClientSecret::new();
+                    self.adding_3pid_client_secret = Some(client_secret.to_string());
+
+                    return Task::perform(
+                        async move {
+                            let client = matrix.client().await;
+                            let resp = client
+                                .account()
+                                .request_3pid_msisdn_token(
+                                    &client_secret,
+                                    &country,
+                                    &msisdn,
+                                    matrix_sdk::ruma::uint!(1),
+                                )
+                                .await
+                                .map_err(|e| e.to_string())?;
+                            Ok(resp.sid.to_string())
+                        },
+                        |res| {
+                            Action::from(crate::Message::UserSettings(
+                                Message::ThreepidTokenRequested(res),
+                            ))
+                        },
+                    );
+                }
+                Task::none()
+            }
+            Message::ThreepidTokenRequested(res) => {
+                self.is_requesting_3pid_token = false;
+                match res {
+                    Ok(sid) => {
+                        self.adding_3pid_sid = Some(sid);
+                        self.success_message = Some("Verification code sent. Please confirm the link/code and then provide your password to add it here.".to_string());
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to request verification token: {}", e));
+                        self.adding_3pid_client_secret = None;
+                    }
+                }
+                Task::none()
+            }
+            Message::Add3PID => {
+                if let (Some(matrix), Some(sid), Some(secret)) = (
+                    matrix,
+                    &self.adding_3pid_sid,
+                    &self.adding_3pid_client_secret,
+                ) {
+                    let matrix = matrix.clone();
+                    let sid = sid.clone();
+                    let secret = secret.clone();
+                    let password = self.add_3pid_password.clone();
+
+                    return Task::perform(
+                        async move {
+                            let client = matrix.client().await;
+                            let user_id = client.user_id().ok_or("No user ID")?.to_string();
+                            let sid_typed = matrix_sdk::ruma::SessionId::parse(sid).map_err(|e| e.to_string())?;
+                            let secret_typed = matrix_sdk::ruma::ClientSecret::parse(secret).map_err(|e| e.to_string())?;
+
+                            let res = client
+                                .account()
+                                .add_3pid(&secret_typed, &sid_typed, None)
+                                .await;
+
+                            match res {
+                                Ok(_) => Ok(()),
+                                Err(e) => {
+                                    if let Some(info) = e.as_uiaa_response() {
+                                        if password.is_empty() {
+                                            return Err("Password required to add 3PID".to_string());
+                                        }
+
+                                        let identifier = matrix_sdk::ruma::api::client::uiaa::UserIdentifier::UserIdOrLocalpart(user_id);
+                                        let mut password_auth =
+                                            matrix_sdk::ruma::api::client::uiaa::Password::new(
+                                                identifier, password,
+                                            );
+                                        password_auth.session = info.session.clone();
+
+                                        client.account().add_3pid(&secret_typed, &sid_typed, Some(matrix_sdk::ruma::api::client::uiaa::AuthData::Password(password_auth))).await.map(|_| ()).map_err(|e| e.to_string())
+                                    } else {
+                                        Err(e.to_string())
+                                    }
+                                }
+                            }
+                        },
+                        |res| {
+                            Action::from(crate::Message::UserSettings(Message::ThreepidAdded(res)))
+                        },
+                    );
+                }
+                Task::none()
+            }
+            Message::ThreepidAdded(res) => {
+                match res {
+                    Ok(_) => {
+                        self.new_3pid_email.clear();
+                        self.new_3pid_msisdn.clear();
+                        self.add_3pid_password.clear();
+                        self.adding_3pid_sid = None;
+                        self.adding_3pid_client_secret = None;
+                        return self.update(Message::Load3PIDs, matrix);
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to add 3PID: {}", e));
+                    }
+                }
+                Task::none()
+            }
+            Message::DismissSuccessMessage => {
+                self.success_message = None;
+                Task::none()
+            }
+            Message::Delete3PID(address, medium) => {
+                if let Some(matrix) = matrix {
+                    let matrix = matrix.clone();
+                    let addr = address.clone();
+                    return Task::perform(
+                        async move {
+                            let client = matrix.client().await;
+                            client
+                                .account()
+                                .delete_3pid(&addr, medium, None)
+                                .await
+                                .map(|_| ())
+                                .map_err(|e| e.to_string())
+                        },
+                        move |res| {
+                            Action::from(crate::Message::UserSettings(Message::ThreepidDeleted(
+                                address.clone(),
+                                res,
+                            )))
+                        },
+                    );
+                }
+                Task::none()
+            }
+            Message::ThreepidDeleted(address, res) => {
+                match res {
+                    Ok(_) => {
+                        self.threepids.retain(|t| t.address != address);
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to delete 3PID: {}", e));
+                    }
+                }
+                Task::none()
+            }
+            Message::LoadKeywords => {
+                if let Some(matrix) = matrix {
+                    self.is_loading_keywords = true;
+                    let matrix = matrix.clone();
+                    return Task::perform(
+                        async move {
+                            let client = matrix.client().await;
+                            let ns = client.notification_settings().await;
+                            let mut res = Vec::new();
+                            for k in ns.enabled_keywords().await {
+                                res.push(k.into());
+                            }
+                            res
+                        },
+                        |res| {
+                            Action::from(crate::Message::UserSettings(Message::KeywordsLoaded(res)))
+                        },
+                    );
+                }
+                Task::none()
+            }
+            Message::KeywordsLoaded(res) => {
+                self.is_loading_keywords = false;
+                self.keywords = res;
+                Task::none()
+            }
+            Message::NewKeywordChanged(keyword) => {
+                self.new_keyword = keyword;
+                Task::none()
+            }
+            Message::AddKeyword => {
+                if let Some(matrix) = matrix
+                    && !self.new_keyword.is_empty()
+                {
+                    self.is_loading_keywords = true;
+                    let matrix = matrix.clone();
+                    let keyword = self.new_keyword.clone();
+                    return Task::perform(
+                        async move {
+                            let client = matrix.client().await;
+                            let ns = client.notification_settings().await;
+                            ns.add_keyword(keyword).await.map_err(|e| e.to_string())
+                        },
+                        |res| {
+                            Action::from(crate::Message::UserSettings(Message::KeywordAdded(res)))
+                        },
+                    );
+                }
+                Task::none()
+            }
+            Message::KeywordAdded(res) => {
+                match res {
+                    Ok(_) => {
+                        self.new_keyword.clear();
+                        return self.update(Message::LoadKeywords, matrix);
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to add keyword: {}", e));
+                    }
+                }
+                Task::none()
+            }
+            Message::RemoveKeyword(keyword) => {
+                if let Some(matrix) = matrix {
+                    self.is_loading_keywords = true;
+                    let matrix = matrix.clone();
+                    return Task::perform(
+                        async move {
+                            let client = matrix.client().await;
+                            let ns = client.notification_settings().await;
+                            ns.remove_keyword(&keyword).await.map_err(|e| e.to_string())
+                        },
+                        |res| {
+                            Action::from(crate::Message::UserSettings(Message::KeywordRemoved(res)))
+                        },
+                    );
+                }
+                Task::none()
+            }
+            Message::KeywordRemoved(res) => {
+                match res {
+                    Ok(_) => {
+                        return self.update(Message::LoadKeywords, matrix);
+                    }
+                    Err(e) => {
+                        self.is_loading_keywords = false;
+                        self.error = Some(format!("Failed to remove keyword: {}", e));
+                    }
+                }
+                Task::none()
+            }
         }
+    }
+
+    fn view_privacy<'a>(&'a self) -> Element<'a, Message> {
+        use cosmic::widget::toggler;
+        let mut col = Column::new().spacing(10);
+        col = col.push(text::title3("Privacy & Preferences"));
+
+        col = col.push(
+            Row::new()
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .push(text::body("Display Media Previews"))
+                .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
+                .push(
+                    toggler(self.media_previews_display_policy)
+                        .on_toggle(Message::ToggleMediaPreviewsDisplayPolicy),
+                ),
+        );
+        col = col.push(
+            text::body("Automatically load and display media previews in the chat timeline.")
+                .size(12),
+        );
+
+        col = col.push(
+            Row::new()
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .push(text::body("Display Invite Avatars"))
+                .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
+                .push(
+                    toggler(self.invite_avatars_display_policy)
+                        .on_toggle(Message::ToggleInviteAvatarsDisplayPolicy),
+                ),
+        );
+        col = col.push(
+            text::body("Display avatars for rooms and spaces you haven't joined yet.").size(12),
+        );
+
+        col.into()
     }
 
     fn view_notifications<'a>(&'a self) -> Element<'a, Message> {
@@ -1045,6 +1559,49 @@ impl State {
             }
             group_row = group_row.push(btn);
         }
+        col.into()
+    }
+
+    fn view_keywords<'a>(&'a self) -> Element<'a, Message> {
+        let mut col = Column::new().spacing(10);
+        col = col.push(text::title3("Keyword Notifications"));
+
+        col = col.push(
+            text::body("Receive notifications when these keywords are mentioned in any room.")
+                .size(12),
+        );
+
+        if self.is_loading_keywords {
+            col = col.push(text::body("Loading keywords..."));
+        } else {
+            for keyword in &self.keywords {
+                let mut row = Row::new().spacing(10).align_y(Alignment::Center);
+                row = row.push(text::body(keyword).size(14));
+                row = row.push(cosmic::widget::space().width(cosmic::iced::Length::Fill));
+                row = row.push(tooltip(
+                    button::icon(Named::new("user-trash-symbolic"))
+                        .on_press(Message::RemoveKeyword(keyword.clone())),
+                    text::body("Remove Keyword"),
+                    Position::Top,
+                ));
+                col = col.push(row);
+            }
+
+            let mut add_row = Row::new().spacing(10).align_y(Alignment::Center);
+            add_row = add_row.push(
+                text_input("New keyword", &self.new_keyword)
+                    .on_input(Message::NewKeywordChanged)
+                    .on_submit(|_| Message::AddKeyword),
+            );
+
+            let mut add_btn = button::text("Add");
+            if !self.new_keyword.is_empty() {
+                add_btn = add_btn.on_press(Message::AddKeyword);
+            }
+            add_row = add_row.push(add_btn);
+            col = col.push(add_row);
+        }
+
         col.into()
     }
 
@@ -1334,6 +1891,99 @@ impl State {
         col.into()
     }
 
+    fn view_3pids<'a>(&'a self) -> Element<'a, Message> {
+        let mut col = Column::new()
+            .spacing(10)
+            .push(text::title3("Emails & Phone Numbers"));
+
+        if self.is_loading_3pids {
+            col = col.push(text::body("Loading linked identifiers..."));
+        } else {
+            for t in &self.threepids {
+                let mut row = Row::new().spacing(10).align_y(Alignment::Center);
+                let icon = match t.medium {
+                    matrix_sdk::ruma::thirdparty::Medium::Email => "mail-unread-symbolic",
+                    matrix_sdk::ruma::thirdparty::Medium::Msisdn => "phone-symbolic",
+                    _ => "dialog-question-symbolic",
+                };
+
+                row = row
+                    .push(button::icon(Named::new(icon)))
+                    .push(text::body(t.address.clone()))
+                    .push(cosmic::widget::space().width(cosmic::iced::Length::Fill));
+
+                let del_btn = button::destructive("Remove")
+                    .on_press(Message::Delete3PID(t.address.clone(), t.medium.clone()));
+                row = row.push(del_btn);
+
+                col = col.push(row);
+            }
+
+            col = col.push(text::body("Add Email Address").size(14));
+            let mut email_row = Row::new().spacing(10).align_y(Alignment::Center);
+            email_row = email_row.push(
+                text_input("email@example.com", &self.new_3pid_email)
+                    .on_input(Message::New3PIDEmailChanged),
+            );
+
+            if self.adding_3pid_sid.is_none() {
+                let mut btn = button::text(if self.is_requesting_3pid_token {
+                    "Sending..."
+                } else {
+                    "Send"
+                });
+                if !self.is_requesting_3pid_token && !self.new_3pid_email.is_empty() {
+                    btn = btn.on_press(Message::Request3PIDEmailToken);
+                }
+                email_row = email_row.push(btn);
+            }
+            col = col.push(email_row);
+
+            col = col.push(text::body("Add Phone Number").size(14));
+            let mut phone_row = Row::new().spacing(10).align_y(Alignment::Center);
+            phone_row = phone_row.push(
+                text_input("Country (e.g. US)", &self.new_3pid_country_code)
+                    .on_input(Message::New3PIDCountryCodeChanged)
+                    .width(100),
+            );
+            phone_row = phone_row.push(
+                text_input("Phone Number", &self.new_3pid_msisdn)
+                    .on_input(Message::New3PIDMsisdnChanged),
+            );
+
+            if self.adding_3pid_sid.is_none() {
+                let mut btn = button::text(if self.is_requesting_3pid_token {
+                    "Sending..."
+                } else {
+                    "Send"
+                });
+                if !self.is_requesting_3pid_token
+                    && !self.new_3pid_msisdn.is_empty()
+                    && !self.new_3pid_country_code.is_empty()
+                {
+                    btn = btn.on_press(Message::Request3PIDMsisdnToken);
+                }
+                phone_row = phone_row.push(btn);
+            }
+            col = col.push(phone_row);
+
+            if let Some(_sid) = &self.adding_3pid_sid {
+                col = col.push(text::body("Complete Addition").size(14));
+                let mut complete_row = Row::new().spacing(10).align_y(Alignment::Center);
+                complete_row = complete_row.push(
+                    text_input("Account Password", &self.add_3pid_password)
+                        .password()
+                        .on_input(Message::Add3PIDPasswordChanged),
+                );
+                complete_row =
+                    complete_row.push(button::suggested("Add").on_press(Message::Add3PID));
+                col = col.push(complete_row);
+            }
+        }
+
+        col.into()
+    }
+
     fn view_verification<'a>(&'a self) -> Element<'a, Message> {
         let mut col = Column::new().spacing(10);
         match &self.verification_ui_state {
@@ -1395,6 +2045,10 @@ impl State {
 
         col = col.push(self.view_notifications());
 
+        col = col.push(self.view_privacy());
+
+        col = col.push(self.view_keywords());
+
         if let Some(err) = &self.error {
             col = col.push(
                 Row::new()
@@ -1410,6 +2064,18 @@ impl State {
         col = col.push(self.view_ignored_users());
 
         col = col.push(self.view_devices());
+
+        col = col.push(self.view_3pids());
+
+        if let Some(msg) = &self.success_message {
+            col = col.push(
+                Row::new()
+                    .spacing(10)
+                    .align_y(Alignment::Center)
+                    .push(text::body(msg))
+                    .push(button::text("Dismiss").on_press(Message::DismissSuccessMessage)),
+            );
+        }
 
         col = col.push(self.view_verification());
 
@@ -1518,5 +2184,56 @@ mod tests {
         // After successful ignore, input should be cleared
         let _ = state.update(Message::UserIgnored(Ok(())), &None);
         assert_eq!(state.new_ignore_user_id, "");
+    }
+
+    #[test]
+    fn test_threepids_loaded() {
+        let mut state = State::default();
+        let threepids = vec![Threepid {
+            address: "test@example.com".to_string(),
+            medium: matrix_sdk::ruma::thirdparty::Medium::Email,
+        }];
+
+        let _ = state.update(Message::ThreepidsLoaded(Ok(threepids.clone())), &None);
+
+        assert!(!state.is_loading_3pids);
+        assert_eq!(state.threepids, threepids);
+    }
+
+    #[test]
+    fn test_new_3pid_email_changed() {
+        let mut state = State::default();
+        let email = "new@example.com".to_string();
+
+        let _ = state.update(Message::New3PIDEmailChanged(email.clone()), &None);
+
+        assert_eq!(state.new_3pid_email, email);
+    }
+
+    #[test]
+    fn test_threepid_deleted() {
+        let mut state = State::default();
+        let address = "test@example.com".to_string();
+        state.threepids = vec![Threepid {
+            address: address.clone(),
+            medium: matrix_sdk::ruma::thirdparty::Medium::Email,
+        }];
+
+        let _ = state.update(Message::ThreepidDeleted(address, Ok(())), &None);
+
+        assert!(state.threepids.is_empty());
+    }
+
+    #[test]
+    fn test_keywords_state() {
+        let mut state = State::default();
+
+        let _ = state.update(Message::NewKeywordChanged("rust".to_string()), &None);
+        assert_eq!(state.new_keyword, "rust");
+
+        let keywords = vec!["matrix".to_string(), "cosmic".to_string()];
+        let _ = state.update(Message::KeywordsLoaded(keywords.clone()), &None);
+        assert_eq!(state.keywords, keywords);
+        assert!(!state.is_loading_keywords);
     }
 }
