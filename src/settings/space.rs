@@ -9,6 +9,8 @@ pub struct State {
     pub space_id: Option<String>,
     pub name: String,
     pub original_name: String,
+    pub canonical_alias: String,
+    pub original_canonical_alias: String,
     pub is_loading: bool,
     pub is_saving: bool,
     pub error: Option<String>,
@@ -38,6 +40,7 @@ pub enum Message {
     IsInviteOnlyChanged(bool),
     NameChanged(String),
     TopicChanged(String),
+    CanonicalAliasChanged(String),
     SaveSpace,
     SpaceSaved(Result<(), String>),
     DismissError,
@@ -63,6 +66,7 @@ pub enum Message {
 pub struct SpaceInfo {
     pub name: String,
     pub topic: String,
+    pub canonical_alias: Option<String>,
     pub avatar_url: Option<String>,
     pub visibility: matrix_sdk::ruma::api::client::room::Visibility,
     pub join_rule: matrix_sdk::ruma::events::room::join_rules::JoinRule,
@@ -101,6 +105,7 @@ impl State {
                             Ok(SpaceInfo {
                                 name: room.name().unwrap_or_default(),
                                 topic: room.topic().unwrap_or_default(),
+                                canonical_alias: room.canonical_alias().map(|a| a.to_string()),
                                 avatar_url: room.avatar_url().map(|u| u.to_string()),
                                 visibility,
                                 join_rule,
@@ -122,6 +127,9 @@ impl State {
                         self.original_name = info.name;
                         self.topic = info.topic.clone();
                         self.original_topic = info.topic;
+                        self.canonical_alias = info.canonical_alias.clone().unwrap_or_default();
+                        self.original_canonical_alias =
+                            info.canonical_alias.clone().unwrap_or_default();
                         self.avatar_url = info.avatar_url;
                         self.is_public = info.visibility
                             == matrix_sdk::ruma::api::client::room::Visibility::Public;
@@ -286,6 +294,10 @@ impl State {
                 self.topic = topic;
                 Task::none()
             }
+            Message::CanonicalAliasChanged(alias) => {
+                self.canonical_alias = alias;
+                Task::none()
+            }
             Message::SaveSpace => {
                 if let Some(matrix) = matrix {
                     if let Some(space_id) = &self.space_id {
@@ -295,9 +307,11 @@ impl State {
                         let engine = matrix.clone();
                         let new_name = self.name.clone();
                         let new_topic = self.topic.clone();
+                        let new_alias = self.canonical_alias.clone();
                         let space_id_clone = space_id.clone();
                         let original_name = self.original_name.clone();
                         let original_topic = self.original_topic.clone();
+                        let original_alias = self.original_canonical_alias.clone();
                         let new_is_public = self.is_public;
                         let original_is_public = self.original_is_public;
                         let new_is_invite_only = self.is_invite_only;
@@ -314,6 +328,19 @@ impl State {
                                 if new_topic != original_topic {
                                     engine
                                         .set_room_topic(&space_id_clone, new_topic)
+                                        .await
+                                        .map_err(|e| e.to_string())?;
+                                }
+                                if new_alias != original_alias {
+                                    engine
+                                        .set_canonical_alias(
+                                            &space_id_clone,
+                                            if new_alias.is_empty() {
+                                                None
+                                            } else {
+                                                Some(new_alias)
+                                            },
+                                        )
                                         .await
                                         .map_err(|e| e.to_string())?;
                                 }
@@ -360,6 +387,7 @@ impl State {
                     Ok(_) => {
                         self.original_name = self.name.clone();
                         self.original_topic = self.topic.clone();
+                        self.original_canonical_alias = self.canonical_alias.clone();
                         self.original_is_public = self.is_public;
                         self.original_is_invite_only = self.is_invite_only;
                         self.error = None;
@@ -597,6 +625,16 @@ impl State {
                 .push(text_input::text_input("Topic", &self.topic).on_input(Message::TopicChanged)),
         );
 
+        col = col.push(
+            Column::new()
+                .spacing(5)
+                .push(text::body("Canonical Alias").size(12))
+                .push(
+                    text_input::text_input("#space_name:server.com", &self.canonical_alias)
+                        .on_input(Message::CanonicalAliasChanged),
+                ),
+        );
+
         col = col.push(text::title3("Discovery & Access"));
 
         col = col.push(
@@ -606,15 +644,10 @@ impl State {
                 .push(
                     Column::new()
                         .push(text::body("Publicly discoverable"))
-                        .push(
-                            text::body("Show this space in the server's directory")
-                                .size(12),
-                        ),
+                        .push(text::body("Show this space in the server's directory").size(12)),
                 )
                 .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
-                .push(
-                    cosmic::widget::toggler(self.is_public).on_toggle(Message::IsPublicChanged),
-                ),
+                .push(cosmic::widget::toggler(self.is_public).on_toggle(Message::IsPublicChanged)),
         );
 
         col = col.push(
@@ -624,10 +657,7 @@ impl State {
                 .push(
                     Column::new()
                         .push(text::body("Invite only"))
-                        .push(
-                            text::body("New members must be invited to join")
-                                .size(12),
-                        ),
+                        .push(text::body("New members must be invited to join").size(12)),
                 )
                 .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
                 .push(
@@ -644,6 +674,7 @@ impl State {
 
         let has_changes = self.name != self.original_name
             || self.topic != self.original_topic
+            || self.canonical_alias != self.original_canonical_alias
             || self.is_public != self.original_is_public
             || self.is_invite_only != self.original_is_invite_only;
 
@@ -669,7 +700,11 @@ impl State {
             for child in &self.children {
                 let name = child.name.as_deref().unwrap_or(&child.id);
                 let current_order = child.order.as_deref().unwrap_or_default();
-                let order_to_show = self.pending_child_orders.get(child.id.as_ref()).map(|s| s.as_str()).unwrap_or(current_order);
+                let order_to_show = self
+                    .pending_child_orders
+                    .get(child.id.as_ref())
+                    .map(|s| s.as_str())
+                    .unwrap_or(current_order);
 
                 let mut row = Row::new().spacing(10).align_y(Alignment::Center).push(
                     Column::new()
@@ -740,12 +775,7 @@ impl State {
                         }
                     }
 
-                    row = row.push(
-                        Row::new()
-                            .spacing(5)
-                            .push(invite_btn)
-                            .push(restricted_btn),
-                    );
+                    row = row.push(Row::new().spacing(5).push(invite_btn).push(restricted_btn));
                 }
 
                 let child_id_clone = child.id.to_string();
@@ -759,7 +789,8 @@ impl State {
 
                 if order_to_show != current_order {
                     row = row.push(
-                        button::text("Apply").on_press(Message::SaveChildOrder(child.id.to_string())),
+                        button::text("Apply")
+                            .on_press(Message::SaveChildOrder(child.id.to_string())),
                     );
                 }
 
@@ -807,5 +838,42 @@ impl State {
         );
 
         col.into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_name_changed() {
+        let mut state = State::default();
+        let _ = state.update(Message::NameChanged("New Space Name".to_string()), &None);
+        assert_eq!(state.name, "New Space Name");
+    }
+
+    #[test]
+    fn test_topic_changed() {
+        let mut state = State::default();
+        let _ = state.update(Message::TopicChanged("New Topic".to_string()), &None);
+        assert_eq!(state.topic, "New Topic");
+    }
+
+    #[test]
+    fn test_canonical_alias_changed() {
+        let mut state = State::default();
+        let _ = state.update(
+            Message::CanonicalAliasChanged("#new_alias:example.com".to_string()),
+            &None,
+        );
+        assert_eq!(state.canonical_alias, "#new_alias:example.com");
+    }
+
+    #[test]
+    fn test_dismiss_error() {
+        let mut state = State::default();
+        state.error = Some("An error occurred".to_string());
+        let _ = state.update(Message::DismissError, &None);
+        assert_eq!(state.error, None);
     }
 }
