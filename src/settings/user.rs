@@ -1325,7 +1325,7 @@ impl State {
                         &self.new_ignore_user_id,
                     )
                     .on_input(Message::NewIgnoreUserIdChanged)
-                    .on_submit(Message::IgnoreUser),
+                    .on_submit(|_| Message::IgnoreUser),
                 )
                 .push(ignore_btn);
             col = col.push(input_row);
@@ -1501,7 +1501,10 @@ mod tests {
         let user_id = OwnedUserId::try_from("@alice:example.com").unwrap();
 
         // Load ignored users
-        let _ = state.update(Message::IgnoredUsersLoaded(Ok(vec![user_id.clone()])), &None);
+        let _ = state.update(
+            Message::IgnoredUsersLoaded(Ok(vec![user_id.clone()])),
+            &None,
+        );
         assert_eq!(state.ignored_users.len(), 1);
         assert_eq!(state.ignored_users[0], user_id);
 
