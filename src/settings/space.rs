@@ -644,15 +644,10 @@ impl State {
                 .push(
                     Column::new()
                         .push(text::body("Publicly discoverable"))
-                        .push(
-                            text::body("Show this space in the server's directory")
-                                .size(12),
-                        ),
+                        .push(text::body("Show this space in the server's directory").size(12)),
                 )
                 .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
-                .push(
-                    cosmic::widget::toggler(self.is_public).on_toggle(Message::IsPublicChanged),
-                ),
+                .push(cosmic::widget::toggler(self.is_public).on_toggle(Message::IsPublicChanged)),
         );
 
         col = col.push(
@@ -662,10 +657,7 @@ impl State {
                 .push(
                     Column::new()
                         .push(text::body("Invite only"))
-                        .push(
-                            text::body("New members must be invited to join")
-                                .size(12),
-                        ),
+                        .push(text::body("New members must be invited to join").size(12)),
                 )
                 .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
                 .push(
@@ -708,7 +700,11 @@ impl State {
             for child in &self.children {
                 let name = child.name.as_deref().unwrap_or(&child.id);
                 let current_order = child.order.as_deref().unwrap_or_default();
-                let order_to_show = self.pending_child_orders.get(child.id.as_ref()).map(|s| s.as_str()).unwrap_or(current_order);
+                let order_to_show = self
+                    .pending_child_orders
+                    .get(child.id.as_ref())
+                    .map(|s| s.as_str())
+                    .unwrap_or(current_order);
 
                 let mut row = Row::new().spacing(10).align_y(Alignment::Center).push(
                     Column::new()
@@ -779,12 +775,7 @@ impl State {
                         }
                     }
 
-                    row = row.push(
-                        Row::new()
-                            .spacing(5)
-                            .push(invite_btn)
-                            .push(restricted_btn),
-                    );
+                    row = row.push(Row::new().spacing(5).push(invite_btn).push(restricted_btn));
                 }
 
                 let child_id_clone = child.id.to_string();
@@ -798,7 +789,8 @@ impl State {
 
                 if order_to_show != current_order {
                     row = row.push(
-                        button::text("Apply").on_press(Message::SaveChildOrder(child.id.to_string())),
+                        button::text("Apply")
+                            .on_press(Message::SaveChildOrder(child.id.to_string())),
                     );
                 }
 
