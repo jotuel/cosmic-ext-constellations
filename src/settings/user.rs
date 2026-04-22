@@ -4,11 +4,20 @@ use cosmic::widget::{
     Column, Row, button, icon::Named, text, text_input, tooltip, tooltip::Position,
 };
 use cosmic::{Action, Element, Task};
+use matrix_sdk::encryption::CrossSigningStatus;
 use matrix_sdk::encryption::verification::{
     SasState, SasVerification, VerificationRequest, VerificationRequestState,
 };
 use matrix_sdk::ruma::OwnedUserId;
 use std::sync::Arc;
+
+#[derive(Debug, Clone)]
+pub struct CrossSigningInfo {
+    pub status: CrossSigningStatus,
+    pub master_key: Option<String>,
+    pub self_signing_key: Option<String>,
+    pub user_signing_key: Option<String>,
+}
 
 #[derive(Debug, Clone)]
 pub struct DeviceInfo {
@@ -65,6 +74,9 @@ pub struct State {
     pub global_notification_mode_group:
         Option<matrix_sdk::notification_settings::RoomNotificationMode>,
     pub is_loading_global_notifications: bool,
+    pub cross_signing_info: Option<CrossSigningInfo>,
+    pub is_loading_cross_signing: bool,
+    pub is_bootstrapping: bool,
     pub media_previews_display_policy: bool,
     pub invite_avatars_display_policy: bool,
     pub threepids: Vec<Threepid>,
@@ -111,6 +123,9 @@ impl Default for State {
             global_notification_mode_dm: None,
             global_notification_mode_group: None,
             is_loading_global_notifications: false,
+            cross_signing_info: None,
+            is_loading_cross_signing: false,
+            is_bootstrapping: false,
             media_previews_display_policy: true,
             invite_avatars_display_policy: true,
             threepids: Vec::new(),
@@ -185,6 +200,10 @@ pub enum Message {
         matrix_sdk::notification_settings::RoomNotificationMode,
     ),
     GlobalNotificationModeSet(Result<(), String>),
+    LoadCrossSigningStatus,
+    CrossSigningStatusLoaded(Result<Option<CrossSigningInfo>, String>),
+    BootstrapCrossSigning,
+    CrossSigningBootstrapped(Result<(), String>),
     ToggleMediaPreviewsDisplayPolicy(bool),
     ToggleInviteAvatarsDisplayPolicy(bool),
     Load3PIDs,
@@ -304,13 +323,26 @@ impl State {
                     let t_ignored = Task::perform(async move {}, |_| {
                         Action::from(crate::Message::UserSettings(Message::LoadIgnoredUsers))
                     });
+                  
+                    let t_cross_signing = Task::perform(async move {}, |_| {
+                        Action::from(crate::Message::UserSettings(
+                            Message::LoadCrossSigningStatus,
+                        ))
+                    });
 
                     let t_keywords = Task::done(Action::from(crate::Message::UserSettings(
                         Message::LoadKeywords,
                     )));
 
                     return Task::batch(vec![
-                        t_name, t_avatar, t_devices, t_3pids, t_dm, t_group, t_ignored, t_keywords,
+                        t_name,
+                        t_avatar,
+                        t_devices,
+                        t_3pids,
+                        t_dm,
+                        t_group,
+                        t_cross_signing,
+                        t_keywords,
                     ]);
                 }
                 Task::none()
@@ -1086,6 +1118,109 @@ impl State {
                             "Failed to delete device: {}. You might need to provide a password below.",
                             e
                         ));
+                    }
+                }
+                Task::none()
+            }
+            Message::LoadCrossSigningStatus => {
+                if let Some(matrix) = matrix {
+                    self.is_loading_cross_signing = true;
+                    let matrix = matrix.clone();
+                    return Task::perform(
+                        async move {
+                            let client = matrix.client().await;
+                            let encryption = client.encryption();
+                            let status_opt = encryption.cross_signing_status().await;
+
+                            if let Some(status) = status_opt {
+                                return Ok(Some(CrossSigningInfo {
+                                    status,
+                                    master_key: None,
+                                    self_signing_key: None,
+                                    user_signing_key: None,
+                                }));
+                            }
+                            Ok(None)
+                        },
+                        |res| {
+                            Action::from(crate::Message::UserSettings(
+                                Message::CrossSigningStatusLoaded(res),
+                            ))
+                        },
+                    );
+                }
+                Task::none()
+            }
+            Message::CrossSigningStatusLoaded(res) => {
+                self.is_loading_cross_signing = false;
+                match res {
+                    Ok(info) => {
+                        self.cross_signing_info = info;
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to load cross-signing status: {}", e));
+                    }
+                }
+                Task::none()
+            }
+            Message::BootstrapCrossSigning => {
+                if let Some(matrix) = matrix {
+                    self.is_bootstrapping = true;
+                    let matrix = matrix.clone();
+                    let password = self.device_delete_password.clone();
+                    return Task::perform(
+                        async move {
+                            let client = matrix.client().await;
+                            let user_id = client.user_id().ok_or("No user ID")?.to_string();
+
+                            if let Err(e) = client.encryption().bootstrap_cross_signing(None).await
+                            {
+                                if let Some(info) = e.as_uiaa_response() {
+                                    if password.is_empty() {
+                                        return Err(
+                                            "Password required for bootstrapping (use the delete-device password field)".to_string()
+                                        );
+                                    }
+
+                                    let identifier = matrix_sdk::ruma::api::client::uiaa::UserIdentifier::UserIdOrLocalpart(user_id);
+                                    let mut password_auth =
+                                        matrix_sdk::ruma::api::client::uiaa::Password::new(
+                                            identifier, password,
+                                        );
+                                    password_auth.session = info.session.clone();
+
+                                    client
+                                        .encryption()
+                                        .bootstrap_cross_signing(Some(
+                                            matrix_sdk::ruma::api::client::uiaa::AuthData::Password(
+                                                password_auth,
+                                            ),
+                                        ))
+                                        .await
+                                        .map_err(|e| e.to_string())?;
+                                    return Ok(());
+                                }
+                                return Err(e.to_string());
+                            }
+                            Ok(())
+                        },
+                        |res| {
+                            Action::from(crate::Message::UserSettings(
+                                Message::CrossSigningBootstrapped(res),
+                            ))
+                        },
+                    );
+                }
+                Task::none()
+            }
+            Message::CrossSigningBootstrapped(res) => {
+                self.is_bootstrapping = false;
+                match res {
+                    Ok(_) => {
+                        return self.update(Message::LoadCrossSigningStatus, matrix);
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to bootstrap cross-signing: {}", e));
                     }
                 }
                 Task::none()
@@ -1889,6 +2024,90 @@ impl State {
                 )
                 .push(ignore_btn);
             col = col.push(input_row);
+          col
+      }
+      
+    fn view_cross_signing<'a>(&'a self) -> Element<'a, Message> {
+        let mut col = Column::new()
+            .spacing(10)
+            .push(text::title3("Cross-signing"));
+
+        if self.is_loading_cross_signing {
+            col = col.push(text::body("Loading cross-signing status..."));
+        } else if let Some(info) = &self.cross_signing_info {
+            let status = &info.status;
+            let mut status_col = Column::new().spacing(5);
+
+            status_col =
+                status_col.push(Row::new().spacing(10).push(text::body("Master Key:")).push(
+                    text::body(if status.has_master {
+                        "✅ Present"
+                    } else {
+                        "❌ Missing"
+                    }),
+                ));
+
+            if let Some(key) = &info.master_key {
+                status_col = status_col.push(text::body(format!("Public Key: {}", key)).size(10));
+            }
+
+            status_col = status_col.push(
+                Row::new()
+                    .spacing(10)
+                    .push(text::body("Self-signing Key:"))
+                    .push(text::body(if status.has_self_signing {
+                        "✅ Present"
+                    } else {
+                        "❌ Missing"
+                    })),
+            );
+
+            if let Some(key) = &info.self_signing_key {
+                status_col = status_col.push(text::body(format!("Public Key: {}", key)).size(10));
+            }
+
+            status_col = status_col.push(
+                Row::new()
+                    .spacing(10)
+                    .push(text::body("User-signing Key:"))
+                    .push(text::body(if status.has_user_signing {
+                        "✅ Present"
+                    } else {
+                        "❌ Missing"
+                    })),
+            );
+
+            if let Some(key) = &info.user_signing_key {
+                status_col = status_col.push(text::body(format!("Public Key: {}", key)).size(10));
+            }
+
+            col = col.push(status_col);
+
+            if !status.is_complete() {
+                let mut btn = button::text(if self.is_bootstrapping {
+                    "Bootstrapping..."
+                } else {
+                    "Bootstrap Cross-signing"
+                });
+
+                if !self.is_bootstrapping {
+                    btn = btn.on_press(Message::BootstrapCrossSigning);
+                }
+
+                col = col.push(btn);
+            }
+        } else {
+            col = col.push(text::body("Cross-signing is not set up."));
+            let mut btn = button::text(if self.is_bootstrapping {
+                "Bootstrapping..."
+            } else {
+                "Bootstrap Cross-signing"
+            });
+
+            if !self.is_bootstrapping {
+                btn = btn.on_press(Message::BootstrapCrossSigning);
+            }
+            col = col.push(btn);
         }
 
         col.into()
@@ -2068,6 +2287,8 @@ impl State {
 
         col = col.push(self.view_devices());
 
+        col = col.push(self.view_cross_signing());
+
         col = col.push(self.view_3pids());
 
         if let Some(msg) = &self.success_message {
@@ -2187,6 +2408,42 @@ mod tests {
         // After successful ignore, input should be cleared
         let _ = state.update(Message::UserIgnored(Ok(())), &None);
         assert_eq!(state.new_ignore_user_id, "");
+    fn test_cross_signing_messages() {
+        let mut state = State::default();
+
+        // Load status starts loading
+        let _ = state.update(Message::LoadCrossSigningStatus, &None);
+        assert!(state.is_loading_cross_signing);
+
+        // Status loaded
+        let info = CrossSigningInfo {
+            status: CrossSigningStatus {
+                has_master: true,
+                has_self_signing: false,
+                has_user_signing: true,
+            },
+            master_key: Some("master_pub".to_string()),
+            self_signing_key: None,
+            user_signing_key: Some("user_pub".to_string()),
+        };
+        let _ = state.update(
+            Message::CrossSigningStatusLoaded(Ok(Some(info.clone()))),
+            &None,
+        );
+        assert!(!state.is_loading_cross_signing);
+        assert!(state.cross_signing_info.is_some());
+        let info_state = state.cross_signing_info.as_ref().unwrap();
+        assert!(info_state.status.has_master);
+        assert!(!info_state.status.has_self_signing);
+        assert_eq!(info_state.master_key.as_deref(), Some("master_pub"));
+
+        // Bootstrap
+        let _ = state.update(Message::BootstrapCrossSigning, &None);
+        assert!(state.is_bootstrapping);
+
+        // Bootstrapped
+        let _ = state.update(Message::CrossSigningBootstrapped(Ok(())), &None);
+        assert!(!state.is_bootstrapping);
     }
 
     #[test]
