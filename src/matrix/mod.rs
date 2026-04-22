@@ -1134,6 +1134,20 @@ impl MatrixEngine {
         Ok(())
     }
 
+    pub async fn set_pinned_events(
+        &self,
+        room_id: &str,
+        pinned_events: Vec<matrix_sdk::ruma::OwnedEventId>,
+    ) -> Result<()> {
+        let room_id_parsed = RoomId::parse(room_id)?;
+        let client = self.client().await;
+        let room = client.get_room(&room_id_parsed).context("Room not found")?;
+
+        let content = RoomPinnedEventsEventContent::new(pinned_events);
+        room.send_state_event(content).await?;
+        Ok(())
+    }
+
     pub async fn get_room_visibility(
         &self,
         room_id: &str,

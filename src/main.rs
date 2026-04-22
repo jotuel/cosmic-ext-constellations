@@ -1,4 +1,4 @@
-#![recursion_limit = "1024"]
+#![recursion_limit = "8192"]
 
 mod handlers;
 mod ipc;
