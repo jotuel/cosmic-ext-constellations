@@ -60,7 +60,8 @@ pub struct State {
     pub active_sas: Option<SasVerification>,
     pub verification_ui_state: VerificationUIState,
     pub device_delete_password: String,
-    pub global_notification_mode_dm: Option<matrix_sdk::notification_settings::RoomNotificationMode>,
+    pub global_notification_mode_dm:
+        Option<matrix_sdk::notification_settings::RoomNotificationMode>,
     pub global_notification_mode_group:
         Option<matrix_sdk::notification_settings::RoomNotificationMode>,
     pub is_loading_global_notifications: bool,
@@ -412,9 +413,7 @@ impl State {
                 }
                 Task::none()
             }
-                }
-                Task::none()
-            }
+
             Message::ProfileLoaded(res) => {
                 self.is_loading = false;
                 match res {
@@ -532,17 +531,17 @@ impl State {
             Message::SaveProfile => {
                 if let Some(matrix) = matrix {
                     if self.display_name != self.original_display_name {
-                    self.is_saving = true;
-                    self.error = None;
-                    let matrix = matrix.clone();
-                    let new_name = self.display_name.clone();
-                    return Task::perform(
-                        async move {
-                            let name_opt = if new_name.is_empty() {
-                                None
-                            } else {
-                                Some(new_name.as_str())
-                            };
+                        self.is_saving = true;
+                        self.error = None;
+                        let matrix = matrix.clone();
+                        let new_name = self.display_name.clone();
+                        return Task::perform(
+                            async move {
+                                let name_opt = if new_name.is_empty() {
+                                    None
+                                } else {
+                                    Some(new_name.as_str())
+                                };
                                 matrix
                                     .client()
                                     .await
@@ -974,13 +973,14 @@ impl State {
             }
             Message::SaveDeviceName(ref device_id) => {
                 if let Some(matrix) = matrix {
-                    if let Some(device) = self.devices.iter_mut().find(|d| d.device_id == *device_id)
+                    if let Some(device) =
+                        self.devices.iter_mut().find(|d| d.device_id == *device_id)
                     {
-                    device.is_renaming = false;
-                    let new_name = device.edit_name.clone();
-                    let device_id_str = device_id.clone();
-                    let device_id_for_closure = device_id_str.clone();
-                    let matrix = matrix.clone();
+                        device.is_renaming = false;
+                        let new_name = device.edit_name.clone();
+                        let device_id_str = device_id.clone();
+                        let device_id_for_closure = device_id_str.clone();
+                        let matrix = matrix.clone();
                         return Task::perform(
                             async move {
                                 let did =
@@ -1021,13 +1021,14 @@ impl State {
             }
             Message::DeleteDevice(ref device_id) => {
                 if let Some(matrix) = matrix {
-                    if let Some(device) = self.devices.iter_mut().find(|d| d.device_id == *device_id)
+                    if let Some(device) =
+                        self.devices.iter_mut().find(|d| d.device_id == *device_id)
                     {
-                    device.is_deleting = true;
-                    let matrix = matrix.clone();
-                    let device_id_str = device_id.clone();
-                    let device_id_for_closure = device_id_str.clone();
-                    let password = self.device_delete_password.clone();
+                        device.is_deleting = true;
+                        let matrix = matrix.clone();
+                        let device_id_str = device_id.clone();
+                        let device_id_for_closure = device_id_str.clone();
+                        let password = self.device_delete_password.clone();
                         return Task::perform(
                             async move {
                                 let client = matrix.client().await;
@@ -1275,8 +1276,10 @@ impl State {
                         async move {
                             let client = matrix.client().await;
                             let user_id = client.user_id().ok_or("No user ID")?.to_string();
-                            let sid_typed = matrix_sdk::ruma::SessionId::parse(sid).map_err(|e| e.to_string())?;
-                            let secret_typed = matrix_sdk::ruma::ClientSecret::parse(secret).map_err(|e| e.to_string())?;
+                            let sid_typed = matrix_sdk::ruma::SessionId::parse(sid)
+                                .map_err(|e| e.to_string())?;
+                            let secret_typed = matrix_sdk::ruma::ClientSecret::parse(secret)
+                                .map_err(|e| e.to_string())?;
 
                             let res = client
                                 .account()
