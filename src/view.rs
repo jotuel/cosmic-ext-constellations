@@ -91,6 +91,7 @@ impl Constellations {
 
         scrollable(timeline)
             .height(cosmic::iced::Length::Fill)
+            .on_scroll(Message::TimelineScrolled)
             .into()
     }
 

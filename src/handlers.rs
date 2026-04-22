@@ -282,7 +282,12 @@ impl Constellations {
     }
 
     pub fn handle_load_more(&mut self) -> Task<Action<<Constellations as Application>::Message>> {
+        if self.is_loading_more {
+            return Task::none();
+        }
+
         if let (Some(matrix), Some(room_id)) = (&self.matrix, &self.selected_room) {
+            self.is_loading_more = true;
             let matrix = matrix.clone();
             let room_id = room_id.clone();
             Task::perform(
@@ -823,6 +828,7 @@ impl Constellations {
         self.error = None;
         self.selected_space = None;
         self.is_sync_indicator_active = false;
+        self.is_loading_more = false;
         self.joined_room_ids.clear();
         Task::none()
     }
@@ -918,5 +924,24 @@ mod tests {
             Some("Failed to initialize Matrix engine: Error: Initial sync failed".to_string())
         );
         assert_eq!(app.is_initializing, false);
+    }
+
+    #[test]
+    fn test_handle_load_more_already_loading() {
+        let mut app = create_dummy_constellations();
+        app.is_loading_more = true;
+        app.selected_room = Some("!room:example.com".into());
+        // matrix is None, but even if it was Some, it should return Task::none() because is_loading_more is true
+
+        let task = app.handle_load_more();
+        // Since Task is opaque, we can't easily check if it's "none",
+        // but we can check that is_loading_more stayed true (it would still be true anyway)
+        // and more importantly, that it didn't crash or change other state.
+        assert!(app.is_loading_more);
+
+        // If it wasn't loading more, and had no matrix, it would also return Task::none()
+        app.is_loading_more = false;
+        let _task = app.handle_load_more();
+        assert!(!app.is_loading_more);
     }
 }

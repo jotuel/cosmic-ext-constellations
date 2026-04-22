@@ -87,6 +87,7 @@ struct Constellations {
     is_registering: bool,
     is_initializing: bool,
     is_sync_indicator_active: bool,
+    is_loading_more: bool,
     search_query: String,
     is_search_active: bool,
     active_reaction_picker: Option<matrix::TimelineEventItemId>,
@@ -117,6 +118,7 @@ pub enum Message {
     OpenReactionPicker(Option<matrix::TimelineEventItemId>),
     LoadMore,
     LoadMoreFinished(Result<(), String>),
+    TimelineScrolled(cosmic::iced::widget::scrollable::Viewport),
     UserReady(Option<String>, Result<(), matrix::SyncError>),
     FetchMedia(MediaSource),
     MediaFetched(String, Result<Vec<u8>, String>),
@@ -818,6 +820,7 @@ impl Application for Constellations {
             is_registering: false,
             is_initializing: true,
             is_sync_indicator_active: false,
+            is_loading_more: false,
             search_query: String::new(),
             is_search_active: false,
             active_reaction_picker: None,
@@ -871,10 +874,18 @@ impl Application for Constellations {
             Message::Matrix(event) => self.handle_matrix_event(event),
             Message::LoadMore => self.handle_load_more(),
             Message::LoadMoreFinished(res) => {
+                self.is_loading_more = false;
                 if let Err(e) = res {
                     self.error = Some(format!("Failed to load more messages: {}", e));
                 }
                 Task::none()
+            }
+            Message::TimelineScrolled(viewport) => {
+                if viewport.absolute_offset().y < 100.0 {
+                    self.handle_load_more()
+                } else {
+                    Task::none()
+                }
             }
             Message::RoomSelected(room_id) => {
                 self.selected_room = Some(room_id.clone());
