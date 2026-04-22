@@ -174,7 +174,7 @@ impl State {
                                     ) => Some(ev.content.pinned),
                                     matrix_sdk_base::deserialized_responses::SyncOrStrippedState::Stripped(
                                         ev,
-                                    ) => Some(ev.content.pinned),
+                                    ) => ev.content.pinned,
                                     _ => None,
                                 })
                                 .unwrap_or_default();
