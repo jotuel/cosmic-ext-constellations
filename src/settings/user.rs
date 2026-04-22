@@ -323,7 +323,7 @@ impl State {
                     let t_ignored = Task::perform(async move {}, |_| {
                         Action::from(crate::Message::UserSettings(Message::LoadIgnoredUsers))
                     });
-                  
+
                     let t_cross_signing = Task::perform(async move {}, |_| {
                         Action::from(crate::Message::UserSettings(
                             Message::LoadCrossSigningStatus,
@@ -343,6 +343,7 @@ impl State {
                         t_group,
                         t_cross_signing,
                         t_keywords,
+                        t_ignored,
                     ]);
                 }
                 Task::none()
@@ -2024,9 +2025,10 @@ impl State {
                 )
                 .push(ignore_btn);
             col = col.push(input_row);
-          col
-      }
-      
+        }
+        col.into()
+    }
+
     fn view_cross_signing<'a>(&'a self) -> Element<'a, Message> {
         let mut col = Column::new()
             .spacing(10)
@@ -2408,6 +2410,9 @@ mod tests {
         // After successful ignore, input should be cleared
         let _ = state.update(Message::UserIgnored(Ok(())), &None);
         assert_eq!(state.new_ignore_user_id, "");
+    }
+
+    #[test]
     fn test_cross_signing_messages() {
         let mut state = State::default();
 
