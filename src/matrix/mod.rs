@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use eyeball_im::VectorDiff;
 use matrix_sdk::authentication::matrix::MatrixSession;
 use matrix_sdk::media::MediaFormat;
+use matrix_sdk::ruma::events::ignored_user_list::IgnoredUserListEventContent;
 use matrix_sdk::ruma::events::room::MediaSource;
 use matrix_sdk::ruma::events::room::message::RoomMessageEventContent;
 use matrix_sdk::ruma::events::space::child::SpaceChildEventContent;
@@ -1703,6 +1704,48 @@ impl MatrixEngine {
             .await
             .map_err(|e| anyhow::anyhow!(e))?;
         Ok(results)
+    }
+
+    pub async fn ignored_users(&self) -> Result<Vec<matrix_sdk::ruma::OwnedUserId>> {
+        let client = self.client().await;
+        let ignored = client
+            .account()
+            .account_data::<IgnoredUserListEventContent>()
+            .await?;
+        let mut users = Vec::new();
+        if let Some(content) = ignored {
+            let content = content.deserialize()?;
+            for user_id in content.ignored_users.keys() {
+                users.push(user_id.clone());
+            }
+        }
+        Ok(users)
+    }
+
+    pub async fn ignore_user(&self, user_id: &UserId) -> Result<()> {
+        let client = self.client().await;
+        client.account().ignore_user(user_id).await?;
+        Ok(())
+    }
+
+    pub async fn unignore_user(&self, user_id: &UserId) -> Result<()> {
+        let client = self.client().await;
+        client.account().unignore_user(user_id).await?;
+        Ok(())
+    }
+
+    pub async fn is_user_ignored(&self, user_id: &UserId) -> Result<bool> {
+        let client = self.client().await;
+        let ignored = client
+            .account()
+            .account_data::<IgnoredUserListEventContent>()
+            .await?;
+        if let Some(content) = ignored {
+            let content = content.deserialize()?;
+            Ok(content.ignored_users.contains_key(user_id))
+        } else {
+            Ok(false)
+        }
     }
 
     async fn setup_client(data_dir: PathBuf, homeserver_url: &str) -> Result<Client> {
