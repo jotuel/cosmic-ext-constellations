@@ -77,6 +77,26 @@ impl Constellations {
 
                     timeline = timeline.push(bubble_wrapper);
                 }
+            }
+        }
+        timeline
+    }
+
+    pub fn view_timeline(&self) -> Element<'_, Message> {
+        let mut timeline = Column::new().spacing(10).width(cosmic::iced::Length::Fill);
+
+        if self.selected_room.is_some() {
+            timeline = timeline.push(
+                container(button::text("Load More").on_press(Message::LoadMore))
+                    .width(cosmic::iced::Length::Fill)
+                    .align_x(Alignment::Center)
+                    .padding(10),
+            );
+        }
+
+        for item in &self.timeline_items {
+            if item.item.as_event().is_some() {
+                timeline = timeline.push(self.view_item(item));
             } else if let Some(matrix::VirtualTimelineItem::DateDivider(_date)) =
                 item.item.as_virtual()
             {
@@ -332,6 +352,32 @@ impl Constellations {
         bubble_col
     }
 
+    pub fn view_threaded_timeline(&self) -> Element<'_, Message> {
+        let mut timeline = Column::new().spacing(10).width(cosmic::iced::Length::Fill);
+
+        let header = Row::new()
+            .spacing(10)
+            .align_y(Alignment::Center)
+            .push(text::title3("Thread"))
+            .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
+            .push(button::text("Close").on_press(Message::CloseThread));
+
+        timeline = timeline.push(container(header).padding(10));
+
+        // In a real application, you might want to find and show the root message first.
+        // For simplicity, we assume it's part of the threaded timeline from the SDK.
+
+        for item in &self.threaded_timeline_items {
+            if item.item.as_event().is_some() {
+                timeline = timeline.push(self.view_item(item));
+            }
+        }
+
+        scrollable(timeline)
+            .height(cosmic::iced::Length::Fill)
+            .into()
+    }
+
     pub fn view_preview(&self) -> Element<'_, Message> {
         let mut preview_col = Column::new().spacing(10);
 
@@ -524,6 +570,88 @@ impl Constellations {
         let title = selected_room_name.unwrap_or("Constellations - Matrix Client");
         self.core.set_header_title(title.to_string());
         Task::none()
+    }
+
+    fn view_item(&self, item: &crate::ConstellationsItem) -> Element<'_, Message> {
+        if let Some(event) = item.item.as_event() {
+            if let Some(message) = event.content().as_message() {
+                let is_me = item.is_me;
+
+                let reaction_row = self.view_reactions(event);
+                let sender_info = self.view_sender_info(
+                    item.avatar_url.as_deref(),
+                    item.sender_name.as_str(),
+                    item.timestamp.as_str(),
+                );
+
+                let mut bubble_col = Column::new()
+                    .spacing(if self.app_settings.compact_mode { 0 } else { 2 })
+                    .push(sender_info);
+
+                match message.msgtype() {
+                    MessageType::Image(image) => {
+                        bubble_col = bubble_col.push(self.view_message_image(image));
+                    }
+                    MessageType::File(file) => {
+                        bubble_col = bubble_col.push(self.view_message_file(file));
+                    }
+                    _ => {
+                        bubble_col = bubble_col
+                            .push(self.view_message_text(message.msgtype(), &item.markdown));
+                    }
+                }
+
+                if let MessageType::Text(_) = message.msgtype() {
+                    if let Some(thread_info) = message.thread_info() {
+                        let root_id = event.identifier();
+                        let thread_btn = button::text(format!(
+                            "View Thread ({} replies)",
+                            thread_info.reply_count
+                        ))
+                        .on_press(match root_id {
+                            matrix::TimelineEventItemId::EventId(id) => {
+                                Message::OpenThread(id.to_owned())
+                            }
+                            _ => Message::NoOp,
+                        });
+                        bubble_col = bubble_col.push(thread_btn);
+                    } else {
+                        // Option to start a thread
+                        let root_id = event.identifier();
+                        let start_thread_btn = button::text("Start Thread").on_press(
+                            match root_id {
+                                matrix::TimelineEventItemId::EventId(id) => {
+                                    Message::OpenThread(id.to_owned())
+                                }
+                                _ => Message::NoOp,
+                            },
+                        );
+                        bubble_col = bubble_col.push(start_thread_btn);
+                    }
+                }
+
+                bubble_col = bubble_col.push(reaction_row);
+
+                let bubble = container(bubble_col)
+                    .padding(if self.app_settings.compact_mode {
+                        5
+                    } else {
+                        10
+                    })
+                    .max_width(600);
+
+                let bubble_wrapper = container(bubble)
+                    .width(cosmic::iced::Length::Fill)
+                    .align_x(if is_me {
+                        Alignment::End
+                    } else {
+                        Alignment::Start
+                    });
+
+                return bubble_wrapper.into();
+            }
+        }
+        cosmic::widget::space().height(0).into()
     }
 
     pub fn view_space_switcher(&self) -> Element<'_, Message> {
@@ -922,7 +1050,11 @@ impl Constellations {
             let is_empty =
                 self.composer_text.trim().is_empty() && self.composer_attachments.is_empty();
 
-            let mut send_btn = button::text("Send");
+            let mut send_btn = button::text(if self.active_thread_root.is_some() {
+                "Reply to Thread"
+            } else {
+                "Send"
+            });
             if !is_empty {
                 send_btn = send_btn.on_press(Message::SendMessage);
             }

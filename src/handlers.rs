@@ -285,12 +285,17 @@ impl Constellations {
         if let (Some(matrix), Some(room_id)) = (&self.matrix, &self.selected_room) {
             let matrix = matrix.clone();
             let room_id = room_id.clone();
+            let root_id = self.active_thread_root.clone();
+
             Task::perform(
                 async move {
-                    matrix
-                        .paginate_backwards(&room_id, 20)
-                        .await
-                        .map_err(|e| e.to_string())
+                    if let Some(root_id) = root_id {
+                        let timeline = matrix.threaded_timeline(&room_id, &root_id).await?;
+                        timeline.paginate_backwards(20).await?;
+                    } else {
+                        matrix.paginate_backwards(&room_id, 20).await?;
+                    }
+                    Ok(())
                 },
                 |res| Action::from(Message::LoadMoreFinished(res)),
             )
