@@ -1421,6 +1421,7 @@ dependencies = [
  "pulldown-cmark",
  "rand 0.10.1",
  "rfd 0.17.2",
+ "ruma-events",
  "rusqlite",
  "serde",
  "serde_json",

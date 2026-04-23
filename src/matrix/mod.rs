@@ -16,7 +16,7 @@ use matrix_sdk::{
 pub use matrix_sdk_ui::room_list_service::{RoomListDynamicEntriesController, RoomListService};
 use matrix_sdk_ui::sync_service::SyncService;
 pub use matrix_sdk_ui::timeline::{
-    RoomExt, Timeline, TimelineEventItemId, TimelineItem, VirtualTimelineItem,
+    RoomExt, Timeline, TimelineEventItemId, TimelineFocus, TimelineItem, VirtualTimelineItem,
 };
 use oo7::Keyring;
 use rand::{TryRng, rngs::SysRng};
@@ -216,6 +216,7 @@ struct MatrixEngineInner {
     room_list_service: Option<Arc<RoomListService>>,
     room_list_controller: Option<Arc<RoomListDynamicEntriesController>>,
     timelines: HashMap<OwnedRoomId, Arc<Timeline>>,
+    threaded_timelines: HashMap<(OwnedRoomId, matrix_sdk::ruma::OwnedEventId), Arc<Timeline>>,
     data_dir: PathBuf,
     sync_handle: Option<tokio::task::JoinHandle<()>>,
     space_hierarchy: SpaceHierarchy,
@@ -274,6 +275,7 @@ impl MatrixEngine {
             room_list_service: None,
             room_list_controller: None,
             timelines: HashMap::new(),
+            threaded_timelines: HashMap::new(),
             data_dir,
             sync_handle: None,
             space_hierarchy: SpaceHierarchy::new(),
@@ -787,6 +789,7 @@ impl MatrixEngine {
         inner.room_list_service = None;
         inner.room_list_controller = None;
         inner.timelines.clear();
+        inner.threaded_timelines.clear();
         inner.space_hierarchy = SpaceHierarchy::new();
 
         // Try logging out properly from Matrix
@@ -1081,6 +1084,48 @@ impl MatrixEngine {
 
         let mut inner = self.inner.write().await;
         inner.timelines.insert(room_id.to_owned(), timeline.clone());
+
+        Ok(timeline)
+    }
+
+    pub async fn threaded_timeline(
+        &self,
+        room_id: &str,
+        root_event_id: &matrix_sdk::ruma::EventId,
+    ) -> Result<Arc<Timeline>> {
+        let room_id = RoomId::parse(room_id)?;
+        let root_event_id = root_event_id.to_owned();
+
+        {
+            let inner = self.inner.read().await;
+            if let Some(timeline) = inner
+                .threaded_timelines
+                .get(&(room_id.clone(), root_event_id.clone()))
+            {
+                return Ok(timeline.clone());
+            }
+        }
+
+        let rls = self
+            .room_list_service()
+            .await
+            .context("RoomListService not initialized")?;
+        let room = rls
+            .room(&room_id)
+            .map_err(|e| anyhow::anyhow!("Failed to get room: {}", e))?;
+        let timeline = Arc::new(
+            room.timeline_builder()
+                .with_focus(TimelineFocus::Thread {
+                    root_event_id: root_event_id.clone(),
+                })
+                .build()
+                .await?,
+        );
+
+        let mut inner = self.inner.write().await;
+        inner
+            .threaded_timelines
+            .insert((room_id.to_owned(), root_event_id), timeline.clone());
 
         Ok(timeline)
     }
@@ -1532,6 +1577,44 @@ impl MatrixEngine {
         };
 
         room.send(content).await?;
+        Ok(())
+    }
+
+    pub async fn send_threaded_message(
+        &self,
+        room_id: &str,
+        root_event_id: &matrix_sdk::ruma::EventId,
+        sender: Option<&String>,
+        body: String,
+        html_body: Option<String>,
+    ) -> Result<()> {
+        let room_id = RoomId::parse(room_id)?;
+        let client = self.client().await;
+        let room = client.get_room(&room_id).context("Room not found")?;
+
+        let content = if let Some(html) = html_body {
+            RoomMessageEventContent::text_html(body, html)
+        } else {
+            RoomMessageEventContent::text_plain(body)
+        };
+
+        let sender_id = if let Some(s) = sender {
+            UserId::parse(s)?
+        } else {
+            client.user_id().context("No user id")?.to_owned()
+        };
+
+        let threaded_message = content.make_for_thread(
+            matrix_sdk::ruma::events::room::message::ReplyMetadata::new(
+                root_event_id,
+                &sender_id,
+                None,
+            ),
+            matrix_sdk::ruma::events::room::message::ReplyWithinThread::Yes,
+            matrix_sdk::ruma::events::room::message::AddMentions::Yes,
+        );
+
+        room.send(threaded_message).await?;
         Ok(())
     }
 

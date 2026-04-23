@@ -91,6 +91,8 @@ struct Constellations {
     search_query: String,
     is_search_active: bool,
     active_reaction_picker: Option<matrix::TimelineEventItemId>,
+    active_thread_root: Option<matrix_sdk::ruma::OwnedEventId>,
+    threaded_timeline_items: Vector<ConstellationsItem>,
     joined_room_ids: std::collections::HashSet<std::sync::Arc<str>>,
     selected_space: Option<OwnedRoomId>,
     current_settings_panel: Option<SettingsPanel>,
@@ -141,6 +143,13 @@ pub enum Message {
     RegisterFinished(Result<String, matrix::SyncError>),
     SelectSpace(Option<std::sync::Arc<str>>),
     SpaceChildrenFetched(OwnedRoomId, Result<Vec<matrix::RoomData>, String>),
+    OpenThread(matrix_sdk::ruma::OwnedEventId),
+    CloseThread,
+    MatrixThreadDiff(
+        matrix_sdk::ruma::OwnedEventId,
+        eyeball_im::VectorDiff<std::sync::Arc<matrix::TimelineItem>>,
+    ),
+    MatrixThreadReset(matrix_sdk::ruma::OwnedEventId),
     NoOp,
     SubmitOidcLogin,
     OidcLoginStarted(Result<Url, String>),
@@ -697,6 +706,55 @@ impl Constellations {
             },
         )
     }
+
+    fn threaded_timeline_subscription(
+        &self,
+        matrix: &matrix::MatrixEngine,
+        room_id: Arc<str>,
+        root_id: matrix_sdk::ruma::OwnedEventId,
+    ) -> Subscription<Message> {
+        Subscription::run_with(
+            (
+                MatrixEngineWrapper(matrix.clone()),
+                room_id.clone(),
+                root_id.clone(),
+            ),
+            |(wrapper, room_id, root_id)| {
+                let engine = wrapper.0.clone();
+                let room_id = room_id.clone();
+                let root_id = root_id.clone();
+                let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+
+                tokio::spawn(async move {
+                    let timeline = match engine.threaded_timeline(&room_id, &root_id).await {
+                        Ok(t) => t,
+                        Err(_) => return,
+                    };
+
+                    let (items, mut stream) = timeline.subscribe().await;
+                    let _ = tx.send(Message::MatrixThreadReset(root_id.clone()));
+
+                    for (index, item) in items.into_iter().enumerate() {
+                        let _ = tx.send(Message::MatrixThreadDiff(
+                            root_id.clone(),
+                            eyeball_im::VectorDiff::Insert { index, value: item },
+                        ));
+                    }
+
+                    use cosmic::iced::futures::StreamExt;
+                    while let Some(diff) = stream.next().await {
+                        for d in diff {
+                            let _ = tx.send(Message::MatrixThreadDiff(root_id.clone(), d));
+                        }
+                    }
+                });
+
+                cosmic::iced::futures::stream::unfold(rx, |mut rx| async move {
+                    rx.recv().await.map(|msg| (msg, rx))
+                })
+            },
+        )
+    }
 }
 
 impl Application for Constellations {
@@ -824,6 +882,8 @@ impl Application for Constellations {
             search_query: String::new(),
             is_search_active: false,
             active_reaction_picker: None,
+            active_thread_root: None,
+            threaded_timeline_items: Vector::new(),
             joined_room_ids: std::collections::HashSet::new(),
             selected_space: None,
             current_settings_panel: None,
@@ -872,6 +932,25 @@ impl Application for Constellations {
             Message::UserReady(user_id, sync_res) => self.handle_user_ready(user_id, sync_res),
 
             Message::Matrix(event) => self.handle_matrix_event(event),
+            Message::MatrixThreadDiff(root_id, diff) => {
+                self.handle_timeline_diff(diff, true, Some(root_id))
+            }
+            Message::MatrixThreadReset(root_id) => {
+                if self.active_thread_root.as_ref() == Some(&root_id) {
+                    self.threaded_timeline_items.clear();
+                }
+                Task::none()
+            }
+            Message::OpenThread(root_id) => {
+                self.active_thread_root = Some(root_id);
+                self.threaded_timeline_items.clear();
+                Task::none()
+            }
+            Message::CloseThread => {
+                self.active_thread_root = None;
+                self.threaded_timeline_items.clear();
+                Task::none()
+            }
             Message::LoadMore => self.handle_load_more(),
             Message::LoadMoreFinished(res) => {
                 self.is_loading_more = false;
@@ -917,7 +996,39 @@ impl Application for Constellations {
                 self.composer_is_preview = !self.composer_is_preview;
                 Task::none()
             }
-            Message::SendMessage => self.handle_send_message(),
+            Message::SendMessage => {
+                if let (Some(matrix), Some(room_id), Some(root_id)) =
+                    (&self.matrix, &self.selected_room, &self.active_thread_root)
+                {
+                    let matrix = matrix.clone();
+                    let room_id = room_id.to_string();
+                    let root_id = root_id.clone();
+                    let body = self.composer_text.clone();
+                    let html_body = if self.app_settings.render_markdown {
+                        Some(matrix::markdown_to_html(&body))
+                    } else {
+                        None
+                    };
+
+                    let user_id = self.user_id.clone();
+                    return Task::perform(
+                        async move {
+                            matrix
+                                .send_threaded_message(
+                                    &room_id,
+                                    &root_id,
+                                    user_id.as_ref(),
+                                    body,
+                                    html_body,
+                                )
+                                .await
+                                .map_err(|e| e.to_string())
+                        },
+                        |res| Message::MessageSent(res).into(),
+                    );
+                }
+                self.handle_send_message()
+            }
             Message::MessageSent(res) => {
                 match res {
                     Ok(_) => {
@@ -1210,10 +1321,18 @@ impl Application for Constellations {
         let sidebar = self.view_sidebar();
         let content = self.view_main_content(status_text);
 
-        let main_view = Row::new()
+        let mut main_view = Row::new()
             .push(self.view_space_switcher())
             .push(sidebar)
             .push(content);
+
+        if self.active_thread_root.is_some() {
+            main_view = main_view.push(
+                container(self.view_threaded_timeline())
+                    .width(400)
+                    .padding(5),
+            );
+        }
 
         if self.app_settings.show_sync_indicator && self.is_sync_indicator_active {
             let sync_widget: Element<'_, Message> = match self.sync_status {
@@ -1258,12 +1377,19 @@ impl Application for Constellations {
 
         let sync_sub = self.sync_subscription(matrix);
 
+        let mut subs = vec![ipc_sub, sync_sub];
+
         if let Some(room_id) = self.selected_room.clone() {
-            let timeline_sub = self.timeline_subscription(matrix, room_id);
-            Subscription::batch([ipc_sub, sync_sub, timeline_sub])
-        } else {
-            Subscription::batch([ipc_sub, sync_sub])
+            subs.push(self.timeline_subscription(matrix, room_id));
         }
+
+        if let (Some(room_id), Some(root_id)) =
+            (self.selected_room.clone(), self.active_thread_root.clone())
+        {
+            subs.push(self.threaded_timeline_subscription(matrix, room_id, root_id));
+        }
+
+        Subscription::batch(subs)
     }
 }
 
@@ -1340,6 +1466,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(test)]
 mod tests {
+    use imbl::GenericVector;
+
     use super::*;
 
     fn create_test_app() -> Constellations {
@@ -1381,6 +1509,8 @@ mod tests {
             room_settings: settings::room::State::default(),
             space_settings: settings::space::State::default(),
             app_settings: settings::app::State::default(),
+            active_thread_root: None,
+            threaded_timeline_items: GenericVector::new(),
         }
     }
 
