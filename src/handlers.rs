@@ -901,6 +901,7 @@ mod tests {
             creating_space: false,
             active_thread_root: None,
             threaded_timeline_items: GenericVector::new(),
+            is_loading_more: false,
         }
     }
 
@@ -954,7 +955,7 @@ mod tests {
         app.selected_room = Some("!room:example.com".into());
         // matrix is None, but even if it was Some, it should return Task::none() because is_loading_more is true
 
-        let task = app.handle_load_more();
+        let _task = app.handle_load_more();
         // Since Task is opaque, we can't easily check if it's "none",
         // but we can check that is_loading_more stayed true (it would still be true anyway)
         // and more importantly, that it didn't crash or change other state.

@@ -68,6 +68,7 @@ fn test_room_data_serialization() {
         join_rule: None,
         allowed_spaces: Vec::new(),
         order: None,
+        suggested: false,
     };
     let serialized = serde_json::to_string(&room_data).unwrap();
     let deserialized: RoomData = serde_json::from_str(&serialized).unwrap();
@@ -188,6 +189,7 @@ fn test_room_data_space_serialization() {
         join_rule: None,
         allowed_spaces: Vec::new(),
         order: None,
+        suggested: false,
     };
     let serialized = serde_json::to_string(&room_data).unwrap();
     let deserialized: RoomData = serde_json::from_str(&serialized).unwrap();
@@ -227,6 +229,7 @@ fn test_matrix_event_variants() {
         join_rule: None,
         allowed_spaces: Vec::new(),
         order: None,
+        suggested: false,
     };
     let event = MatrixEvent::RoomDiff(VectorDiff::Insert {
         index: 0,
