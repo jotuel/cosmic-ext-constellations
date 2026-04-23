@@ -87,15 +87,22 @@ pub struct RoomData {
     pub join_rule: Option<matrix_sdk::ruma::events::room::join_rules::JoinRule>,
     pub allowed_spaces: Vec<matrix_sdk::ruma::OwnedRoomId>,
     pub order: Option<String>,
+    pub suggested: bool,
 }
 
 pub type RoomListDiff = VectorDiff<RoomData>;
 pub type TimelineDiff<T> = VectorDiff<Arc<T>>;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChildData {
+    pub order: Option<String>,
+    pub suggested: bool,
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct SpaceHierarchy {
-    /// Maps a space ID to its children (rooms or sub-spaces) and their order
-    pub children: HashMap<OwnedRoomId, HashMap<OwnedRoomId, Option<String>>>,
+    /// Maps a space ID to its children (rooms or sub-spaces) and their data (order, suggested)
+    pub children: HashMap<OwnedRoomId, HashMap<OwnedRoomId, ChildData>>,
     /// Maps a room/space ID to its parent spaces
     pub parents: HashMap<OwnedRoomId, HashSet<OwnedRoomId>>,
     /// Set of all known space IDs
@@ -120,10 +127,11 @@ impl SpaceHierarchy {
         space_id: OwnedRoomId,
         child_id: OwnedRoomId,
         order: Option<String>,
+        suggested: bool,
     ) {
         self.add_space(space_id.clone());
         let children = self.children.entry(space_id.clone()).or_default();
-        children.insert(child_id.clone(), order);
+        children.insert(child_id.clone(), ChildData { order, suggested });
 
         let parents = self.parents.entry(child_id).or_default();
         parents.insert(space_id);
@@ -132,7 +140,10 @@ impl SpaceHierarchy {
     pub fn add_relationship(&mut self, space_id: OwnedRoomId, child_id: OwnedRoomId) {
         self.add_space(space_id.clone());
         let children = self.children.entry(space_id.clone()).or_default();
-        children.entry(child_id.clone()).or_insert(None);
+        children.entry(child_id.clone()).or_insert(ChildData {
+            order: None,
+            suggested: false,
+        });
 
         let parents = self.parents.entry(child_id).or_default();
         parents.insert(space_id);
@@ -472,6 +483,7 @@ impl MatrixEngine {
                                     space_id.clone(),
                                     child_id.clone(),
                                     ev.content.order.as_ref().map(|o| o.to_string()),
+                                    ev.content.suggested,
                                 );
                                 info!(
                                     "Space hierarchy updated: {} is child of {} (order: {:?})",
@@ -900,7 +912,7 @@ impl MatrixEngine {
             inner.space_hierarchy.add_space(room.room_id().to_owned());
         }
 
-        let (parent_space_id, order) = {
+        let (parent_space_id, order, suggested) = {
             let inner = self.inner.read().await;
             let parent_id = inner
                 .space_hierarchy
@@ -908,15 +920,18 @@ impl MatrixEngine {
                 .get(room.room_id())
                 .and_then(|parents| parents.iter().next());
 
-            let order = parent_id.and_then(|p| {
-                inner
-                    .space_hierarchy
-                    .children
-                    .get(p)
-                    .and_then(|c| c.get(room.room_id()).cloned().flatten())
-            });
+            let (order, suggested) = parent_id
+                .and_then(|p| {
+                    inner
+                        .space_hierarchy
+                        .children
+                        .get(p)
+                        .and_then(|c| c.get(room.room_id()))
+                })
+                .map(|d| (d.order.clone(), d.suggested))
+                .unwrap_or((None, false));
 
-            (parent_id.map(|id| id.to_string()), order)
+            (parent_id.map(|id| id.to_string()), order, suggested)
         };
 
         let unread_count_str = if unread_count > 0 {
@@ -1013,6 +1028,7 @@ impl MatrixEngine {
             join_rule,
             allowed_spaces,
             order,
+            suggested,
         })
     }
 
@@ -1395,7 +1411,7 @@ impl MatrixEngine {
             .get_state_events_static::<SpaceChildEventContent>()
             .await?;
 
-        let mut child_orders = HashMap::new();
+        let mut child_data = HashMap::new();
         for event in children_events {
             if let Ok(event) = event.deserialize() {
                 match event {
@@ -1404,8 +1420,13 @@ impl MatrixEngine {
                     ) => {
                         if !ev.content.via.is_empty() {
                             if let Ok(cid) = RoomId::parse(ev.state_key.as_str()) {
-                                child_orders
-                                    .insert(cid, ev.content.order.as_ref().map(|o| o.to_string()));
+                                child_data.insert(
+                                    cid,
+                                    ChildData {
+                                        order: ev.content.order.as_ref().map(|o| o.to_string()),
+                                        suggested: ev.content.suggested,
+                                    },
+                                );
                             }
                         }
                     }
@@ -1418,8 +1439,13 @@ impl MatrixEngine {
                             .unwrap_or(true)
                         {
                             if let Ok(cid) = RoomId::parse(ev.state_key.as_str()) {
-                                child_orders
-                                    .insert(cid, ev.content.order.as_ref().map(|o| o.to_string()));
+                                child_data.insert(
+                                    cid,
+                                    ChildData {
+                                        order: ev.content.order.as_ref().map(|o| o.to_string()),
+                                        suggested: ev.content.suggested,
+                                    },
+                                );
                             }
                         }
                     }
@@ -1445,16 +1471,17 @@ impl MatrixEngine {
                     .map(|t| t == &RoomType::Space)
                     .unwrap_or(false);
 
-                let order = child_orders
+                let (order, suggested) = child_data
                     .get(&room_summary.summary.room_id)
-                    .cloned()
-                    .flatten();
+                    .map(|d| (d.order.clone(), d.suggested))
+                    .unwrap_or((None, false));
 
                 // Update local hierarchy knowledge
                 inner.space_hierarchy.add_child(
                     space_id_parsed.clone(),
                     room_summary.summary.room_id.clone(),
                     order.clone(),
+                    suggested,
                 );
 
                 let (join_rule, allowed_spaces) = (None, Vec::new());
@@ -1476,17 +1503,19 @@ impl MatrixEngine {
                     join_rule,
                     allowed_spaces,
                     order,
+                    suggested,
                 });
             }
         } else {
             // Fallback to state events if hierarchy API fails
-            for (child_id_parsed, order) in child_orders {
+            for (child_id_parsed, data) in child_data {
                 {
                     let mut inner = self.inner.write().await;
                     inner.space_hierarchy.add_child(
                         space_id_parsed.clone(),
                         child_id_parsed.clone(),
-                        order.clone(),
+                        data.order.clone(),
+                        data.suggested,
                     );
                 }
 
@@ -1505,7 +1534,8 @@ impl MatrixEngine {
                         parent_space_id: Some(space_id.to_string()),
                         join_rule: None,
                         allowed_spaces: Vec::new(),
-                        order,
+                        order: data.order,
+                        suggested: data.suggested,
                     });
                 }
             }
@@ -1518,6 +1548,7 @@ impl MatrixEngine {
         space_id: &str,
         child_id: &str,
         order: Option<String>,
+        suggested: bool,
     ) -> Result<()> {
         let space_id_parsed = RoomId::parse(space_id)?;
         let child_id_parsed = RoomId::parse(child_id)?;
@@ -1537,6 +1568,7 @@ impl MatrixEngine {
 
         let mut content = SpaceChildEventContent::new(via);
         content.order = order.map(|o| matrix_sdk::ruma::OwnedSpaceChildOrder::try_from(o).unwrap());
+        content.suggested = suggested;
         space
             .send_state_event_for_key(&child_id_parsed, content)
             .await?;

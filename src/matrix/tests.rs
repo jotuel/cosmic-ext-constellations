@@ -86,7 +86,7 @@ fn test_space_hierarchy_basic() {
     let space_id = RoomId::parse("!space:example.com").unwrap();
     let room_id = RoomId::parse("!room:example.com").unwrap();
 
-    hierarchy.add_child(space_id.clone(), room_id.clone(), None);
+    hierarchy.add_child(space_id.clone(), room_id.clone(), None, false);
 
     assert!(hierarchy.is_in_space(&room_id, &space_id));
     assert!(!hierarchy.is_in_space(&space_id, &room_id));
@@ -99,8 +99,8 @@ fn test_space_hierarchy_nested() {
     let sub_space = RoomId::parse("!sub:example.com").unwrap();
     let room = RoomId::parse("!room:example.com").unwrap();
 
-    hierarchy.add_child(top_space.clone(), sub_space.clone(), None);
-    hierarchy.add_child(sub_space.clone(), room.clone(), None);
+    hierarchy.add_child(top_space.clone(), sub_space.clone(), None, false);
+    hierarchy.add_child(sub_space.clone(), room.clone(), None, false);
 
     assert!(hierarchy.is_in_space(&room, &sub_space));
     assert!(hierarchy.is_in_space(&room, &top_space));
@@ -114,15 +114,15 @@ fn test_space_hierarchy_circular() {
     let space_a = RoomId::parse("!a:example.com").unwrap();
     let space_b = RoomId::parse("!b:example.com").unwrap();
 
-    hierarchy.add_child(space_a.clone(), space_b.clone(), None);
-    hierarchy.add_child(space_b.clone(), space_a.clone(), None);
+    hierarchy.add_child(space_a.clone(), space_b.clone(), None, false);
+    hierarchy.add_child(space_b.clone(), space_a.clone(), None, false);
 
     // Should not stack overflow
     assert!(hierarchy.is_in_space(&space_a, &space_b));
     assert!(hierarchy.is_in_space(&space_b, &space_a));
 
     let room = RoomId::parse("!room:example.com").unwrap();
-    hierarchy.add_child(space_a.clone(), room.clone(), None);
+    hierarchy.add_child(space_a.clone(), room.clone(), None, false);
 
     assert!(hierarchy.is_in_space(&room, &space_a));
     assert!(hierarchy.is_in_space(&room, &space_b));
@@ -135,8 +135,8 @@ fn test_space_hierarchy_multiple_parents() {
     let space_2 = RoomId::parse("!space2:example.com").unwrap();
     let room = RoomId::parse("!room:example.com").unwrap();
 
-    hierarchy.add_child(space_1.clone(), room.clone(), None);
-    hierarchy.add_child(space_2.clone(), room.clone(), None);
+    hierarchy.add_child(space_1.clone(), room.clone(), None, false);
+    hierarchy.add_child(space_2.clone(), room.clone(), None, false);
 
     assert!(hierarchy.is_in_space(&room, &space_1));
     assert!(hierarchy.is_in_space(&room, &space_2));
@@ -150,8 +150,8 @@ fn test_space_hierarchy_remove_child() {
     let room = RoomId::parse("!room:example.com").unwrap();
 
     // Add child to space_1 and space_2
-    hierarchy.add_child(space_1.clone(), room.clone(), None);
-    hierarchy.add_child(space_2.clone(), room.clone(), None);
+    hierarchy.add_child(space_1.clone(), room.clone(), None, false);
+    hierarchy.add_child(space_2.clone(), room.clone(), None, false);
 
     assert!(hierarchy.is_in_space(&room, &space_1));
     assert!(hierarchy.is_in_space(&room, &space_2));
@@ -1048,8 +1048,8 @@ fn test_space_hierarchy_add_child_idempotency() {
     let room_id = RoomId::parse("!room:example.com").unwrap();
 
     // Add twice
-    hierarchy.add_child(space_id.clone(), room_id.clone(), None);
-    hierarchy.add_child(space_id.clone(), room_id.clone(), None);
+    hierarchy.add_child(space_id.clone(), room_id.clone(), None, false);
+    hierarchy.add_child(space_id.clone(), room_id.clone(), None, false);
 
     assert!(hierarchy.is_in_space(&room_id, &space_id));
 
@@ -1072,6 +1072,6 @@ fn test_space_hierarchy_known_spaces() {
 
     // add_child should also add the space to known_spaces
     let space_id2 = RoomId::parse("!space2:example.com").unwrap();
-    hierarchy.add_child(space_id2.clone(), room_id.clone(), None);
+    hierarchy.add_child(space_id2.clone(), room_id.clone(), None, false);
     assert!(hierarchy.is_known_space(&space_id2));
 }

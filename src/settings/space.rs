@@ -55,6 +55,8 @@ pub enum Message {
     ChildOrderInputChanged(String, String),
     SaveChildOrder(String),
     ChildOrderSaved(Result<(), String>),
+    ToggleChildSuggested(String, bool),
+    ChildSuggestedToggled(Result<(), String>),
     AvatarMediaFetched(Result<Vec<u8>, String>),
     SelectAvatar,
     AvatarFileSelected(Option<std::path::PathBuf>),
@@ -169,6 +171,48 @@ impl State {
                     }
                     Err(e) => {
                         self.error = Some(e);
+                    }
+                }
+                Task::none()
+            }
+            Message::ToggleChildSuggested(child_id, suggested) => {
+                if let Some(matrix) = matrix
+                    && let Some(space_id) = &self.space_id
+                {
+                    let engine = matrix.clone();
+                    let space_id_clone = space_id.clone();
+                    let child_id_clone = child_id.clone();
+                    let order = self
+                        .children
+                        .iter()
+                        .find(|c| c.id.as_ref() == child_id)
+                        .and_then(|c| c.order.clone());
+
+                    return Task::perform(
+                        async move {
+                            engine
+                                .add_space_child(&space_id_clone, &child_id_clone, order, suggested)
+                                .await
+                                .map_err(|e| e.to_string())
+                        },
+                        |res| {
+                            Action::from(crate::Message::SpaceSettings(
+                                Message::ChildSuggestedToggled(res),
+                            ))
+                        },
+                    );
+                }
+                Task::none()
+            }
+            Message::ChildSuggestedToggled(res) => {
+                match res {
+                    Ok(_) => {
+                        return Task::done(Action::from(crate::Message::SpaceSettings(
+                            Message::LoadChildren,
+                        )));
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to update suggested status: {}", e));
                     }
                 }
                 Task::none()
@@ -414,7 +458,7 @@ impl State {
                     return Task::perform(
                         async move {
                             engine
-                                .add_space_child(&space_id_clone, &child_id_clone, order)
+                                .add_space_child(&space_id_clone, &child_id_clone, order, false)
                                 .await
                                 .map_err(|e| e.to_string())
                         },
@@ -442,7 +486,7 @@ impl State {
                     return Task::perform(
                         async move {
                             engine
-                                .add_space_child(&space_id_clone, &child_id, order)
+                                .add_space_child(&space_id_clone, &child_id, order, false)
                                 .await
                                 .map_err(|e| e.to_string())
                         },
@@ -777,6 +821,22 @@ impl State {
 
                     row = row.push(Row::new().spacing(5).push(invite_btn).push(restricted_btn));
                 }
+
+                let child_id_for_suggested = child.id.to_string();
+                row = row.push(
+                    Row::new()
+                        .spacing(5)
+                        .align_y(Alignment::Center)
+                        .push(text::body("Suggested").size(12))
+                        .push(cosmic::widget::toggler(child.suggested).on_toggle(
+                            move |suggested| {
+                                Message::ToggleChildSuggested(
+                                    child_id_for_suggested.clone(),
+                                    suggested,
+                                )
+                            },
+                        )),
+                );
 
                 let child_id_clone = child.id.to_string();
                 row = row.push(
