@@ -1511,6 +1511,7 @@ mod tests {
             app_settings: settings::app::State::default(),
             active_thread_root: None,
             threaded_timeline_items: GenericVector::new(),
+            is_loading_more: false,
         }
     }
 
@@ -1531,6 +1532,7 @@ mod tests {
                 order: None,
                 join_rule: None,
                 allowed_spaces: Vec::new(),
+                suggested: false,
             },
             matrix::RoomData {
                 id: std::sync::Arc::from("!space1:matrix.org"),
@@ -1545,6 +1547,7 @@ mod tests {
                 order: None,
                 join_rule: None,
                 allowed_spaces: Vec::new(),
+                suggested: false,
             },
         ];
 
@@ -1571,6 +1574,7 @@ mod tests {
                 order: None,
                 join_rule: None,
                 allowed_spaces: Vec::new(),
+                suggested: false,
             },
             matrix::RoomData {
                 id: std::sync::Arc::from("!room2:matrix.org"),
@@ -1585,6 +1589,7 @@ mod tests {
                 order: None,
                 join_rule: None,
                 allowed_spaces: Vec::new(),
+                suggested: false,
             },
         ];
 
@@ -1612,6 +1617,7 @@ mod tests {
                 order: None,
                 join_rule: None,
                 allowed_spaces: Vec::new(),
+                suggested: false,
             },
             matrix::RoomData {
                 id: std::sync::Arc::from("!room2:matrix.org"),
@@ -1626,6 +1632,7 @@ mod tests {
                 order: None,
                 join_rule: None,
                 allowed_spaces: Vec::new(),
+                suggested: false,
             },
         ];
 
@@ -1652,6 +1659,7 @@ mod tests {
             order: None,
             join_rule: None,
             allowed_spaces: Vec::new(),
+            suggested: false,
         }];
 
         app.search_query = "gamma".to_string();
@@ -1676,6 +1684,7 @@ mod tests {
             order: None,
             join_rule: None,
             allowed_spaces: Vec::new(),
+            suggested: false,
         }];
 
         app.selected_space = Some(matrix_sdk::ruma::RoomId::parse("!space1:matrix.org").unwrap());
