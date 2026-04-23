@@ -16,6 +16,30 @@ use matrix_sdk::ruma::events::room::{MediaSource, message::MessageType};
 use crate::{Constellations, MenuAct, Message, PreviewEvent, matrix};
 
 impl Constellations {
+    pub fn view_thread(&self) -> Element<'_, Message> {
+        let mut timeline = Column::new().spacing(10).width(cosmic::iced::Length::Fill);
+
+        if self.selected_room.is_some() {
+            timeline = timeline.push(
+                Row::new()
+                    .align_y(Alignment::Center)
+                    .push(button::text("Close Thread").on_press(Message::CloseThread))
+                    .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
+                    .padding(10),
+            );
+        }
+
+        for item in &self.threaded_timeline_items {
+            if item.item.as_event().is_some() {
+                timeline = timeline.push(self.view_item(item));
+            }
+        }
+
+        scrollable(timeline)
+            .height(cosmic::iced::Length::Fill)
+            .into()
+    }
+
     pub fn view_timeline(&self) -> Element<'_, Message> {
         let mut timeline = Column::new().spacing(10).width(cosmic::iced::Length::Fill);
 
@@ -506,7 +530,7 @@ impl Constellations {
         Task::none()
     }
 
-    fn view_item(&self, item: &crate::ConstellationsItem) -> Element<'_, Message> {
+    fn view_item<'a>(&'a self, item: &'a crate::ConstellationsItem) -> Element<'a, Message> {
         if let Some(event) = item.item.as_event() {
             if let Some(message) = event.content().as_message() {
                 let is_me = item.is_me;
@@ -535,30 +559,16 @@ impl Constellations {
                     }
                 }
 
-                if let Some(thread_info) = event.content().thread_summary() {
+                if let MessageType::Text(_) = message.msgtype() {
+                    // Start a thread
                     let root_id = event.identifier();
-                    let thread_btn = button::text(format!(
-                        "View Thread ({} replies)",
-                        thread_info.num_replies
-                    ))
-                    .on_press(match root_id {
-                        matrix::TimelineEventItemId::EventId(id) => {
-                            Message::OpenThread(id.to_owned())
-                        }
-                        _ => Message::NoOp,
-                    });
-                    bubble_col = bubble_col.push(thread_btn);
-                } else if event.content().thread_root().is_some() {
-                    // It is part of a thread but no summary? (maybe it is a reply)
-                } else if event.content().is_message() {
-                    // Option to start a thread
-                    let root_id = event.identifier();
-                    let start_thread_btn = button::text("Start Thread").on_press(match root_id {
-                        matrix::TimelineEventItemId::EventId(id) => {
-                            Message::OpenThread(id.to_owned())
-                        }
-                        _ => Message::NoOp,
-                    });
+                    let start_thread_btn =
+                        button::text("Open Thread").on_press(match root_id {
+                            matrix::TimelineEventItemId::EventId(id) => {
+                                Message::OpenThread(id.to_owned())
+                            }
+                            _ => Message::NoOp,
+                        });
                     bubble_col = bubble_col.push(start_thread_btn);
                 }
 
@@ -572,13 +582,14 @@ impl Constellations {
                     })
                     .max_width(600);
 
-                let bubble_wrapper = container(bubble)
-                    .width(cosmic::iced::Length::Fill)
-                    .align_x(if is_me {
-                        Alignment::End
-                    } else {
-                        Alignment::Start
-                    });
+                let bubble_wrapper =
+                    container(bubble)
+                        .width(cosmic::iced::Length::Fill)
+                        .align_x(if is_me {
+                            Alignment::End
+                        } else {
+                            Alignment::Start
+                        });
 
                 return bubble_wrapper.into();
             }
@@ -951,7 +962,11 @@ impl Constellations {
                 );
             content = content.push(room_header);
 
-            content = content.push(self.view_timeline());
+            content = content.push(if self.active_thread_root.is_some() {
+                self.view_thread()
+            } else {
+                self.view_timeline()
+            });
 
             let composer = if self.composer_is_preview {
                 self.view_preview()

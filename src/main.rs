@@ -999,10 +999,17 @@ impl Application for Constellations {
                         None
                     };
 
+                    let user_id = self.user_id.clone();
                     return Task::perform(
                         async move {
                             matrix
-                                .send_threaded_message(&room_id, &root_id, body, html_body)
+                                .send_threaded_message(
+                                    &room_id,
+                                    &root_id,
+                                    user_id.as_ref(),
+                                    body,
+                                    html_body,
+                                )
                                 .await
                                 .map_err(|e| e.to_string())
                         },
@@ -1448,6 +1455,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(test)]
 mod tests {
+    use imbl::GenericVector;
+
     use super::*;
 
     fn create_test_app() -> Constellations {
@@ -1489,6 +1498,8 @@ mod tests {
             room_settings: settings::room::State::default(),
             space_settings: settings::space::State::default(),
             app_settings: settings::app::State::default(),
+            active_thread_root: None,
+            threaded_timeline_items: GenericVector::new(),
         }
     }
 

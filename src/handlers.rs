@@ -847,6 +847,8 @@ impl Constellations {
 
 #[cfg(test)]
 mod tests {
+    use imbl::GenericVector;
+
     use super::*;
     use crate::Core;
     use std::collections::HashMap;
@@ -891,6 +893,8 @@ mod tests {
             composer_attachments: Vec::new(),
             active_reaction_picker: None,
             creating_space: false,
+            active_thread_root: None,
+            threaded_timeline_items: GenericVector::new(),
         }
     }
 

@@ -4,7 +4,7 @@ use matrix_sdk::authentication::matrix::MatrixSession;
 use matrix_sdk::media::MediaFormat;
 use matrix_sdk::ruma::events::ignored_user_list::IgnoredUserListEventContent;
 use matrix_sdk::ruma::events::room::MediaSource;
-use matrix_sdk::ruma::events::room::message::{Relation, RoomMessageEventContent};
+use matrix_sdk::ruma::events::room::message::RoomMessageEventContent;
 use matrix_sdk::ruma::events::space::child::SpaceChildEventContent;
 use matrix_sdk::ruma::events::space::parent::SpaceParentEventContent;
 use matrix_sdk::ruma::events::{AnySyncMessageLikeEvent, AnySyncTimelineEvent, SyncStateEvent};
@@ -1097,8 +1097,9 @@ impl MatrixEngine {
 
         {
             let inner = self.inner.read().await;
-            if let Some(timeline) =
-                inner.threaded_timelines.get(&(room_id.clone(), root_event_id.clone()))
+            if let Some(timeline) = inner
+                .threaded_timelines
+                .get(&(room_id.clone(), root_event_id.clone()))
             {
                 return Ok(timeline.clone());
             }
@@ -1568,6 +1569,7 @@ impl MatrixEngine {
         &self,
         room_id: &str,
         root_event_id: &matrix_sdk::ruma::EventId,
+        sender: Option<&String>,
         body: String,
         html_body: Option<String>,
     ) -> Result<()> {
@@ -1575,19 +1577,29 @@ impl MatrixEngine {
         let client = self.client().await;
         let room = client.get_room(&room_id).context("Room not found")?;
 
-        let mut content = if let Some(html) = html_body {
+        let content = if let Some(html) = html_body {
             RoomMessageEventContent::text_html(body, html)
         } else {
             RoomMessageEventContent::text_plain(body)
         };
 
-        content.relates_to = Some(Relation::Thread(
-            matrix_sdk::ruma::events::room::message::Thread::without_fallback(
-                root_event_id.to_owned(),
-            ),
-        ));
+        let sender_id = if let Some(s) = sender {
+            UserId::parse(s)?
+        } else {
+            client.user_id().context("No user id")?.to_owned()
+        };
 
-        room.send(content).await?;
+        let threaded_message = content.make_for_thread(
+            matrix_sdk::ruma::events::room::message::ReplyMetadata::new(
+                root_event_id,
+                &sender_id,
+                None,
+            ),
+            matrix_sdk::ruma::events::room::message::ReplyWithinThread::Yes,
+            matrix_sdk::ruma::events::room::message::AddMentions::Yes,
+        );
+
+        room.send(threaded_message).await?;
         Ok(())
     }
 
