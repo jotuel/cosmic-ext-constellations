@@ -74,6 +74,8 @@ pub struct State {
     pub global_notification_mode_group:
         Option<matrix_sdk::notification_settings::RoomNotificationMode>,
     pub is_loading_global_notifications: bool,
+    pub deactivate_password: String,
+    pub is_deactivating: bool,
     pub cross_signing_info: Option<CrossSigningInfo>,
     pub is_loading_cross_signing: bool,
     pub is_bootstrapping: bool,
@@ -123,6 +125,8 @@ impl Default for State {
             global_notification_mode_dm: None,
             global_notification_mode_group: None,
             is_loading_global_notifications: false,
+            deactivate_password: String::new(),
+            is_deactivating: false,
             cross_signing_info: None,
             is_loading_cross_signing: false,
             is_bootstrapping: false,
@@ -191,6 +195,9 @@ pub enum Message {
     DeviceRenamed(Arc<str>, Result<(), String>),
     DeleteDevice(Arc<str>),
     DeviceDeleted(Arc<str>, Result<(), String>),
+    DeactivatePasswordChanged(String),
+    DeactivateAccount,
+    AccountDeactivated(Result<(), String>),
     GlobalNotificationModeChanged(
         bool,
         matrix_sdk::notification_settings::RoomNotificationMode,
@@ -1123,6 +1130,83 @@ impl State {
                 }
                 Task::none()
             }
+            Message::DeactivatePasswordChanged(pw) => {
+                self.deactivate_password = pw;
+                Task::none()
+            }
+            Message::DeactivateAccount => {
+                if let Some(matrix) = matrix {
+                    self.is_deactivating = true;
+                    self.error = None;
+
+                    let matrix = matrix.clone();
+                    let password = self.deactivate_password.clone();
+
+                    return Task::perform(
+                        async move {
+                            let client = matrix.client().await;
+                            let user_id = client.user_id().ok_or("No user ID")?.to_string();
+
+                            if let Err(e) = client.account().deactivate(None, None, false).await {
+                                if let Some(info) = e.as_uiaa_response() {
+                                    if password.is_empty() {
+                                        return Err(
+                                            "Password required to deactivate account".to_string()
+                                        );
+                                    }
+
+                                    let identifier =
+                                        matrix_sdk::ruma::api::client::uiaa::UserIdentifier::UserIdOrLocalpart(
+                                            user_id,
+                                        );
+                                    let mut password_auth =
+                                        matrix_sdk::ruma::api::client::uiaa::Password::new(
+                                            identifier, password,
+                                        );
+                                    password_auth.session = info.session.clone();
+
+                                    client
+                                        .account()
+                                        .deactivate(
+                                            None,
+                                            Some(matrix_sdk::ruma::api::client::uiaa::AuthData::Password(
+                                                password_auth,
+                                            )),
+                                            false,
+                                        )
+                                        .await
+                                        .map_err(|e| e.to_string())?;
+                                    return Ok(());
+                                }
+                                return Err(e.to_string());
+                            }
+                            Ok(())
+                        },
+                        |res| {
+                            Action::from(crate::Message::UserSettings(Message::AccountDeactivated(
+                                res,
+                            )))
+                        },
+                    );
+                }
+                Task::none()
+            }
+            Message::AccountDeactivated(res) => {
+                self.is_deactivating = false;
+                match res {
+                    Ok(_) => {
+                        // On success, we should log out and close settings
+                        Task::batch(vec![
+                            Task::done(Action::from(crate::Message::Logout)),
+                            Task::done(Action::from(crate::Message::CloseSettings)),
+                        ])
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to deactivate account: {}", e));
+                        Task::none()
+                    }
+                }
+            }
             Message::LoadCrossSigningStatus => {
                 if let Some(matrix) = matrix {
                     self.is_loading_cross_signing = true;
@@ -1984,6 +2068,44 @@ impl State {
         devices_col.into()
     }
 
+    fn view_deactivate_account<'a>(&'a self) -> Element<'a, Message> {
+        let mut col = Column::new().spacing(10);
+
+        col = col.push(text::title3("Deactivate Account"));
+        col = col.push(text::body("Permanently delete your account. This action cannot be undone and you will lose access to all your messages and data.").size(14));
+
+        col = col.push(
+            text_input("Confirm password to deactivate", &self.deactivate_password)
+                .password()
+                .on_input(Message::DeactivatePasswordChanged),
+        );
+
+        let mut btn = button::destructive(if self.is_deactivating {
+            "Deactivating..."
+        } else {
+            "Deactivate Account"
+        });
+
+        if !self.is_deactivating && !self.deactivate_password.is_empty() {
+            btn = btn.on_press(Message::DeactivateAccount);
+        }
+
+        let widget: Element<'_, Message> = if self.deactivate_password.is_empty() {
+            tooltip(
+                btn,
+                text::body("Enter password to deactivate"),
+                Position::Top,
+            )
+            .into()
+        } else {
+            btn.into()
+        };
+
+        col = col.push(widget);
+
+        col.into()
+    }
+
     fn view_ignored_users<'a>(&'a self) -> Element<'a, Message> {
         let mut col = Column::new()
             .spacing(10)
@@ -2305,6 +2427,8 @@ impl State {
 
         col = col.push(self.view_verification());
 
+        col = col.push(self.view_deactivate_account());
+
         col.into()
     }
 }
@@ -2385,6 +2509,20 @@ mod tests {
         assert!(!state.devices[0].is_renaming);
         // edit_name should be preserved as it was updated
         assert_eq!(state.devices[0].edit_name, "My New Phone");
+    }
+
+    #[test]
+    fn test_deactivate_account_messages() {
+        let mut state = State::default();
+
+        let _ = state.update(
+            Message::DeactivatePasswordChanged("secret".to_string()),
+            &None,
+        );
+        assert_eq!(state.deactivate_password, "secret");
+
+        let _ = state.update(Message::AccountDeactivated(Ok(())), &None);
+        assert!(!state.is_deactivating);
     }
 
     #[test]
