@@ -890,22 +890,35 @@ impl State {
                             let client = matrix.client().await;
                             let user_id = client.user_id().ok_or("No user ID")?.to_string();
 
-                            if let Err(e) = client.account().deactivate(None).await {
+                            if let Err(e) = client.account().deactivate(None, None, false).await {
                                 if let Some(info) = e.as_uiaa_response() {
                                     if password.is_empty() {
                                         return Err(
-                                            "Password required to deactivate account".to_string()
+                                            "Password required to deactivate account".to_string(),
                                         );
                                     }
 
-                                    let identifier = matrix_sdk::ruma::api::client::uiaa::UserIdentifier::UserIdOrLocalpart(user_id);
+                                    let identifier =
+                                        matrix_sdk::ruma::api::client::uiaa::UserIdentifier::UserIdOrLocalpart(
+                                            user_id,
+                                        );
                                     let mut password_auth =
                                         matrix_sdk::ruma::api::client::uiaa::Password::new(
                                             identifier, password,
                                         );
                                     password_auth.session = info.session.clone();
 
-                                    client.account().deactivate(Some(matrix_sdk::ruma::api::client::uiaa::AuthData::Password(password_auth))).await.map_err(|e| e.to_string())?;
+                                    client
+                                        .account()
+                                        .deactivate(
+                                            None,
+                                            Some(matrix_sdk::ruma::api::client::uiaa::AuthData::Password(
+                                                password_auth,
+                                            )),
+                                            false,
+                                        )
+                                        .await
+                                        .map_err(|e| e.to_string())?;
                                     return Ok(());
                                 }
                                 return Err(e.to_string());
@@ -1382,13 +1395,19 @@ mod tests {
     fn test_password_changed() {
         let mut state = State::default();
 
-        let _ = state.update(Message::CurrentPasswordChanged("old_pass".to_string()), &None);
+        let _ = state.update(
+            Message::CurrentPasswordChanged("old_pass".to_string()),
+            &None,
+        );
         assert_eq!(state.current_password, "old_pass");
 
         let _ = state.update(Message::NewPasswordChanged("new_pass".to_string()), &None);
         assert_eq!(state.new_password, "new_pass");
 
-        let _ = state.update(Message::ConfirmNewPasswordChanged("new_pass".to_string()), &None);
+        let _ = state.update(
+            Message::ConfirmNewPasswordChanged("new_pass".to_string()),
+            &None,
+        );
         assert_eq!(state.confirm_new_password, "new_pass");
     }
 
@@ -1422,7 +1441,10 @@ mod tests {
         assert_eq!(state.devices[0].edit_name, "My Phone");
 
         // Edit name
-        let _ = state.update(Message::EditDeviceNameChanged(device_id.clone(), "My New Phone".to_string()), &None);
+        let _ = state.update(
+            Message::EditDeviceNameChanged(device_id.clone(), "My New Phone".to_string()),
+            &None,
+        );
         assert_eq!(state.devices[0].edit_name, "My New Phone");
 
         // Cancel rename
@@ -1436,7 +1458,10 @@ mod tests {
     fn test_deactivate_account_messages() {
         let mut state = State::default();
 
-        let _ = state.update(Message::DeactivatePasswordChanged("secret".to_string()), &None);
+        let _ = state.update(
+            Message::DeactivatePasswordChanged("secret".to_string()),
+            &None,
+        );
         assert_eq!(state.deactivate_password, "secret");
 
         let _ = state.update(Message::AccountDeactivated(Ok(())), &None);
