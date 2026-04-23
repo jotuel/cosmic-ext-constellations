@@ -4,7 +4,7 @@
 
 [x] Regression Spaces no longer list even joined Rooms
 
-[ ] After Logout can't Login again
+[x] After Logout can't Login again
 
 # ***General***
 
@@ -18,7 +18,7 @@
 
 [x] Add search icon and bar to header
 
-[ ] Implement application wide search
+[ ] Context aware search
 
 [ ] Filter out Rooms in Space settings
 
@@ -26,7 +26,7 @@
 
 # ***Messaging***
 
-[ ] Frostmark for message rendering
+[x] ~~Frostmark for message rendering~~
 
 [x] Rich Media Support: Sending images etc.
 
@@ -106,7 +106,7 @@ cannot be undone).
 
  [ ] Set Suggestions: Mark certain children as "suggested" so they are highlighted to new Space members.
 
- [ ] Ordering: Define the order string in the child event to control how rooms appear in the Space sidebar.
+ [x] Ordering: Define the order string in the child event to control how rooms appear in the Space sidebar.
 
  ### *2. Space-Restricted Join Rules*
 

@@ -65,7 +65,9 @@ mod tests {
 
         // The valid callback URI must start with fi.joonastuomi.CosmicExtConstellations://callback
         let valid_uri = "fi.joonastuomi.CosmicExtConstellations://callback/?code=12345".to_string();
-        call_handle_callback(valid_uri.clone()).await.expect("Failed to call proxy");
+        call_handle_callback(valid_uri.clone())
+            .await
+            .expect("Failed to call proxy");
 
         // The server should receive the URI on the mpsc channel
         let received = rx.recv().await.expect("Did not receive URI on channel");
@@ -81,7 +83,9 @@ mod tests {
 
         // Invalid URI that does not start with the required prefix
         let invalid_uri = "https://invalid.com/callback".to_string();
-        call_handle_callback(invalid_uri.clone()).await.expect("Failed to call proxy");
+        call_handle_callback(invalid_uri.clone())
+            .await
+            .expect("Failed to call proxy");
 
         // The interface drops invalid URIs and doesn't send them on tx.
         // Try to read with a timeout to verify nothing is sent.

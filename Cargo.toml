@@ -47,6 +47,7 @@ mime_guess = "2.0.5"
 rand = { version = "0.10.1", features = ["std_rng"] }
 notify-rust = "4.15.0"
 futures = "0.3.32"
+ruma-events = "0.32.1"
 
 [dev-dependencies]
 matrix-sdk-test = "0.16.0"
@@ -60,3 +61,4 @@ wiremock = "0.6.5"
 
 [lints.rust]
 unused_imports = "warn"
+

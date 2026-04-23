@@ -46,6 +46,9 @@ pub struct State {
     pub member_filter: String,
     pub notification_mode: Option<matrix_sdk::notification_settings::RoomNotificationMode>,
     pub is_loading_notifications: bool,
+    pub join_rule: Option<matrix_sdk::ruma::events::room::join_rules::JoinRule>,
+    pub pinned_events: Vec<matrix_sdk::ruma::OwnedEventId>,
+    pub pinned_event_id_input: String,
 }
 
 #[derive(Debug, Clone)]
@@ -84,6 +87,10 @@ pub enum Message {
     MemberFilterChanged(String),
     NotificationModeChanged(matrix_sdk::notification_settings::RoomNotificationMode),
     NotificationModeSet(Result<(), String>),
+    JoinRuleChanged(matrix_sdk::ruma::events::room::join_rules::JoinRule),
+    PinnedEventIdChanged(String),
+    PinEvent,
+    UnpinEvent(matrix_sdk::ruma::OwnedEventId),
 }
 
 #[derive(Debug, Clone)]
@@ -105,6 +112,8 @@ pub struct RoomInfo {
     pub redact_level: i64,
     pub current_user_id: Option<String>,
     pub notification_mode: Option<matrix_sdk::notification_settings::RoomNotificationMode>,
+    pub join_rule: Option<matrix_sdk::ruma::events::room::join_rules::JoinRule>,
+    pub pinned_events: Vec<matrix_sdk::ruma::OwnedEventId>,
 }
 
 impl State {
@@ -137,6 +146,39 @@ impl State {
                                 .get_user_defined_room_notification_mode(&room_id_parsed)
                                 .await;
 
+                            let join_rule = room
+                                .get_state_event_static::<matrix_sdk::ruma::events::room::join_rules::RoomJoinRulesEventContent>()
+                                .await
+                                .ok()
+                                .flatten()
+                                .and_then(|e| e.deserialize().ok())
+                                .and_then(|e| match e {
+                                    matrix_sdk_base::deserialized_responses::SyncOrStrippedState::Sync(
+                                        matrix_sdk::ruma::events::SyncStateEvent::Original(ev),
+                                    ) => Some(ev.content.join_rule),
+                                    matrix_sdk_base::deserialized_responses::SyncOrStrippedState::Stripped(
+                                        ev,
+                                    ) => Some(ev.content.join_rule),
+                                    _ => None,
+                                });
+
+                            let pinned_events = room
+                                .get_state_event_static::<matrix_sdk::ruma::events::room::pinned_events::RoomPinnedEventsEventContent>()
+                                .await
+                                .ok()
+                                .flatten()
+                                .and_then(|e| e.deserialize().ok())
+                                .and_then(|e| match e {
+                                    matrix_sdk_base::deserialized_responses::SyncOrStrippedState::Sync(
+                                        matrix_sdk::ruma::events::SyncStateEvent::Original(ev),
+                                    ) => Some(ev.content.pinned),
+                                    matrix_sdk_base::deserialized_responses::SyncOrStrippedState::Stripped(
+                                        ev,
+                                    ) => ev.content.pinned,
+                                    _ => None,
+                                })
+                                .unwrap_or_default();
+
                             Ok(RoomInfo {
                                 name: room.name().unwrap_or_default(),
                                 topic: room.topic().unwrap_or_default(),
@@ -148,6 +190,8 @@ impl State {
                                 redact_level: pl.redact.into(),
                                 current_user_id,
                                 notification_mode,
+                                join_rule,
+                                pinned_events,
                             })
                         },
                         |res| Action::from(crate::Message::RoomSettings(Message::RoomLoaded(res))),
@@ -180,6 +224,9 @@ impl State {
                         self.invite_level_str = info.invite_level.to_string();
                         self.current_user_id = info.current_user_id;
                         self.notification_mode = info.notification_mode;
+                        self.join_rule = info.join_rule;
+                        self.pinned_events = info.pinned_events;
+                        self.pinned_event_id_input = String::new();
                         self.error = None;
 
                         let mut tasks = Vec::new();
@@ -757,6 +804,102 @@ impl State {
                 self.error = None;
                 Task::none()
             }
+            Message::JoinRuleChanged(join_rule) => {
+                if let Some(matrix) = matrix
+                    && let Some(room_id) = &self.room_id
+                {
+                    let engine = matrix.clone();
+                    let room_id_clone = room_id.clone();
+                    let room_id_clone_reload = room_id.clone();
+                    return Task::perform(
+                        async move {
+                            engine
+                                .set_room_join_rule(&room_id_clone, join_rule)
+                                .await
+                                .map_err(|e| e.to_string())
+                        },
+                        move |res| {
+                            Action::from(crate::Message::RoomSettings(match res {
+                                Ok(_) => {
+                                    // Reload room data to reflect changes
+                                    Message::LoadRoom(room_id_clone_reload.clone())
+                                }
+                                Err(e) => Message::RoomSaved(Err(e)),
+                            }))
+                        },
+                    );
+                }
+                Task::none()
+            }
+            Message::PinnedEventIdChanged(id) => {
+                self.pinned_event_id_input = id;
+                Task::none()
+            }
+            Message::PinEvent => {
+                if let Some(matrix) = matrix
+                    && let Some(room_id) = &self.room_id
+                {
+                    let event_id_res =
+                        matrix_sdk::ruma::EventId::parse(&self.pinned_event_id_input);
+                    match event_id_res {
+                        Ok(event_id) => {
+                            if !self.pinned_events.contains(&event_id) {
+                                let mut new_pinned = self.pinned_events.clone();
+                                new_pinned.push(event_id);
+                                let engine = matrix.clone();
+                                let room_id_clone = room_id.clone();
+                                let room_id_clone_reload = room_id.clone();
+                                return Task::perform(
+                                    async move {
+                                        engine
+                                            .set_pinned_events(&room_id_clone, new_pinned)
+                                            .await
+                                            .map_err(|e| e.to_string())
+                                    },
+                                    move |res| {
+                                        Action::from(crate::Message::RoomSettings(match res {
+                                            Ok(_) => {
+                                                Message::LoadRoom(room_id_clone_reload.clone())
+                                            }
+                                            Err(e) => Message::RoomSaved(Err(e)),
+                                        }))
+                                    },
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            self.error = Some(format!("Invalid Event ID: {}", e));
+                        }
+                    }
+                }
+                Task::none()
+            }
+            Message::UnpinEvent(event_id) => {
+                if let Some(matrix) = matrix
+                    && let Some(room_id) = &self.room_id
+                {
+                    let mut new_pinned = self.pinned_events.clone();
+                    new_pinned.retain(|id| id != &event_id);
+                    let engine = matrix.clone();
+                    let room_id_clone = room_id.clone();
+                    let room_id_clone_reload = room_id.clone();
+                    return Task::perform(
+                        async move {
+                            engine
+                                .set_pinned_events(&room_id_clone, new_pinned)
+                                .await
+                                .map_err(|e| e.to_string())
+                        },
+                        move |res| {
+                            Action::from(crate::Message::RoomSettings(match res {
+                                Ok(_) => Message::LoadRoom(room_id_clone_reload.clone()),
+                                Err(e) => Message::RoomSaved(Err(e)),
+                            }))
+                        },
+                    );
+                }
+                Task::none()
+            }
         }
     }
 
@@ -860,8 +1003,41 @@ impl State {
     }
 
     fn view_permissions(&self) -> Element<'_, Message> {
+        use matrix_sdk::ruma::events::room::join_rules::JoinRule;
+
         let mut perm_col = Column::new().spacing(10);
         perm_col = perm_col.push(text::title3("Permissions"));
+
+        let mut join_rule_row = Row::new().spacing(10).align_y(Alignment::Center);
+        join_rule_row = join_rule_row.push(text::body("Join Rule").width(100));
+
+        for rule in [JoinRule::Public, JoinRule::Invite] {
+            let label = match rule {
+                JoinRule::Public => "Public",
+                JoinRule::Invite => "Invite Only",
+                _ => unreachable!(),
+            };
+
+            let is_selected = self.join_rule.as_ref() == Some(&rule);
+            let mut btn = if is_selected {
+                button::suggested(label)
+            } else {
+                button::text(label)
+            };
+
+            if !is_selected {
+                btn = btn.on_press(Message::JoinRuleChanged(rule));
+            }
+            join_rule_row = join_rule_row.push(btn);
+        }
+
+        // Show Restricted if it's currently restricted, or if it's already allowed by some space
+        if let Some(JoinRule::Restricted(_)) = &self.join_rule {
+            join_rule_row = join_rule_row.push(button::suggested("Restricted"));
+        }
+
+        perm_col = perm_col.push(join_rule_row);
+
         perm_col = perm_col.push(
             Row::new()
                 .spacing(10)
@@ -1095,6 +1271,33 @@ impl State {
         add_pl_col.into()
     }
 
+    fn view_pinned_events(&self) -> Element<'_, Message> {
+        let mut col = Column::new().spacing(10);
+        col = col.push(text::title3("Pinned Messages"));
+
+        for event_id in &self.pinned_events {
+            let row = Row::new()
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .push(text::body(event_id.as_str()).size(14))
+                .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
+                .push(button::destructive("Unpin").on_press(Message::UnpinEvent(event_id.clone())));
+            col = col.push(row);
+        }
+
+        let pin_input = Row::new()
+            .spacing(10)
+            .align_y(Alignment::Center)
+            .push(
+                text_input::text_input("Event ID ($...)", &self.pinned_event_id_input)
+                    .on_input(Message::PinnedEventIdChanged),
+            )
+            .push(button::text("Pin").on_press(Message::PinEvent));
+
+        col = col.push(pin_input);
+        col.into()
+    }
+
     fn view_membership_actions(&self) -> Option<Element<'_, Message>> {
         if let Some(membership) = &self.membership {
             use matrix_sdk::RoomState;
@@ -1135,6 +1338,7 @@ impl State {
         col = col.push(self.view_profile());
         col = col.push(self.view_notifications());
         col = col.push(self.view_permissions());
+        col = col.push(self.view_pinned_events());
 
         if let Some(save_btn) = self.view_save_button() {
             col = col.push(save_btn);
@@ -1197,7 +1401,10 @@ mod tests {
     #[test]
     fn test_invite_user_id_changed() {
         let mut state = State::default();
-        let _ = state.update(Message::InviteUserIdChanged("@user:example.com".to_string()), &None);
+        let _ = state.update(
+            Message::InviteUserIdChanged("@user:example.com".to_string()),
+            &None,
+        );
         assert_eq!(state.invite_user_id, "@user:example.com");
     }
 
@@ -1213,5 +1420,26 @@ mod tests {
         let mut state = State::default();
         let _ = state.update(Message::MemberFilterChanged("John".to_string()), &None);
         assert_eq!(state.member_filter, "John");
+    }
+
+    #[test]
+    fn test_join_rule_changed() {
+        use matrix_sdk::ruma::events::room::join_rules::JoinRule;
+        let mut state = State::default();
+        state.room_id = Some(Arc::from("!room:example.com"));
+        // This won't actually call the engine since we pass None, but we can check if it returns a Task
+        let _task = state.update(Message::JoinRuleChanged(JoinRule::Public), &None);
+        // The task should be none since matrix engine is None
+        // We can't easily inspect Task, but we can verify it compiles and runs.
+    }
+
+    #[test]
+    fn test_pinned_event_id_changed() {
+        let mut state = State::default();
+        let _ = state.update(
+            Message::PinnedEventIdChanged("$event:example.com".to_string()),
+            &None,
+        );
+        assert_eq!(state.pinned_event_id_input, "$event:example.com");
     }
 }

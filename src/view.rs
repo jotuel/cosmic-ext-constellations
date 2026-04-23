@@ -16,6 +16,30 @@ use matrix_sdk::ruma::events::room::{MediaSource, message::MessageType};
 use crate::{Constellations, MenuAct, Message, PreviewEvent, matrix};
 
 impl Constellations {
+    pub fn view_thread(&self) -> Element<'_, Message> {
+        let mut timeline = Column::new().spacing(10).width(cosmic::iced::Length::Fill);
+
+        if self.selected_room.is_some() {
+            timeline = timeline.push(
+                Row::new()
+                    .align_y(Alignment::Center)
+                    .push(button::text("Close Thread").on_press(Message::CloseThread))
+                    .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
+                    .padding(10),
+            );
+        }
+
+        for item in &self.threaded_timeline_items {
+            if item.item.as_event().is_some() {
+                timeline = timeline.push(self.view_item(item));
+            }
+        }
+
+        scrollable(timeline)
+            .height(cosmic::iced::Length::Fill)
+            .into()
+    }
+
     pub fn view_timeline(&self) -> Element<'_, Message> {
         let mut timeline = Column::new().spacing(10).width(cosmic::iced::Length::Fill);
 
@@ -29,54 +53,8 @@ impl Constellations {
         }
 
         for item in &self.timeline_items {
-            if let Some(event) = item.item.as_event() {
-                if let Some(message) = event.content().as_message() {
-                    let is_me = item.is_me;
-
-                    let reaction_row = self.view_reactions(event);
-                    let sender_info = self.view_sender_info(
-                        item.avatar_url.as_deref(),
-                        item.sender_name.as_str(),
-                        item.timestamp.as_str(),
-                    );
-
-                    let mut bubble_col = Column::new()
-                        .spacing(if self.app_settings.compact_mode { 0 } else { 2 })
-                        .push(sender_info);
-
-                    match message.msgtype() {
-                        MessageType::Image(image) => {
-                            bubble_col = bubble_col.push(self.view_message_image(image));
-                        }
-                        MessageType::File(file) => {
-                            bubble_col = bubble_col.push(self.view_message_file(file));
-                        }
-                        _ => {
-                            bubble_col = bubble_col
-                                .push(self.view_message_text(message.msgtype(), &item.markdown));
-                        }
-                    }
-
-                    bubble_col = bubble_col.push(reaction_row);
-
-                    let bubble = container(bubble_col)
-                        .padding(if self.app_settings.compact_mode {
-                            5
-                        } else {
-                            10
-                        })
-                        .max_width(600);
-
-                    let bubble_wrapper = container(bubble)
-                        .width(cosmic::iced::Length::Fill)
-                        .align_x(if is_me {
-                            Alignment::End
-                        } else {
-                            Alignment::Start
-                        });
-
-                    timeline = timeline.push(bubble_wrapper);
-                }
+            if item.item.as_event().is_some() {
+                timeline = timeline.push(self.view_item(item));
             } else if let Some(matrix::VirtualTimelineItem::DateDivider(_date)) =
                 item.item.as_virtual()
             {
@@ -91,6 +69,7 @@ impl Constellations {
 
         scrollable(timeline)
             .height(cosmic::iced::Length::Fill)
+            .on_scroll(Message::TimelineScrolled)
             .into()
     }
 
@@ -210,18 +189,22 @@ impl Constellations {
                 14
             },
         ));
-        if let Some(handle) = self.media_cache.get(&mxc_url) {
-            bubble_col = bubble_col.push(cosmic::widget::image(handle.clone()).width(
-                if self.app_settings.compact_mode {
-                    150
-                } else {
-                    300
-                },
-            ));
-        } else {
-            bubble_col = bubble_col.push(
-                button::text("Download Image").on_press(Message::FetchMedia(image.source.clone())),
-            );
+
+        if self.user_settings.media_previews_display_policy {
+            if let Some(handle) = self.media_cache.get(&mxc_url) {
+                bubble_col = bubble_col.push(cosmic::widget::image(handle.clone()).width(
+                    if self.app_settings.compact_mode {
+                        150
+                    } else {
+                        300
+                    },
+                ));
+            } else {
+                bubble_col = bubble_col.push(
+                    button::text("Download Image")
+                        .on_press(Message::FetchMedia(image.source.clone())),
+                );
+            }
         }
         bubble_col
     }
@@ -326,6 +309,32 @@ impl Constellations {
             bubble_col = bubble_col.push(self.view_markdown_text(message.body()));
         }
         bubble_col
+    }
+
+    pub fn view_threaded_timeline(&self) -> Element<'_, Message> {
+        let mut timeline = Column::new().spacing(10).width(cosmic::iced::Length::Fill);
+
+        let header = Row::new()
+            .spacing(10)
+            .align_y(Alignment::Center)
+            .push(text::title3("Thread"))
+            .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
+            .push(button::text("Close").on_press(Message::CloseThread));
+
+        timeline = timeline.push(container(header).padding(10));
+
+        // In a real application, you might want to find and show the root message first.
+        // For simplicity, we assume it's part of the threaded timeline from the SDK.
+
+        for item in &self.threaded_timeline_items {
+            if item.item.as_event().is_some() {
+                timeline = timeline.push(self.view_item(item));
+            }
+        }
+
+        scrollable(timeline)
+            .height(cosmic::iced::Length::Fill)
+            .into()
     }
 
     pub fn view_preview(&self) -> Element<'_, Message> {
@@ -520,6 +529,73 @@ impl Constellations {
         let title = selected_room_name.unwrap_or("Constellations - Matrix Client");
         self.core.set_header_title(title.to_string());
         Task::none()
+    }
+
+    fn view_item<'a>(&'a self, item: &'a crate::ConstellationsItem) -> Element<'a, Message> {
+        if let Some(event) = item.item.as_event() {
+            if let Some(message) = event.content().as_message() {
+                let is_me = item.is_me;
+
+                let reaction_row = self.view_reactions(event);
+                let sender_info = self.view_sender_info(
+                    item.avatar_url.as_deref(),
+                    item.sender_name.as_str(),
+                    item.timestamp.as_str(),
+                );
+
+                let mut bubble_col = Column::new()
+                    .spacing(if self.app_settings.compact_mode { 0 } else { 2 })
+                    .push(sender_info);
+
+                match message.msgtype() {
+                    MessageType::Image(image) => {
+                        bubble_col = bubble_col.push(self.view_message_image(image));
+                    }
+                    MessageType::File(file) => {
+                        bubble_col = bubble_col.push(self.view_message_file(file));
+                    }
+                    _ => {
+                        bubble_col = bubble_col
+                            .push(self.view_message_text(message.msgtype(), &item.markdown));
+                    }
+                }
+
+                if let MessageType::Text(_) = message.msgtype() {
+                    // Start a thread
+                    let root_id = event.identifier();
+                    let start_thread_btn =
+                        button::text("Open Thread").on_press(match root_id {
+                            matrix::TimelineEventItemId::EventId(id) => {
+                                Message::OpenThread(id.to_owned())
+                            }
+                            _ => Message::NoOp,
+                        });
+                    bubble_col = bubble_col.push(start_thread_btn);
+                }
+
+                bubble_col = bubble_col.push(reaction_row);
+
+                let bubble = container(bubble_col)
+                    .padding(if self.app_settings.compact_mode {
+                        5
+                    } else {
+                        10
+                    })
+                    .max_width(600);
+
+                let bubble_wrapper =
+                    container(bubble)
+                        .width(cosmic::iced::Length::Fill)
+                        .align_x(if is_me {
+                            Alignment::End
+                        } else {
+                            Alignment::Start
+                        });
+
+                return bubble_wrapper.into();
+            }
+        }
+        cosmic::widget::space().height(0).into()
     }
 
     pub fn view_space_switcher(&self) -> Element<'_, Message> {
@@ -800,20 +876,18 @@ impl Constellations {
 
                 let mut header = Row::new().spacing(10).align_y(Alignment::Center);
 
-                if let Some(avatar_url) = &room.avatar_url {
-                    if let Some(handle) = self.media_cache.get(avatar_url) {
-                        header =
-                            header.push(cosmic::widget::image(handle.clone()).width(24).height(24));
-                    } else {
-                        header = header.push(
-                            container(text::body("#"))
-                                .width(24)
-                                .height(24)
-                                .align_x(Alignment::Center)
-                                .align_y(Alignment::Center),
-                        );
+                let mut has_avatar = false;
+                if self.user_settings.invite_avatars_display_policy {
+                    if let Some(avatar_url) = &room.avatar_url {
+                        if let Some(handle) = self.media_cache.get(avatar_url) {
+                            header = header
+                                .push(cosmic::widget::image(handle.clone()).width(24).height(24));
+                            has_avatar = true;
+                        }
                     }
-                } else {
+                }
+
+                if !has_avatar {
                     header = header.push(
                         container(text::body("#"))
                             .width(24)
@@ -889,7 +963,11 @@ impl Constellations {
                 );
             content = content.push(room_header);
 
-            content = content.push(self.view_timeline());
+            content = content.push(if self.active_thread_root.is_some() {
+                self.view_thread()
+            } else {
+                self.view_timeline()
+            });
 
             let composer = if self.composer_is_preview {
                 self.view_preview()
@@ -920,7 +998,11 @@ impl Constellations {
             let is_empty =
                 self.composer_text.trim().is_empty() && self.composer_attachments.is_empty();
 
-            let mut send_btn = button::text("Send");
+            let mut send_btn = button::text(if self.active_thread_root.is_some() {
+                "Reply to Thread"
+            } else {
+                "Send"
+            });
             if !is_empty {
                 send_btn = send_btn.on_press(Message::SendMessage);
             }
