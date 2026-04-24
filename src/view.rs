@@ -563,13 +563,12 @@ impl Constellations {
                 if let MessageType::Text(_) = message.msgtype() {
                     // Start a thread
                     let root_id = event.identifier();
-                    let start_thread_btn =
-                        button::text("Open Thread").on_press(match root_id {
-                            matrix::TimelineEventItemId::EventId(id) => {
-                                Message::OpenThread(id.to_owned())
-                            }
-                            _ => Message::NoOp,
-                        });
+                    let start_thread_btn = button::text("Open Thread").on_press(match root_id {
+                        matrix::TimelineEventItemId::EventId(id) => {
+                            Message::OpenThread(id.to_owned())
+                        }
+                        _ => Message::NoOp,
+                    });
                     bubble_col = bubble_col.push(start_thread_btn);
                 }
 

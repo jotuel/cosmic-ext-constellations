@@ -1738,6 +1738,22 @@ impl MatrixEngine {
         }
     }
 
+    pub fn is_in_space_bulk(
+        &self,
+        room_ids: &[matrix_sdk::ruma::OwnedRoomId],
+        space_id: &RoomId,
+    ) -> Vec<bool> {
+        match self.inner.try_read() {
+            Ok(inner) => room_ids
+                .iter()
+                .map(|room_id| inner.space_hierarchy.is_in_space(room_id, space_id))
+                .collect(),
+            Err(_) => {
+                vec![false; room_ids.len()]
+            }
+        }
+    }
+
     pub async fn login_oidc(&self, homeserver: &str) -> Result<Url> {
         let homeserver_url = if homeserver.starts_with("https://")
             || homeserver.starts_with("http://localhost")
