@@ -34,3 +34,9 @@
 ## 2026-05-30 - Tooltips for Icon-Only Buttons
 **Learning:** Icon-only buttons (like `button::icon` or `button::custom` wrapping icons) are frequently used across the application for actions like search, opening menus, creating spaces, and reacting. However, without text labels, they lack context for screen readers and new users.
 **Action:** When creating or modifying icon-only buttons in `libcosmic`, always ensure they are wrapped in a `cosmic::widget::tooltip` with a descriptive `text::body` (e.g., "Search", "User Menu", "Add Reaction") and an appropriate `Position` (like `Position::Bottom` or `Position::Top`) to guarantee accessibility and immediate clarity.
+## 2026-05-31 - Tooltips for Disabled Keyword Add Button
+**Learning:** Checking for an empty input string to disable the 'Add' keyword button was missing a check for whitespace () and the disabled state was missing a tooltip explaining why it was disabled, which violates our rule on actionable disabled states.
+**Action:** Use  to correctly block empty/whitespace input strings and always wrap disabled form submission buttons with an explanatory  (e.g. 'Enter a keyword to add').
+## 2026-05-31 - Tooltips for Disabled Keyword Add Button
+**Learning:** Checking for an empty input string to disable the 'Add' keyword button was missing a check for whitespace (`.trim()`) and the disabled state was missing a tooltip explaining why it was disabled, which violates our rule on actionable disabled states.
+**Action:** Use `.trim().is_empty()` to correctly block empty/whitespace input strings and always wrap disabled form submission buttons with an explanatory `cosmic::widget::tooltip` (e.g. 'Enter a keyword to add').

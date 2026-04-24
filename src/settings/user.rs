@@ -1818,10 +1818,16 @@ impl State {
             );
 
             let mut add_btn = button::text("Add");
-            if !self.new_keyword.is_empty() {
+            let is_empty = self.new_keyword.trim().is_empty();
+            if !is_empty {
                 add_btn = add_btn.on_press(Message::AddKeyword);
             }
-            add_row = add_row.push(add_btn);
+            let btn_widget: Element<'_, Message> = if is_empty {
+                tooltip(add_btn, text::body("Enter a keyword to add"), Position::Top).into()
+            } else {
+                add_btn.into()
+            };
+            add_row = add_row.push(btn_widget);
             col = col.push(add_row);
         }
 
