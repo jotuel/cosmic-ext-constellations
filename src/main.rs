@@ -439,14 +439,12 @@ impl Constellations {
         if let Some(selected_space) = &self.selected_space {
             let mut rooms = Vec::new();
             if let Some(matrix) = &self.matrix {
-                for room in self.room_list.iter().filter(|r| !r.is_space) {
-                    if let Ok(room_id) = matrix_sdk::ruma::RoomId::parse(&*room.id)
-                        && matrix.is_in_space_sync(&room_id, selected_space)
-                        && filter_by_search(room)
-                    {
-                        rooms.push(room.clone());
-                    }
-                }
+                matrix.filter_in_space_bulk_sync(
+                    self.room_list.iter().filter(|r| !r.is_space),
+                    selected_space,
+                    &mut rooms,
+                    filter_by_search,
+                );
             }
             rooms.sort_by(|a, b| match (&a.order, &b.order) {
                 (Some(oa), Some(ob)) => oa.cmp(ob).then_with(|| a.id.cmp(&b.id)),

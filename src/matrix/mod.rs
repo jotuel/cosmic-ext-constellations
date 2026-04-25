@@ -1738,6 +1738,35 @@ impl MatrixEngine {
         }
     }
 
+    pub fn filter_in_space_bulk_sync<'a, I, F>(
+        &self,
+        rooms: I,
+        space_id: &RoomId,
+        out: &mut Vec<RoomData>,
+        mut filter_by_search: F,
+    ) where
+        I: Iterator<Item = &'a RoomData>,
+        F: FnMut(&RoomData) -> bool,
+    {
+        match self.inner.try_read() {
+            Ok(inner) => {
+                for room in rooms {
+                    if let Ok(room_id) = RoomId::parse(&*room.id) {
+                        if inner.space_hierarchy.is_in_space(&room_id, space_id)
+                            && filter_by_search(room)
+                        {
+                            out.push(room.clone());
+                        }
+                    }
+                }
+            }
+            Err(_) => {
+                // If we can't get a read lock, fallback to not filtering correctly
+                // or returning nothing. Usually this is transient.
+            }
+        }
+    }
+
     pub async fn login_oidc(&self, homeserver: &str) -> Result<Url> {
         let homeserver_url = if homeserver.starts_with("https://")
             || homeserver.starts_with("http://localhost")
