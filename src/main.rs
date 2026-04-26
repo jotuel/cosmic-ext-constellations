@@ -424,15 +424,40 @@ impl ConstellationsItem {
 impl Constellations {
     pub fn update_filtered_rooms(&mut self) {
         let search_query = self.search_query.to_lowercase();
+
         let filter_by_search = |room: &matrix::RoomData| {
             if search_query.is_empty() {
                 true
             } else {
                 room.name
                     .as_ref()
-                    .map(|n| n.to_lowercase().contains(&search_query))
+                    .map(|n| {
+                        if n.is_ascii() && search_query.is_ascii() {
+                            if n.len() < search_query.len() {
+                                return false;
+                            }
+                            n.as_bytes()
+                                .windows(search_query.len())
+                                .any(|window| window.eq_ignore_ascii_case(search_query.as_bytes()))
+                        } else {
+                            n.to_lowercase().contains(&search_query)
+                        }
+                    })
                     .unwrap_or(false)
-                    || room.id.to_lowercase().contains(&search_query)
+                    || {
+                        let id = room.id.as_ref();
+                        if id.is_ascii() && search_query.is_ascii() {
+                            if id.len() < search_query.len() {
+                                false
+                            } else {
+                                id.as_bytes()
+                                    .windows(search_query.len())
+                                    .any(|window| window.eq_ignore_ascii_case(search_query.as_bytes()))
+                            }
+                        } else {
+                            id.to_lowercase().contains(&search_query)
+                        }
+                    }
             }
         };
 
