@@ -949,6 +949,48 @@ mod tests {
     }
 
     #[test]
+    fn test_handle_login_finished_ok() {
+        let mut app = create_dummy_constellations();
+        app.is_logging_in = true;
+        app.is_oidc_logging_in = true;
+
+        let _task = app.handle_login_finished(Ok("test_user_id".to_string()));
+
+        assert_eq!(app.is_logging_in, false);
+        assert_eq!(app.is_oidc_logging_in, false);
+        assert_eq!(app.user_id, Some("test_user_id".to_string()));
+    }
+
+    #[test]
+    fn test_handle_login_finished_err_sliding_sync() {
+        let mut app = create_dummy_constellations();
+        app.is_logging_in = true;
+        app.is_oidc_logging_in = true;
+
+        let _task = app.handle_login_finished(Err(matrix::SyncError::MissingSlidingSyncSupport));
+
+        assert_eq!(app.is_logging_in, false);
+        assert_eq!(app.is_oidc_logging_in, false);
+        assert_eq!(
+            app.sync_status,
+            matrix::SyncStatus::MissingSlidingSyncSupport
+        );
+    }
+
+    #[test]
+    fn test_handle_login_finished_err_generic() {
+        let mut app = create_dummy_constellations();
+        app.is_logging_in = true;
+        app.is_oidc_logging_in = true;
+
+        let _task = app.handle_login_finished(Err(matrix::SyncError::Generic("network error".to_string())));
+
+        assert_eq!(app.is_logging_in, false);
+        assert_eq!(app.is_oidc_logging_in, false);
+        assert_eq!(app.error, Some("Login failed: network error".to_string()));
+    }
+
+    #[test]
     fn test_handle_load_more_already_loading() {
         let mut app = create_dummy_constellations();
         app.is_loading_more = true;
