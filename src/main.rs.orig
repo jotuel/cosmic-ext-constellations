@@ -429,7 +429,11 @@ impl Constellations {
         // Bolt Optimization: Fast path for ASCII string filtering
         // Avoids costly heap allocations from `.to_lowercase()`
         let is_query_ascii = search_query.is_ascii();
-        let search_query_lower = search_query.to_lowercase();
+        let search_query_lower = if is_query_ascii {
+            String::new()
+        } else {
+            search_query.to_lowercase()
+        };
         let search_query_bytes = search_query.as_bytes();
         let search_query_len = search_query_bytes.len();
 
