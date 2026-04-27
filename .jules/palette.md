@@ -34,3 +34,6 @@
 ## 2026-05-30 - Tooltips for Icon-Only Buttons
 **Learning:** Icon-only buttons (like `button::icon` or `button::custom` wrapping icons) are frequently used across the application for actions like search, opening menus, creating spaces, and reacting. However, without text labels, they lack context for screen readers and new users.
 **Action:** When creating or modifying icon-only buttons in `libcosmic`, always ensure they are wrapped in a `cosmic::widget::tooltip` with a descriptive `text::body` (e.g., "Search", "User Menu", "Add Reaction") and an appropriate `Position` (like `Position::Bottom` or `Position::Top`) to guarantee accessibility and immediate clarity.
+## 2024-12-07 - Add tooltip to disabled Pin button
+**Learning:** For empty-state handling in `libcosmic`, simply not attaching the `on_press` handler to a button and wrapping it in a `tooltip` provides an elegant and accessible "disabled" state that clearly informs the user why they cannot proceed.
+**Action:** Use this pattern across all configuration inputs or submission actions that require valid entries before allowing the action. This ensures better user feedback rather than silently leaving the button unclickable.
