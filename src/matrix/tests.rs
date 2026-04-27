@@ -82,6 +82,21 @@ fn test_room_data_serialization() {
 }
 
 #[test]
+fn test_space_hierarchy_add_space() {
+    let mut hierarchy = SpaceHierarchy::new();
+    let space_id = RoomId::parse("!space:example.com").unwrap();
+
+    assert!(!hierarchy.is_known_space(&space_id));
+    assert!(!hierarchy.known_spaces.contains(&space_id));
+
+    hierarchy.add_space(space_id.clone());
+
+    assert!(hierarchy.is_known_space(&space_id));
+    assert!(hierarchy.known_spaces.contains(&space_id));
+    assert_eq!(hierarchy.known_spaces.len(), 1);
+}
+
+#[test]
 fn test_space_hierarchy_basic() {
     let mut hierarchy = SpaceHierarchy::new();
     let space_id = RoomId::parse("!space:example.com").unwrap();
@@ -547,8 +562,8 @@ async fn test_paginate_backwards_rls_not_initialized() {
 #[tokio::test]
 async fn test_paginate_backwards_success() {
     use wiremock::{
-        Mock, MockServer, ResponseTemplate,
         matchers::{method, path_regex},
+        Mock, MockServer, ResponseTemplate,
     };
 
     let mock_server = MockServer::start().await;
@@ -758,8 +773,8 @@ async fn test_send_message_success() {
 
 #[tokio::test]
 async fn test_fetch_media() {
-    use matrix_sdk::ruma::OwnedMxcUri;
     use matrix_sdk::ruma::events::room::MediaSource;
+    use matrix_sdk::ruma::OwnedMxcUri;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -808,8 +823,8 @@ async fn test_fetch_media() {
 #[tokio::test]
 async fn test_create_room() {
     use wiremock::{
-        Mock, MockServer, ResponseTemplate,
         matchers::{method, path},
+        Mock, MockServer, ResponseTemplate,
     };
 
     let server = MockServer::start().await;
