@@ -1063,6 +1063,19 @@ fn test_space_hierarchy_add_child_idempotency() {
 }
 
 #[test]
+fn test_space_hierarchy_add_space() {
+    let mut hierarchy = SpaceHierarchy::new();
+    let space_id = RoomId::parse("!space:example.com").unwrap();
+
+    assert!(hierarchy.known_spaces.is_empty());
+
+    hierarchy.add_space(space_id.clone());
+
+    assert_eq!(hierarchy.known_spaces.len(), 1);
+    assert!(hierarchy.known_spaces.contains(&space_id));
+}
+
+#[test]
 fn test_space_hierarchy_known_spaces() {
     let mut hierarchy = SpaceHierarchy::new();
     let space_id = RoomId::parse("!space:example.com").unwrap();
