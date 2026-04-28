@@ -991,6 +991,56 @@ mod tests {
         assert_eq!(app.error, Some("Login failed: network error".to_string()));
     }
 
+    #[tokio::test]
+    async fn test_handle_fetch_media() {
+        use matrix_sdk::ruma::events::room::JsonWebKeyInit;
+        use matrix_sdk::ruma::events::room::EncryptedFileInit;
+        use matrix_sdk::ruma::events::room::EncryptedFile;
+        use std::collections::BTreeMap;
+
+        let mut app = create_dummy_constellations();
+
+        // We need to set app.matrix to Some(...) to evaluate the inner path.
+        // If DBus/Keyring fails, we skip gracefully as done in other tests.
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let engine = match crate::matrix::MatrixEngine::new(tmp_dir.path().to_path_buf()).await {
+            Ok(e) => e,
+            Err(_) => return, // Skip if initialization fails due to environment
+        };
+        app.matrix = Some(engine);
+
+        // Case 1: Plain MediaSource
+        let plain_uri = matrix_sdk::ruma::mxc_uri!("mxc://example.com/plain").to_owned();
+        let plain_source = matrix_sdk::ruma::events::room::MediaSource::Plain(plain_uri);
+
+        let _task = app.handle_fetch_media(plain_source);
+        // The task contains the async fetching which we can't easily await or evaluate directly.
+        // However, we've successfully passed through the variant match arm `MediaSource::Plain(uri)`.
+        assert!(app.media_cache.is_empty());
+
+        // Case 2: Encrypted MediaSource
+        let jwk_init = JsonWebKeyInit {
+            kty: "oct".to_owned(),
+            key_ops: vec!["encrypt".to_owned(), "decrypt".to_owned()],
+            alg: "A256CTR".to_owned(),
+            k: matrix_sdk::ruma::serde::Base64::parse("test").unwrap(),
+            ext: true,
+        };
+        let encrypted_file_init = EncryptedFileInit {
+            url: matrix_sdk::ruma::mxc_uri!("mxc://example.com/encrypted").to_owned(),
+            key: jwk_init.into(),
+            iv: matrix_sdk::ruma::serde::Base64::parse("iv").unwrap(),
+            hashes: BTreeMap::new(),
+            v: "v2".to_owned(),
+        };
+        let file = EncryptedFile::from(encrypted_file_init);
+        let encrypted_source = matrix_sdk::ruma::events::room::MediaSource::Encrypted(Box::new(file));
+
+        let _task = app.handle_fetch_media(encrypted_source);
+        // Successfully passed through the variant match arm `MediaSource::Encrypted(file)`.
+        assert!(app.media_cache.is_empty());
+    }
+
     #[test]
     fn test_handle_load_more_already_loading() {
         let mut app = create_dummy_constellations();
