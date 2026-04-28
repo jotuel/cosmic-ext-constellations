@@ -562,8 +562,8 @@ async fn test_paginate_backwards_rls_not_initialized() {
 #[tokio::test]
 async fn test_paginate_backwards_success() {
     use wiremock::{
-        Mock, MockServer, ResponseTemplate,
         matchers::{method, path_regex},
+        Mock, MockServer, ResponseTemplate,
     };
 
     let mock_server = MockServer::start().await;
@@ -773,8 +773,8 @@ async fn test_send_message_success() {
 
 #[tokio::test]
 async fn test_fetch_media() {
-    use matrix_sdk::ruma::OwnedMxcUri;
     use matrix_sdk::ruma::events::room::MediaSource;
+    use matrix_sdk::ruma::OwnedMxcUri;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -823,8 +823,8 @@ async fn test_fetch_media() {
 #[tokio::test]
 async fn test_create_room() {
     use wiremock::{
-        Mock, MockServer, ResponseTemplate,
         matchers::{method, path},
+        Mock, MockServer, ResponseTemplate,
     };
 
     let server = MockServer::start().await;
@@ -1164,4 +1164,57 @@ fn test_space_hierarchy_is_in_space() {
         !hierarchy.is_in_space(&isolated_room, &space_b),
         "isolated room should not be in cycle"
     );
+}
+
+#[tokio::test]
+async fn test_fetch_room_data_success() {
+    use matrix_sdk::ruma::RoomId;
+    use matrix_sdk::test_utils::logged_in_client;
+    use wiremock::{
+        matchers::{method, path},
+        Mock, MockServer, ResponseTemplate,
+    };
+
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/_matrix/client/v3/createRoom"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "room_id": "!new_room:example.com"
+        })))
+        .mount(&mock_server)
+        .await;
+
+    let tmp_dir = tempdir().unwrap();
+    let engine = match MatrixEngine::new(tmp_dir.path().to_path_buf()).await {
+        Ok(e) => e,
+        Err(e) => {
+            info!(
+                "Skipping test due to engine initialization failure (likely dbus/keyring): {}",
+                e
+            );
+            return;
+        }
+    };
+
+    let client = logged_in_client(Some(mock_server.uri())).await;
+
+    {
+        let mut inner = engine.inner.write().await;
+        inner.client = client.clone();
+    }
+
+    let room_id = engine.create_room("Test Room").await.unwrap();
+    assert_eq!(room_id.as_str(), "!new_room:example.com");
+
+    let client_actual = engine.client().await;
+    let room = client_actual
+        .get_room(&RoomId::parse("!new_room:example.com").unwrap())
+        .unwrap();
+
+    let room_data = engine.fetch_room_data(&room).await.unwrap();
+
+    assert_eq!(room_data.id.as_ref(), "!new_room:example.com");
+    assert_eq!(room_data.room_type, None);
+    assert_eq!(room_data.is_space, false);
 }
