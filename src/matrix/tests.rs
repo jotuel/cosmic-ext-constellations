@@ -1118,17 +1118,26 @@ fn test_space_hierarchy_is_in_space() {
     // 1. Direct child
     // space_a -> room_c
     hierarchy.add_child(space_a.clone(), room_c.clone(), None, false);
-    assert!(hierarchy.is_in_space(&room_c, &space_a), "room_c should be a direct child of space_a");
+    assert!(
+        hierarchy.is_in_space(&room_c, &space_a),
+        "room_c should be a direct child of space_a"
+    );
 
     // 2. Indirect child
     // space_a -> space_b -> room_d
     hierarchy.add_child(space_b.clone(), room_d.clone(), None, false);
     hierarchy.add_child(space_a.clone(), space_b.clone(), None, false);
-    assert!(hierarchy.is_in_space(&room_d, &space_a), "room_d should be an indirect child of space_a");
+    assert!(
+        hierarchy.is_in_space(&room_d, &space_a),
+        "room_d should be an indirect child of space_a"
+    );
 
     // 3. Isolated room
     let isolated_room = RoomId::parse("!isolated:example.com").unwrap();
-    assert!(!hierarchy.is_in_space(&isolated_room, &space_a), "isolated_room should not be in space_a");
+    assert!(
+        !hierarchy.is_in_space(&isolated_room, &space_a),
+        "isolated_room should not be in space_a"
+    );
 
     // 4. Cyclic graph
     // space_a -> space_b -> space_a
@@ -1137,10 +1146,62 @@ fn test_space_hierarchy_is_in_space() {
     hierarchy.add_child(space_b.clone(), space_a.clone(), None, false);
 
     // Check that we can traverse without infinite loops
-    assert!(hierarchy.is_in_space(&room_d, &space_a), "room_d should still be in space_a even with cycle");
-    assert!(hierarchy.is_in_space(&space_a, &space_b), "space_a is in space_b due to cycle");
-    assert!(hierarchy.is_in_space(&space_b, &space_a), "space_b is in space_a due to cycle");
+    assert!(
+        hierarchy.is_in_space(&room_d, &space_a),
+        "room_d should still be in space_a even with cycle"
+    );
+    assert!(
+        hierarchy.is_in_space(&space_a, &space_b),
+        "space_a is in space_b due to cycle"
+    );
+    assert!(
+        hierarchy.is_in_space(&space_b, &space_a),
+        "space_b is in space_a due to cycle"
+    );
 
     // Check missing relation
-    assert!(!hierarchy.is_in_space(&isolated_room, &space_b), "isolated room should not be in cycle");
+    assert!(
+        !hierarchy.is_in_space(&isolated_room, &space_b),
+        "isolated room should not be in cycle"
+    );
+}
+
+#[tokio::test]
+async fn test_set_room_list_controller() {
+    let tmp_dir = tempdir().unwrap();
+    let engine = match MatrixEngine::new(tmp_dir.path().to_path_buf()).await {
+        Ok(e) => e,
+        Err(e) => {
+            info!(
+                "Skipping test due to engine initialization failure (likely dbus/keyring): {}",
+                e
+            );
+            return;
+        }
+    };
+
+    let mock_server = MockServer::start().await;
+    let client = logged_in_client(Some(mock_server.uri())).await;
+
+    let room_list_service = Arc::new(
+        matrix_sdk_ui::room_list_service::RoomListService::new(client.clone())
+            .await
+            .unwrap(),
+    );
+    let controller = room_list_service.dynamic_entries_controller();
+
+    // Verify it's initially None
+    {
+        let inner = engine.inner.read().await;
+        assert!(inner.room_list_controller.is_none());
+    }
+
+    // Set the controller
+    engine.set_room_list_controller(Arc::new(controller)).await;
+
+    // Verify it was set
+    {
+        let inner = engine.inner.read().await;
+        assert!(inner.room_list_controller.is_some());
+    }
 }
