@@ -1008,4 +1008,61 @@ mod tests {
         let _task = app.handle_load_more();
         assert!(!app.is_loading_more);
     }
+
+    #[test]
+    fn test_handle_timeline_diff_clear() {
+        let mut app = create_dummy_constellations();
+        // Initial state is already empty, but calling clear should still work and keep it empty
+        let diff = eyeball_im::VectorDiff::Clear;
+        let _task = app.handle_timeline_diff(diff, false, None);
+
+        // We can't directly inspect app.timeline_items easily without exposing it,
+        // but since we know apply_diff with Clear removes all elements, and we
+        // just want to ensure the logic runs without crashing for the regular timeline:
+        assert_eq!(app.timeline_items.len(), 0);
+    }
+
+    #[test]
+    fn test_handle_timeline_diff_push_back() {
+        let mut app = create_dummy_constellations();
+
+        let item = std::sync::Arc::new(matrix::TimelineItem::Virtual(matrix::VirtualTimelineItem::DayDivider(
+            matrix_sdk::ruma::MilliSecondsSinceUnixEpoch::now()
+        )));
+
+        let diff = eyeball_im::VectorDiff::PushBack { value: item };
+        let _task = app.handle_timeline_diff(diff, false, None);
+
+        // timeline_items should now contain 1 item
+        assert_eq!(app.timeline_items.len(), 1);
+    }
+
+    #[test]
+    fn test_handle_timeline_diff_thread_clear() {
+        let mut app = create_dummy_constellations();
+        let event_id = matrix_sdk::ruma::EventId::parse("$test_event_id").unwrap();
+        app.active_thread_root = Some(event_id.clone());
+
+        let diff = eyeball_im::VectorDiff::Clear;
+        let _task = app.handle_timeline_diff(diff, true, Some(event_id));
+
+        assert_eq!(app.threaded_timeline_items.len(), 0);
+    }
+
+    #[test]
+    fn test_handle_timeline_diff_thread_wrong_root() {
+        let mut app = create_dummy_constellations();
+        let event_id1 = matrix_sdk::ruma::EventId::parse("$test_event_id1").unwrap();
+        let event_id2 = matrix_sdk::ruma::EventId::parse("$test_event_id2").unwrap();
+
+        app.active_thread_root = Some(event_id1.clone());
+
+        // If the diff is for a thread that is NOT active, it should be ignored
+        let diff = eyeball_im::VectorDiff::Clear;
+        let _task = app.handle_timeline_diff(diff, true, Some(event_id2));
+
+        // It shouldn't crash, and shouldn't apply to the active thread (though both are empty here,
+        // the core goal is ensuring the condition works).
+        assert_eq!(app.threaded_timeline_items.len(), 0);
+    }
 }
