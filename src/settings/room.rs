@@ -1285,14 +1285,29 @@ impl State {
             col = col.push(row);
         }
 
-        let pin_input = Row::new()
-            .spacing(10)
-            .align_y(Alignment::Center)
-            .push(
-                text_input::text_input("Event ID ($...)", &self.pinned_event_id_input)
-                    .on_input(Message::PinnedEventIdChanged),
+        let mut pin_input = Row::new().spacing(10).align_y(Alignment::Center).push(
+            text_input::text_input("Event ID ($...)", &self.pinned_event_id_input)
+                .on_input(Message::PinnedEventIdChanged),
+        );
+
+        let is_empty = self.pinned_event_id_input.trim().is_empty();
+        let mut pin_btn = button::text("Pin");
+        if !is_empty {
+            pin_btn = pin_btn.on_press(Message::PinEvent);
+        }
+
+        let pin_widget: Element<'_, Message> = if is_empty {
+            tooltip(
+                pin_btn,
+                text::body("Enter an Event ID to pin"),
+                Position::Top,
             )
-            .push(button::text("Pin").on_press(Message::PinEvent));
+            .into()
+        } else {
+            pin_btn.into()
+        };
+
+        pin_input = pin_input.push(pin_widget);
 
         col = col.push(pin_input);
         col.into()

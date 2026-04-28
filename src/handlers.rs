@@ -983,7 +983,8 @@ mod tests {
         app.is_logging_in = true;
         app.is_oidc_logging_in = true;
 
-        let _task = app.handle_login_finished(Err(matrix::SyncError::Generic("network error".to_string())));
+        let _task =
+            app.handle_login_finished(Err(matrix::SyncError::Generic("network error".to_string())));
 
         assert_eq!(app.is_logging_in, false);
         assert_eq!(app.is_oidc_logging_in, false);
