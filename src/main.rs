@@ -1837,8 +1837,13 @@ mod tests {
     #[test]
     fn test_update_room_joined_error() {
         let mut app = create_test_app();
-        let _ = app.update(Message::RoomJoined(Err("some connection error".to_string())));
+        let _ = app.update(Message::RoomJoined(
+            Err("some connection error".to_string()),
+        ));
 
-        assert_eq!(app.error, Some("Failed to join room: some connection error".to_string()));
+        assert_eq!(
+            app.error,
+            Some("Failed to join room: some connection error".to_string())
+        );
     }
 }
