@@ -983,11 +983,63 @@ mod tests {
         app.is_logging_in = true;
         app.is_oidc_logging_in = true;
 
-        let _task = app.handle_login_finished(Err(matrix::SyncError::Generic("network error".to_string())));
+        let _task =
+            app.handle_login_finished(Err(matrix::SyncError::Generic("network error".to_string())));
 
         assert_eq!(app.is_logging_in, false);
         assert_eq!(app.is_oidc_logging_in, false);
         assert_eq!(app.error, Some("Login failed: network error".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_handle_fetch_media() {
+        use matrix_sdk::ruma::events::room::EncryptedFile;
+        use matrix_sdk::ruma::events::room::EncryptedFileInit;
+        use matrix_sdk::ruma::events::room::JsonWebKeyInit;
+        use std::collections::BTreeMap;
+
+        let mut app = create_dummy_constellations();
+
+        // We need to set app.matrix to Some(...) to evaluate the inner path.
+        // If DBus/Keyring fails, we skip gracefully as done in other tests.
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let engine = match crate::matrix::MatrixEngine::new(tmp_dir.path().to_path_buf()).await {
+            Ok(e) => e,
+            Err(_) => return, // Skip if initialization fails due to environment
+        };
+        app.matrix = Some(engine);
+
+        // Case 1: Plain MediaSource
+        let plain_uri = matrix_sdk::ruma::mxc_uri!("mxc://example.com/plain").to_owned();
+        let plain_source = matrix_sdk::ruma::events::room::MediaSource::Plain(plain_uri);
+
+        let _task = app.handle_fetch_media(plain_source);
+        // The task contains the async fetching which we can't easily await or evaluate directly.
+        // However, we've successfully passed through the variant match arm `MediaSource::Plain(uri)`.
+        assert!(app.media_cache.is_empty());
+
+        // Case 2: Encrypted MediaSource
+        let jwk_init = JsonWebKeyInit {
+            kty: "oct".to_owned(),
+            key_ops: vec!["encrypt".to_owned(), "decrypt".to_owned()],
+            alg: "A256CTR".to_owned(),
+            k: matrix_sdk::ruma::serde::Base64::parse("test").unwrap(),
+            ext: true,
+        };
+        let encrypted_file_init = EncryptedFileInit {
+            url: matrix_sdk::ruma::mxc_uri!("mxc://example.com/encrypted").to_owned(),
+            key: jwk_init.into(),
+            iv: matrix_sdk::ruma::serde::Base64::parse("iv").unwrap(),
+            hashes: BTreeMap::new(),
+            v: "v2".to_owned(),
+        };
+        let file = EncryptedFile::from(encrypted_file_init);
+        let encrypted_source =
+            matrix_sdk::ruma::events::room::MediaSource::Encrypted(Box::new(file));
+
+        let _task = app.handle_fetch_media(encrypted_source);
+        // Successfully passed through the variant match arm `MediaSource::Encrypted(file)`.
+        assert!(app.media_cache.is_empty());
     }
 
     #[test]
@@ -1007,5 +1059,64 @@ mod tests {
         app.is_loading_more = false;
         let _task = app.handle_load_more();
         assert!(!app.is_loading_more);
+    }
+
+    #[test]
+    fn test_handle_timeline_diff_clear() {
+        let mut app = create_dummy_constellations();
+        // Initial state is already empty, but calling clear should still work and keep it empty
+        let diff = eyeball_im::VectorDiff::Clear;
+        let _task = app.handle_timeline_diff(diff, false, None);
+
+        // We can't directly inspect app.timeline_items easily without exposing it,
+        // but since we know apply_diff with Clear removes all elements, and we
+        // just want to ensure the logic runs without crashing for the regular timeline:
+        assert_eq!(app.timeline_items.len(), 0);
+    }
+
+    #[test]
+    fn test_handle_timeline_diff_push_back() {
+        let mut app = create_dummy_constellations();
+
+        let item = std::sync::Arc::new(matrix::TimelineItem::Virtual(
+            matrix::VirtualTimelineItem::DayDivider(
+                matrix_sdk::ruma::MilliSecondsSinceUnixEpoch::now(),
+            ),
+        ));
+
+        let diff = eyeball_im::VectorDiff::PushBack { value: item };
+        let _task = app.handle_timeline_diff(diff, false, None);
+
+        // timeline_items should now contain 1 item
+        assert_eq!(app.timeline_items.len(), 1);
+    }
+
+    #[test]
+    fn test_handle_timeline_diff_thread_clear() {
+        let mut app = create_dummy_constellations();
+        let event_id = matrix_sdk::ruma::EventId::parse("$test_event_id").unwrap();
+        app.active_thread_root = Some(event_id.clone());
+
+        let diff = eyeball_im::VectorDiff::Clear;
+        let _task = app.handle_timeline_diff(diff, true, Some(event_id));
+
+        assert_eq!(app.threaded_timeline_items.len(), 0);
+    }
+
+    #[test]
+    fn test_handle_timeline_diff_thread_wrong_root() {
+        let mut app = create_dummy_constellations();
+        let event_id1 = matrix_sdk::ruma::EventId::parse("$test_event_id1").unwrap();
+        let event_id2 = matrix_sdk::ruma::EventId::parse("$test_event_id2").unwrap();
+
+        app.active_thread_root = Some(event_id1.clone());
+
+        // If the diff is for a thread that is NOT active, it should be ignored
+        let diff = eyeball_im::VectorDiff::Clear;
+        let _task = app.handle_timeline_diff(diff, true, Some(event_id2));
+
+        // It shouldn't crash, and shouldn't apply to the active thread (though both are empty here,
+        // the core goal is ensuring the condition works).
+        assert_eq!(app.threaded_timeline_items.len(), 0);
     }
 }

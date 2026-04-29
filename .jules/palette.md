@@ -40,3 +40,10 @@
 ## 2026-05-31 - Tooltips for Disabled Keyword Add Button
 **Learning:** Checking for an empty input string to disable the 'Add' keyword button was missing a check for whitespace (`.trim()`) and the disabled state was missing a tooltip explaining why it was disabled, which violates our rule on actionable disabled states.
 **Action:** Use `.trim().is_empty()` to correctly block empty/whitespace input strings and always wrap disabled form submission buttons with an explanatory `cosmic::widget::tooltip` (e.g. 'Enter a keyword to add').
+## 2026-06-05 - Disabled States for Event Pinning
+**Learning:** Primary actions like pinning an event can lead to phantom submissions or user confusion if left enabled when input is empty. Additionally, simply disabling the button without context leaves users confused about how to proceed.
+**Action:** Always conditionally disable primary action buttons like "Pin" when the required input fields are empty or contain only whitespace. When doing so, wrap the disabled button in a `cosmic::widget::tooltip` explaining the requirement (e.g., "Enter an Event ID to pin") to provide actionable feedback.
+
+## 2024-05-18 - Semantic Destructive Buttons
+**Learning:** Destructive actions like removing attachments should use visually distinct `destructive` buttons rather than standard text buttons. This prevents accidental data loss and communicates the button's purpose clearly to the user, particularly aligning with COSMIC design guidelines.
+**Action:** Always prefer semantic button types (`button::destructive`) over generic text buttons for actions that remove or delete data.
