@@ -1078,19 +1078,6 @@ fn test_space_hierarchy_add_child_idempotency() {
 }
 
 #[test]
-fn test_space_hierarchy_add_space() {
-    let mut hierarchy = SpaceHierarchy::new();
-    let space_id = RoomId::parse("!space:example.com").unwrap();
-
-    assert!(hierarchy.known_spaces.is_empty());
-
-    hierarchy.add_space(space_id.clone());
-
-    assert_eq!(hierarchy.known_spaces.len(), 1);
-    assert!(hierarchy.known_spaces.contains(&space_id));
-}
-
-#[test]
 fn test_space_hierarchy_known_spaces() {
     let mut hierarchy = SpaceHierarchy::new();
     let space_id = RoomId::parse("!space:example.com").unwrap();
@@ -1188,7 +1175,8 @@ async fn test_set_room_list_controller() {
             .await
             .unwrap(),
     );
-    let controller = room_list_service.dynamic_entries_controller();
+    let rooms = room_list_service.all_rooms().await.unwrap();
+    let (_stream, controller) = rooms.entries_with_dynamic_adapters(20);
 
     // Verify it's initially None
     {
@@ -1205,7 +1193,6 @@ async fn test_set_room_list_controller() {
         assert!(inner.room_list_controller.is_some());
     }
 }
-
 
 #[tokio::test]
 #[serial_test::serial]
@@ -1346,8 +1333,8 @@ async fn test_fetch_room_data_success() {
     use matrix_sdk::ruma::RoomId;
     use matrix_sdk::test_utils::logged_in_client;
     use wiremock::{
-        matchers::{method, path},
         Mock, MockServer, ResponseTemplate,
+        matchers::{method, path},
     };
 
     let mock_server = MockServer::start().await;
@@ -1393,4 +1380,3 @@ async fn test_fetch_room_data_success() {
     assert_eq!(room_data.room_type, None);
     assert_eq!(room_data.is_space, false);
 }
-

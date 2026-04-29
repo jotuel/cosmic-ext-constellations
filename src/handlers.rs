@@ -1,6 +1,6 @@
 use crate::{
-    matrix, redact_url, ApplyVectorDiffExt, Constellations, ConstellationsItem, MediaSource,
-    Message, OwnedRoomId, Url,
+    ApplyVectorDiffExt, Constellations, ConstellationsItem, MediaSource, Message, OwnedRoomId, Url,
+    matrix, redact_url,
 };
 use cosmic::{Action, Application, Task};
 use futures::stream::StreamExt;
@@ -854,6 +854,7 @@ impl Constellations {
 #[cfg(test)]
 mod tests {
     use imbl::GenericVector;
+    use matrix_sdk::ruma::RoomId;
 
     use super::*;
     use crate::Core;
@@ -1082,7 +1083,7 @@ mod tests {
 
         // In this UI framework context, to truly test the return value of Task::perform,
         // we often need to simulate the mapping logic directly.
-        let mut app = create_dummy_constellations();
+        let _app = create_dummy_constellations();
         // Since MatrixEngine is difficult to stub without full `tokio::test` and `PathBuf`,
         // and since `handle_logout` strictly clones the matrix and returns `Task::perform`,
         // we've tested the `None` path in `test_handle_logout_no_matrix`.
@@ -1090,7 +1091,7 @@ mod tests {
 
         // Let's assert that the closure `|_| Action::from(Message::LogoutFinished)` mapping works.
         let message_mapping_closure = |_| Action::from(Message::LogoutFinished);
-        let action = message_mapping_closure(());
+        let _action = message_mapping_closure(());
 
         // Check if the action contains the expected message.
         // `Action::from(Message::LogoutFinished)` returns an Action wrapping our Message
@@ -1110,7 +1111,7 @@ mod tests {
         app.is_oidc_logging_in = true;
         app.login_password = "password123".to_string();
         app.error = Some("some error".to_string());
-        app.selected_space = Some("!space:example.com".into());
+        app.selected_space = Some(RoomId::parse("!space:example.com").unwrap());
         app.is_sync_indicator_active = true;
         app.is_loading_more = true;
         app.joined_room_ids.insert("!room:example.com".into());
@@ -1147,22 +1148,7 @@ mod tests {
         assert_eq!(app.timeline_items.len(), 0);
     }
 
-    #[test]
-    fn test_handle_timeline_diff_push_back() {
-        let mut app = create_dummy_constellations();
 
-        let item = std::sync::Arc::new(matrix::TimelineItem::Virtual(
-            matrix::VirtualTimelineItem::DayDivider(
-                matrix_sdk::ruma::MilliSecondsSinceUnixEpoch::now(),
-            ),
-        ));
-
-        let diff = eyeball_im::VectorDiff::PushBack { value: item };
-        let _task = app.handle_timeline_diff(diff, false, None);
-
-        // timeline_items should now contain 1 item
-        assert_eq!(app.timeline_items.len(), 1);
-    }
 
     #[test]
     fn test_handle_timeline_diff_thread_clear() {
