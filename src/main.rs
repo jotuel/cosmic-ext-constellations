@@ -423,16 +423,42 @@ impl ConstellationsItem {
 
 impl Constellations {
     pub fn update_filtered_rooms(&mut self) {
-        let search_query = self.search_query.to_lowercase();
+        let search_query = self.search_query.clone();
+        let is_search_empty = search_query.is_empty();
+
+        // Bolt Optimization: Fast path for ASCII string filtering
+        // Avoids costly heap allocations from `.to_lowercase()`
+        let is_query_ascii = search_query.is_ascii();
+        let search_query_lower = search_query.to_lowercase();
+        let search_query_bytes = search_query.as_bytes();
+        let search_query_len = search_query_bytes.len();
+
         let filter_by_search = |room: &matrix::RoomData| {
-            if search_query.is_empty() {
+            if is_search_empty {
                 true
             } else {
                 room.name
                     .as_ref()
-                    .map(|n| n.to_lowercase().contains(&search_query))
+                    .map(|n| {
+                        if is_query_ascii && n.is_ascii() {
+                            n.as_bytes()
+                                .windows(search_query_len)
+                                .any(|w| w.eq_ignore_ascii_case(search_query_bytes))
+                        } else {
+                            n.to_lowercase().contains(&search_query_lower)
+                        }
+                    })
                     .unwrap_or(false)
-                    || room.id.to_lowercase().contains(&search_query)
+                    || {
+                        if is_query_ascii && room.id.is_ascii() {
+                            room.id
+                                .as_bytes()
+                                .windows(search_query_len)
+                                .any(|w| w.eq_ignore_ascii_case(search_query_bytes))
+                        } else {
+                            room.id.to_lowercase().contains(&search_query_lower)
+                        }
+                    }
             }
         };
 
@@ -1792,5 +1818,18 @@ mod tests {
         let result = get_room_data(&engine, &room_id).await;
 
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_update_room_joined_error() {
+        let mut app = create_test_app();
+        let _ = app.update(Message::RoomJoined(
+            Err("some connection error".to_string()),
+        ));
+
+        assert_eq!(
+            app.error,
+            Some("Failed to join room: some connection error".to_string())
+        );
     }
 }

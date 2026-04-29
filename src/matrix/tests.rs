@@ -82,6 +82,21 @@ fn test_room_data_serialization() {
 }
 
 #[test]
+fn test_space_hierarchy_add_space() {
+    let mut hierarchy = SpaceHierarchy::new();
+    let space_id = RoomId::parse("!space:example.com").unwrap();
+
+    assert!(!hierarchy.is_known_space(&space_id));
+    assert!(!hierarchy.known_spaces.contains(&space_id));
+
+    hierarchy.add_space(space_id.clone());
+
+    assert!(hierarchy.is_known_space(&space_id));
+    assert!(hierarchy.known_spaces.contains(&space_id));
+    assert_eq!(hierarchy.known_spaces.len(), 1);
+}
+
+#[test]
 fn test_space_hierarchy_basic() {
     let mut hierarchy = SpaceHierarchy::new();
     let space_id = RoomId::parse("!space:example.com").unwrap();
@@ -1063,6 +1078,19 @@ fn test_space_hierarchy_add_child_idempotency() {
 }
 
 #[test]
+fn test_space_hierarchy_add_space() {
+    let mut hierarchy = SpaceHierarchy::new();
+    let space_id = RoomId::parse("!space:example.com").unwrap();
+
+    assert!(hierarchy.known_spaces.is_empty());
+
+    hierarchy.add_space(space_id.clone());
+
+    assert_eq!(hierarchy.known_spaces.len(), 1);
+    assert!(hierarchy.known_spaces.contains(&space_id));
+}
+
+#[test]
 fn test_space_hierarchy_known_spaces() {
     let mut hierarchy = SpaceHierarchy::new();
     let space_id = RoomId::parse("!space:example.com").unwrap();
@@ -1078,3 +1106,291 @@ fn test_space_hierarchy_known_spaces() {
     hierarchy.add_child(space_id2.clone(), room_id.clone(), None, false);
     assert!(hierarchy.is_known_space(&space_id2));
 }
+
+#[test]
+fn test_space_hierarchy_is_in_space() {
+    let mut hierarchy = SpaceHierarchy::new();
+    let space_a = RoomId::parse("!space_a:example.com").unwrap();
+    let space_b = RoomId::parse("!space_b:example.com").unwrap();
+    let room_c = RoomId::parse("!room_c:example.com").unwrap();
+    let room_d = RoomId::parse("!room_d:example.com").unwrap();
+
+    // 1. Direct child
+    // space_a -> room_c
+    hierarchy.add_child(space_a.clone(), room_c.clone(), None, false);
+    assert!(
+        hierarchy.is_in_space(&room_c, &space_a),
+        "room_c should be a direct child of space_a"
+    );
+
+    // 2. Indirect child
+    // space_a -> space_b -> room_d
+    hierarchy.add_child(space_b.clone(), room_d.clone(), None, false);
+    hierarchy.add_child(space_a.clone(), space_b.clone(), None, false);
+    assert!(
+        hierarchy.is_in_space(&room_d, &space_a),
+        "room_d should be an indirect child of space_a"
+    );
+
+    // 3. Isolated room
+    let isolated_room = RoomId::parse("!isolated:example.com").unwrap();
+    assert!(
+        !hierarchy.is_in_space(&isolated_room, &space_a),
+        "isolated_room should not be in space_a"
+    );
+
+    // 4. Cyclic graph
+    // space_a -> space_b -> space_a
+    // The previous setup gives us: space_a -> space_b -> room_d
+    // Now add: space_b -> space_a
+    hierarchy.add_child(space_b.clone(), space_a.clone(), None, false);
+
+    // Check that we can traverse without infinite loops
+    assert!(
+        hierarchy.is_in_space(&room_d, &space_a),
+        "room_d should still be in space_a even with cycle"
+    );
+    assert!(
+        hierarchy.is_in_space(&space_a, &space_b),
+        "space_a is in space_b due to cycle"
+    );
+    assert!(
+        hierarchy.is_in_space(&space_b, &space_a),
+        "space_b is in space_a due to cycle"
+    );
+
+    // Check missing relation
+    assert!(
+        !hierarchy.is_in_space(&isolated_room, &space_b),
+        "isolated room should not be in cycle"
+    );
+}
+
+#[tokio::test]
+async fn test_set_room_list_controller() {
+    let tmp_dir = tempdir().unwrap();
+    let engine = match MatrixEngine::new(tmp_dir.path().to_path_buf()).await {
+        Ok(e) => e,
+        Err(e) => {
+            info!(
+                "Skipping test due to engine initialization failure (likely dbus/keyring): {}",
+                e
+            );
+            return;
+        }
+    };
+
+    let mock_server = MockServer::start().await;
+    let client = logged_in_client(Some(mock_server.uri())).await;
+
+    let room_list_service = Arc::new(
+        matrix_sdk_ui::room_list_service::RoomListService::new(client.clone())
+            .await
+            .unwrap(),
+    );
+    let controller = room_list_service.dynamic_entries_controller();
+
+    // Verify it's initially None
+    {
+        let inner = engine.inner.read().await;
+        assert!(inner.room_list_controller.is_none());
+    }
+
+    // Set the controller
+    engine.set_room_list_controller(Arc::new(controller)).await;
+
+    // Verify it was set
+    {
+        let inner = engine.inner.read().await;
+        assert!(inner.room_list_controller.is_some());
+    }
+}
+
+
+#[tokio::test]
+#[serial_test::serial]
+async fn test_leave_room_success() {
+    use wiremock::matchers::{method, path_regex};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path_regex(r"^/_matrix/client/.*?/createRoom"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "room_id": "!leave_test_room:example.com"
+        })))
+        .mount(&mock_server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path_regex(
+            r"^/_matrix/client/.*?/rooms/!leave_test_room:example.com/leave",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+        .mount(&mock_server)
+        .await;
+
+    let tmp_dir = tempdir().unwrap();
+    let engine = match MatrixEngine::new(tmp_dir.path().to_path_buf()).await {
+        Ok(e) => e,
+        Err(e) => {
+            info!(
+                "Skipping test due to engine initialization failure (likely dbus/keyring): {}",
+                e
+            );
+            return;
+        }
+    };
+
+    let store_config = StoreConfig::new("test_leave_room".to_owned());
+    let client = Client::builder()
+        .homeserver_url(mock_server.uri())
+        .store_config(store_config)
+        .build()
+        .await
+        .unwrap();
+
+    let session = create_test_session();
+    client.restore_session(session).await.unwrap();
+
+    {
+        let mut inner = engine.inner.write().await;
+        inner.client = client;
+    }
+
+    let room_id = engine.create_room("Test Room").await.unwrap();
+    assert_eq!(room_id.as_str(), "!leave_test_room:example.com");
+
+    let result = engine.leave_room(room_id.as_str()).await;
+    assert!(
+        result.is_ok(),
+        "leave_room should succeed, got {:?}",
+        result.err()
+    );
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn test_leave_room_error() {
+    use wiremock::matchers::{method, path_regex};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path_regex(r"^/_matrix/client/.*?/createRoom"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "room_id": "!leave_err_room:example.com"
+        })))
+        .mount(&mock_server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path_regex(
+            r"^/_matrix/client/.*?/rooms/!leave_err_room:example.com/leave",
+        ))
+        .respond_with(ResponseTemplate::new(403).set_body_json(serde_json::json!({
+            "errcode": "M_FORBIDDEN",
+            "error": "You don't have permission to leave this room"
+        })))
+        .mount(&mock_server)
+        .await;
+
+    let tmp_dir = tempdir().unwrap();
+    let engine = match MatrixEngine::new(tmp_dir.path().to_path_buf()).await {
+        Ok(e) => e,
+        Err(e) => {
+            info!(
+                "Skipping test due to engine initialization failure (likely dbus/keyring): {}",
+                e
+            );
+            return;
+        }
+    };
+
+    let store_config = StoreConfig::new("test_leave_room_err".to_owned());
+    let client = Client::builder()
+        .homeserver_url(mock_server.uri())
+        .store_config(store_config)
+        .build()
+        .await
+        .unwrap();
+
+    let session = create_test_session();
+    client.restore_session(session).await.unwrap();
+
+    {
+        let mut inner = engine.inner.write().await;
+        inner.client = client;
+    }
+
+    let room_id = engine.create_room("Test Room").await.unwrap();
+
+    let result = engine.leave_room(room_id.as_str()).await;
+    assert!(
+        result.is_err(),
+        "Expected an error when leaving forbidden room"
+    );
+    let err_msg = result.unwrap_err().to_string();
+    assert!(
+        err_msg.contains("M_FORBIDDEN")
+            || err_msg.contains("403")
+            || err_msg.contains("permission"),
+        "Error message did not contain expected forbidden text, got: {}",
+        err_msg
+    );
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn test_fetch_room_data_success() {
+    use matrix_sdk::ruma::RoomId;
+    use matrix_sdk::test_utils::logged_in_client;
+    use wiremock::{
+        matchers::{method, path},
+        Mock, MockServer, ResponseTemplate,
+    };
+
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/_matrix/client/v3/createRoom"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "room_id": "!new_room:example.com"
+        })))
+        .mount(&mock_server)
+        .await;
+
+    let tmp_dir = tempdir().unwrap();
+    let engine = match MatrixEngine::new(tmp_dir.path().to_path_buf()).await {
+        Ok(e) => e,
+        Err(e) => {
+            info!(
+                "Skipping test due to engine initialization failure (likely dbus/keyring): {}",
+                e
+            );
+            return;
+        }
+    };
+
+    let client = logged_in_client(Some(mock_server.uri())).await;
+
+    {
+        let mut inner = engine.inner.write().await;
+        inner.client = client.clone();
+    }
+
+    let room_id = engine.create_room("Test Room").await.unwrap();
+    assert_eq!(room_id.as_str(), "!new_room:example.com");
+
+    let client_actual = engine.client().await;
+    let room = client_actual
+        .get_room(&RoomId::parse("!new_room:example.com").unwrap())
+        .unwrap();
+
+    let room_data = engine.fetch_room_data(&room).await.unwrap();
+
+    assert_eq!(room_data.id.as_ref(), "!new_room:example.com");
+    assert_eq!(room_data.room_type, None);
+    assert_eq!(room_data.is_space, false);
+}
+
