@@ -1167,12 +1167,146 @@ fn test_space_hierarchy_is_in_space() {
 }
 
 #[tokio::test]
+#[serial_test::serial]
+async fn test_leave_room_success() {
+    use wiremock::matchers::{method, path_regex};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path_regex(r"^/_matrix/client/.*?/createRoom"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "room_id": "!leave_test_room:example.com"
+        })))
+        .mount(&mock_server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path_regex(
+            r"^/_matrix/client/.*?/rooms/!leave_test_room:example.com/leave",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+        .mount(&mock_server)
+        .await;
+
+    let tmp_dir = tempdir().unwrap();
+    let engine = match MatrixEngine::new(tmp_dir.path().to_path_buf()).await {
+        Ok(e) => e,
+        Err(e) => {
+            info!(
+                "Skipping test due to engine initialization failure (likely dbus/keyring): {}",
+                e
+            );
+            return;
+        }
+    };
+
+    let store_config = StoreConfig::new("test_leave_room".to_owned());
+    let client = Client::builder()
+        .homeserver_url(mock_server.uri())
+        .store_config(store_config)
+        .build()
+        .await
+        .unwrap();
+
+    let session = create_test_session();
+    client.restore_session(session).await.unwrap();
+
+    {
+        let mut inner = engine.inner.write().await;
+        inner.client = client;
+    }
+
+    let room_id = engine.create_room("Test Room").await.unwrap();
+    assert_eq!(room_id.as_str(), "!leave_test_room:example.com");
+
+    let result = engine.leave_room(room_id.as_str()).await;
+    assert!(
+        result.is_ok(),
+        "leave_room should succeed, got {:?}",
+        result.err()
+    );
+}
+
+#[tokio::test]
+#[serial_test::serial]
+async fn test_leave_room_error() {
+    use wiremock::matchers::{method, path_regex};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path_regex(r"^/_matrix/client/.*?/createRoom"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "room_id": "!leave_err_room:example.com"
+        })))
+        .mount(&mock_server)
+        .await;
+
+    Mock::given(method("POST"))
+        .and(path_regex(
+            r"^/_matrix/client/.*?/rooms/!leave_err_room:example.com/leave",
+        ))
+        .respond_with(ResponseTemplate::new(403).set_body_json(serde_json::json!({
+            "errcode": "M_FORBIDDEN",
+            "error": "You don't have permission to leave this room"
+        })))
+        .mount(&mock_server)
+        .await;
+
+    let tmp_dir = tempdir().unwrap();
+    let engine = match MatrixEngine::new(tmp_dir.path().to_path_buf()).await {
+        Ok(e) => e,
+        Err(e) => {
+            info!(
+                "Skipping test due to engine initialization failure (likely dbus/keyring): {}",
+                e
+            );
+            return;
+        }
+    };
+
+    let store_config = StoreConfig::new("test_leave_room_err".to_owned());
+    let client = Client::builder()
+        .homeserver_url(mock_server.uri())
+        .store_config(store_config)
+        .build()
+        .await
+        .unwrap();
+
+    let session = create_test_session();
+    client.restore_session(session).await.unwrap();
+
+    {
+        let mut inner = engine.inner.write().await;
+        inner.client = client;
+    }
+
+    let room_id = engine.create_room("Test Room").await.unwrap();
+
+    let result = engine.leave_room(room_id.as_str()).await;
+    assert!(
+        result.is_err(),
+        "Expected an error when leaving forbidden room"
+    );
+    let err_msg = result.unwrap_err().to_string();
+    assert!(
+        err_msg.contains("M_FORBIDDEN")
+            || err_msg.contains("403")
+            || err_msg.contains("permission"),
+        "Error message did not contain expected forbidden text, got: {}",
+        err_msg
+    );
+}
+
+#[tokio::test]
+#[serial_test::serial]
 async fn test_fetch_room_data_success() {
     use matrix_sdk::ruma::RoomId;
     use matrix_sdk::test_utils::logged_in_client;
     use wiremock::{
-        Mock, MockServer, ResponseTemplate,
         matchers::{method, path},
+        Mock, MockServer, ResponseTemplate,
     };
 
     let mock_server = MockServer::start().await;
@@ -1218,3 +1352,4 @@ async fn test_fetch_room_data_success() {
     assert_eq!(room_data.room_type, None);
     assert_eq!(room_data.is_space, false);
 }
+
