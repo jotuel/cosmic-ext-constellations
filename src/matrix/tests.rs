@@ -1167,6 +1167,47 @@ fn test_space_hierarchy_is_in_space() {
 }
 
 #[tokio::test]
+async fn test_set_room_list_controller() {
+    let tmp_dir = tempdir().unwrap();
+    let engine = match MatrixEngine::new(tmp_dir.path().to_path_buf()).await {
+        Ok(e) => e,
+        Err(e) => {
+            info!(
+                "Skipping test due to engine initialization failure (likely dbus/keyring): {}",
+                e
+            );
+            return;
+        }
+    };
+
+    let mock_server = MockServer::start().await;
+    let client = logged_in_client(Some(mock_server.uri())).await;
+
+    let room_list_service = Arc::new(
+        matrix_sdk_ui::room_list_service::RoomListService::new(client.clone())
+            .await
+            .unwrap(),
+    );
+    let controller = room_list_service.dynamic_entries_controller();
+
+    // Verify it's initially None
+    {
+        let inner = engine.inner.read().await;
+        assert!(inner.room_list_controller.is_none());
+    }
+
+    // Set the controller
+    engine.set_room_list_controller(Arc::new(controller)).await;
+
+    // Verify it was set
+    {
+        let inner = engine.inner.read().await;
+        assert!(inner.room_list_controller.is_some());
+    }
+}
+
+
+#[tokio::test]
 #[serial_test::serial]
 async fn test_leave_room_success() {
     use wiremock::matchers::{method, path_regex};
