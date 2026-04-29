@@ -2260,7 +2260,7 @@ impl State {
                 };
 
                 row = row
-                    .push(button::icon(Named::new(icon)))
+                    .push(cosmic::widget::icon::from_name(icon))
                     .push(text::body(t.address.clone()))
                     .push(cosmic::widget::space().width(cosmic::iced::Length::Fill));
 

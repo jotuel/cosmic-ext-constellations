@@ -40,3 +40,7 @@
 ## 2026-05-31 - Tooltips for Disabled Keyword Add Button
 **Learning:** Checking for an empty input string to disable the 'Add' keyword button was missing a check for whitespace (`.trim()`) and the disabled state was missing a tooltip explaining why it was disabled, which violates our rule on actionable disabled states.
 **Action:** Use `.trim().is_empty()` to correctly block empty/whitespace input strings and always wrap disabled form submission buttons with an explanatory `cosmic::widget::tooltip` (e.g. 'Enter a keyword to add').
+
+## 2026-05-30 - Tooltips for Icon-Only Buttons
+**Learning:** Actionless icon-only buttons (like `button::icon`) used decoratively create confusing disabled states for screen readers.
+**Action:** Use `cosmic::widget::icon::from_name` for static icons instead of `button::icon` to avoid creating misleading interactive elements.
