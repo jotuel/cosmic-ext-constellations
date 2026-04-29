@@ -1738,18 +1738,31 @@ impl MatrixEngine {
         }
     }
 
-    pub fn is_in_space_bulk(
+    pub fn filter_in_space_bulk_sync<'a, I, F>(
         &self,
-        room_ids: &[matrix_sdk::ruma::OwnedRoomId],
+        rooms: I,
         space_id: &RoomId,
-    ) -> Vec<bool> {
+        out: &mut Vec<RoomData>,
+        mut filter_by_search: F,
+    ) where
+        I: Iterator<Item = &'a RoomData>,
+        F: FnMut(&RoomData) -> bool,
+    {
         match self.inner.try_read() {
-            Ok(inner) => room_ids
-                .iter()
-                .map(|room_id| inner.space_hierarchy.is_in_space(room_id, space_id))
-                .collect(),
+            Ok(inner) => {
+                for room in rooms {
+                    if let Ok(room_id) = RoomId::parse(&*room.id) {
+                        if inner.space_hierarchy.is_in_space(&room_id, space_id)
+                            && filter_by_search(room)
+                        {
+                            out.push(room.clone());
+                        }
+                    }
+                }
+            }
             Err(_) => {
-                vec![false; room_ids.len()]
+                // If we can't get a read lock, fallback to not filtering correctly
+                // or returning nothing. Usually this is transient.
             }
         }
     }
