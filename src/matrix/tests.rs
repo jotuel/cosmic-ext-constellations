@@ -562,8 +562,8 @@ async fn test_paginate_backwards_rls_not_initialized() {
 #[tokio::test]
 async fn test_paginate_backwards_success() {
     use wiremock::{
-        matchers::{method, path_regex},
         Mock, MockServer, ResponseTemplate,
+        matchers::{method, path_regex},
     };
 
     let mock_server = MockServer::start().await;
@@ -773,8 +773,8 @@ async fn test_send_message_success() {
 
 #[tokio::test]
 async fn test_fetch_media() {
-    use matrix_sdk::ruma::events::room::MediaSource;
     use matrix_sdk::ruma::OwnedMxcUri;
+    use matrix_sdk::ruma::events::room::MediaSource;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -823,8 +823,8 @@ async fn test_fetch_media() {
 #[tokio::test]
 async fn test_create_room() {
     use wiremock::{
-        matchers::{method, path},
         Mock, MockServer, ResponseTemplate,
+        matchers::{method, path},
     };
 
     let server = MockServer::start().await;
@@ -1171,8 +1171,8 @@ async fn test_fetch_room_data_success() {
     use matrix_sdk::ruma::RoomId;
     use matrix_sdk::test_utils::logged_in_client;
     use wiremock::{
-        matchers::{method, path},
         Mock, MockServer, ResponseTemplate,
+        matchers::{method, path},
     };
 
     let mock_server = MockServer::start().await;

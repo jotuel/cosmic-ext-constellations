@@ -1,19 +1,19 @@
-use cosmic::Theme;
 use cosmic::widget::{Container, Text};
+use cosmic::Theme;
 use cosmic::{
-    Action, Element, Task,
     iced::{
-        Alignment,
         widget::{scrollable, tooltip},
+        Alignment,
     },
     widget::{
-        Column, RcElementWrapper, Row, button, container, icon::Named, menu, text, text_input,
-        tooltip::Position,
+        button, container, icon::Named, menu, text, text_input, tooltip::Position, Column,
+        RcElementWrapper, Row,
     },
+    Action, Element, Task,
 };
-use matrix_sdk::ruma::events::room::{MediaSource, message::MessageType};
+use matrix_sdk::ruma::events::room::{message::MessageType, MediaSource};
 
-use crate::{Constellations, MenuAct, Message, PreviewEvent, matrix};
+use crate::{matrix, Constellations, MenuAct, Message, PreviewEvent};
 
 impl Constellations {
     pub fn view_thread(&self) -> Element<'_, Message> {
@@ -989,7 +989,7 @@ impl Constellations {
                         .spacing(10)
                         .align_y(Alignment::Center)
                         .push(text::body(filename).size(12))
-                        .push(button::text("Remove").on_press(Message::RemoveAttachment(i)));
+                        .push(button::destructive("Remove").on_press(Message::RemoveAttachment(i)));
                     attachments_view = attachments_view.push(attachment_row);
                 }
             }

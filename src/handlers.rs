@@ -993,9 +993,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_handle_fetch_media() {
-        use matrix_sdk::ruma::events::room::JsonWebKeyInit;
-        use matrix_sdk::ruma::events::room::EncryptedFileInit;
         use matrix_sdk::ruma::events::room::EncryptedFile;
+        use matrix_sdk::ruma::events::room::EncryptedFileInit;
+        use matrix_sdk::ruma::events::room::JsonWebKeyInit;
         use std::collections::BTreeMap;
 
         let mut app = create_dummy_constellations();
@@ -1034,7 +1034,8 @@ mod tests {
             v: "v2".to_owned(),
         };
         let file = EncryptedFile::from(encrypted_file_init);
-        let encrypted_source = matrix_sdk::ruma::events::room::MediaSource::Encrypted(Box::new(file));
+        let encrypted_source =
+            matrix_sdk::ruma::events::room::MediaSource::Encrypted(Box::new(file));
 
         let _task = app.handle_fetch_media(encrypted_source);
         // Successfully passed through the variant match arm `MediaSource::Encrypted(file)`.
@@ -1077,9 +1078,11 @@ mod tests {
     fn test_handle_timeline_diff_push_back() {
         let mut app = create_dummy_constellations();
 
-        let item = std::sync::Arc::new(matrix::TimelineItem::Virtual(matrix::VirtualTimelineItem::DayDivider(
-            matrix_sdk::ruma::MilliSecondsSinceUnixEpoch::now()
-        )));
+        let item = std::sync::Arc::new(matrix::TimelineItem::Virtual(
+            matrix::VirtualTimelineItem::DayDivider(
+                matrix_sdk::ruma::MilliSecondsSinceUnixEpoch::now(),
+            ),
+        ));
 
         let diff = eyeball_im::VectorDiff::PushBack { value: item };
         let _task = app.handle_timeline_diff(diff, false, None);
