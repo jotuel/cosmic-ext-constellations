@@ -13,3 +13,6 @@
 ## 2024-05-30 - [Optimize bulk space filter]
 **Learning:** To reduce RwLock contention, batch filtering logic utilizing iterators directly inside the lock method avoids overheads of massive `Vec` capacity preallocations and iterative atomic locks.
 **Action:** When migrating N loops on locked traits, use internal iterator callbacks inside a scoped read guard instead of pre-collecting into N-size Vectors to fetch them piecemeal.
+## 2024-04-30 - O(N) Reallocation during matrix updates
+**Learning:** Filtering lists populated by syncing matrix events can lead to an O(N^2) memory reallocation catastrophe if large structs containing Strings (like RoomData) are cloned into a filtered list on every event.
+**Action:** Use indices (`Vec<usize>`) to reference the source list instead of `Vec<RoomData>` to make filter and sync updates O(1) in allocations per room.

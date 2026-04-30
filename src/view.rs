@@ -1,19 +1,19 @@
-use cosmic::widget::{Container, Text};
 use cosmic::Theme;
+use cosmic::widget::{Container, Text};
 use cosmic::{
+    Action, Element, Task,
     iced::{
-        widget::{scrollable, tooltip},
         Alignment,
+        widget::{scrollable, tooltip},
     },
     widget::{
-        button, container, icon::Named, menu, text, text_input, tooltip::Position, Column,
-        RcElementWrapper, Row,
+        Column, RcElementWrapper, Row, button, container, icon::Named, menu, text, text_input,
+        tooltip::Position,
     },
-    Action, Element, Task,
 };
-use matrix_sdk::ruma::events::room::{message::MessageType, MediaSource};
+use matrix_sdk::ruma::events::room::{MediaSource, message::MessageType};
 
-use crate::{matrix, Constellations, MenuAct, Message, PreviewEvent};
+use crate::{Constellations, MenuAct, Message, PreviewEvent, matrix};
 
 impl Constellations {
     pub fn view_thread(&self) -> Element<'_, Message> {
@@ -804,7 +804,8 @@ impl Constellations {
             }
         }
 
-        for room in &self.filtered_room_list {
+        for &room_idx in &self.filtered_room_list {
+            let room = &self.room_list[room_idx];
             let name = room.name.as_deref().unwrap_or("Unknown Room");
             let room_id = room.id.clone();
 
