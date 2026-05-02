@@ -47,3 +47,7 @@
 ## 2024-05-18 - Semantic Destructive Buttons
 **Learning:** Destructive actions like removing attachments should use visually distinct `destructive` buttons rather than standard text buttons. This prevents accidental data loss and communicates the button's purpose clearly to the user, particularly aligning with COSMIC design guidelines.
 **Action:** Always prefer semantic button types (`button::destructive`) over generic text buttons for actions that remove or delete data.
+
+## 2024-05-19 - [Visual Feedback for Async Operations]
+**Learning:** Loading states on interactive elements like "Load More" pagination buttons provide necessary visual feedback during async operations, preventing confusion and multiple clicks.
+**Action:** When adding async action triggers, always consider disabling the button and modifying its text or displaying a spinner to reflect the busy state.
