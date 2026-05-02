@@ -810,7 +810,8 @@ impl Constellations {
             }
         }
 
-        for room in &self.filtered_room_list {
+        for &room_idx in &self.filtered_room_list {
+            let room = &self.room_list[room_idx];
             let name = room.name.as_deref().unwrap_or("Unknown Room");
             let room_id = room.id.clone();
 
