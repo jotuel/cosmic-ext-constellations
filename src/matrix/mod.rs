@@ -1738,24 +1738,24 @@ impl MatrixEngine {
         }
     }
 
-    pub fn filter_in_space_bulk_sync<'a, I, F>(
+    pub fn filter_in_space_bulk_sync<'a, I, F, T>(
         &self,
         rooms: I,
         space_id: &RoomId,
-        out: &mut Vec<RoomData>,
+        out: &mut Vec<T>,
         mut filter_by_search: F,
     ) where
-        I: Iterator<Item = &'a RoomData>,
+        I: Iterator<Item = (T, &'a RoomData)>,
         F: FnMut(&RoomData) -> bool,
     {
         match self.inner.try_read() {
             Ok(inner) => {
-                for room in rooms {
+                for (val, room) in rooms {
                     if let Ok(room_id) = RoomId::parse(&*room.id) {
                         if inner.space_hierarchy.is_in_space(&room_id, space_id)
                             && filter_by_search(room)
                         {
-                            out.push(room.clone());
+                            out.push(val);
                         }
                     }
                 }

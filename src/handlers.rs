@@ -1148,8 +1148,6 @@ mod tests {
         assert_eq!(app.timeline_items.len(), 0);
     }
 
-
-
     #[test]
     fn test_handle_timeline_diff_thread_clear() {
         let mut app = create_dummy_constellations();

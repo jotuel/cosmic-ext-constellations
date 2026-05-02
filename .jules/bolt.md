@@ -13,3 +13,6 @@
 ## 2024-05-30 - [Optimize bulk space filter]
 **Learning:** To reduce RwLock contention, batch filtering logic utilizing iterators directly inside the lock method avoids overheads of massive `Vec` capacity preallocations and iterative atomic locks.
 **Action:** When migrating N loops on locked traits, use internal iterator callbacks inside a scoped read guard instead of pre-collecting into N-size Vectors to fetch them piecemeal.
+## 2024-06-03 - [Refactored `filtered_room_list` to store indices]
+**Learning:** In Rust UI apps that sync large lists of data (like Matrix rooms), avoid `Vec::clone` on large structs. We previously kept `filtered_room_list` as `Vec<RoomData>`, which caused massive `O(N)` heap allocations containing string clones every single keystroke.
+**Action:** Changed `filtered_room_list` to store indices (`Vec<usize>`) referencing `room_list` instead. When rendering or applying filtering, just lookup `&room_list[idx]`. This reduced search/filter update overhead effectively.
