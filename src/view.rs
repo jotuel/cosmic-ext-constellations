@@ -1,19 +1,19 @@
-use cosmic::widget::{Container, Text};
 use cosmic::Theme;
+use cosmic::widget::{Container, Text};
 use cosmic::{
+    Action, Element, Task,
     iced::{
-        widget::{scrollable, tooltip},
         Alignment,
+        widget::{scrollable, tooltip},
     },
     widget::{
-        button, container, icon::Named, menu, text, text_input, tooltip::Position, Column,
-        RcElementWrapper, Row,
+        Column, RcElementWrapper, Row, button, container, icon::Named, menu, text, text_input,
+        tooltip::Position,
     },
-    Action, Element, Task,
 };
-use matrix_sdk::ruma::events::room::{message::MessageType, MediaSource};
+use matrix_sdk::ruma::events::room::{MediaSource, message::MessageType};
 
-use crate::{matrix, Constellations, MenuAct, Message, PreviewEvent};
+use crate::{Constellations, MenuAct, Message, PreviewEvent, matrix};
 
 impl Constellations {
     pub fn view_thread(&self) -> Element<'_, Message> {
@@ -44,8 +44,14 @@ impl Constellations {
         let mut timeline = Column::new().spacing(10).width(cosmic::iced::Length::Fill);
 
         if self.selected_room.is_some() {
+            let load_btn = if self.is_loading_more {
+                button::text("Loading...")
+            } else {
+                button::text("Load More").on_press(Message::LoadMore)
+            };
+
             timeline = timeline.push(
-                container(button::text("Load More").on_press(Message::LoadMore))
+                container(load_btn)
                     .width(cosmic::iced::Length::Fill)
                     .align_x(Alignment::Center)
                     .padding(10),
