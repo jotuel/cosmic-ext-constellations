@@ -2136,9 +2136,21 @@ impl State {
             }
 
             let mut ignore_btn = button::destructive("Ignore User");
-            if !self.is_loading_ignored_users && !self.new_ignore_user_id.is_empty() {
+            let is_empty = self.new_ignore_user_id.trim().is_empty();
+            if !self.is_loading_ignored_users && !is_empty {
                 ignore_btn = ignore_btn.on_press(Message::IgnoreUser);
             }
+
+            let ignore_btn_widget: Element<'_, Message> = if is_empty {
+                tooltip(
+                    ignore_btn,
+                    text::body("Enter a user ID to ignore"),
+                    Position::Top,
+                )
+                .into()
+            } else {
+                ignore_btn.into()
+            };
 
             let input_row = Row::new()
                 .spacing(10)
@@ -2151,7 +2163,7 @@ impl State {
                     .on_input(Message::NewIgnoreUserIdChanged)
                     .on_submit(|_| Message::IgnoreUser),
                 )
-                .push(ignore_btn);
+                .push(ignore_btn_widget);
             col = col.push(input_row);
         }
         col.into()
@@ -2260,7 +2272,7 @@ impl State {
                 };
 
                 row = row
-                    .push(button::icon(Named::new(icon)))
+                    .push(cosmic::widget::icon::from_name(icon))
                     .push(text::body(t.address.clone()))
                     .push(cosmic::widget::space().width(cosmic::iced::Length::Fill));
 
@@ -2284,10 +2296,23 @@ impl State {
                 } else {
                     "Send"
                 });
-                if !self.is_requesting_3pid_token && !self.new_3pid_email.is_empty() {
+                let is_empty = self.new_3pid_email.trim().is_empty();
+                if !self.is_requesting_3pid_token && !is_empty {
                     btn = btn.on_press(Message::Request3PIDEmailToken);
                 }
-                email_row = email_row.push(btn);
+
+                let btn_widget: Element<'_, Message> = if is_empty {
+                    tooltip(
+                        btn,
+                        text::body("Enter an email address to add"),
+                        Position::Top,
+                    )
+                    .into()
+                } else {
+                    btn.into()
+                };
+
+                email_row = email_row.push(btn_widget);
             }
             col = col.push(email_row);
 
@@ -2309,13 +2334,27 @@ impl State {
                 } else {
                     "Send"
                 });
+                let is_msisdn_empty = self.new_3pid_msisdn.trim().is_empty();
+                let is_country_empty = self.new_3pid_country_code.trim().is_empty();
                 if !self.is_requesting_3pid_token
-                    && !self.new_3pid_msisdn.is_empty()
-                    && !self.new_3pid_country_code.is_empty()
+                    && !is_msisdn_empty
+                    && !is_country_empty
                 {
                     btn = btn.on_press(Message::Request3PIDMsisdnToken);
                 }
-                phone_row = phone_row.push(btn);
+
+                let btn_widget: Element<'_, Message> = if is_msisdn_empty || is_country_empty {
+                    tooltip(
+                        btn,
+                        text::body("Enter a country code and phone number to add"),
+                        Position::Top,
+                    )
+                    .into()
+                } else {
+                    btn.into()
+                };
+
+                phone_row = phone_row.push(btn_widget);
             }
             col = col.push(phone_row);
 
@@ -2327,8 +2366,25 @@ impl State {
                         .password()
                         .on_input(Message::Add3PIDPasswordChanged),
                 );
-                complete_row =
-                    complete_row.push(button::suggested("Add").on_press(Message::Add3PID));
+
+                let is_empty = self.add_3pid_password.is_empty();
+                let mut add_btn = button::suggested("Add");
+                if !is_empty {
+                    add_btn = add_btn.on_press(Message::Add3PID);
+                }
+
+                let btn_widget: Element<'_, Message> = if is_empty {
+                    tooltip(
+                        add_btn,
+                        text::body("Enter your password to add the identifier"),
+                        Position::Top,
+                    )
+                    .into()
+                } else {
+                    add_btn.into()
+                };
+
+                complete_row = complete_row.push(btn_widget);
                 col = col.push(complete_row);
             }
         }
