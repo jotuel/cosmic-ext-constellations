@@ -16,3 +16,6 @@
 ## 2024-06-03 - [Refactored `filtered_room_list` to store indices]
 **Learning:** In Rust UI apps that sync large lists of data (like Matrix rooms), avoid `Vec::clone` on large structs. We previously kept `filtered_room_list` as `Vec<RoomData>`, which caused massive `O(N)` heap allocations containing string clones every single keystroke.
 **Action:** Changed `filtered_room_list` to store indices (`Vec<usize>`) referencing `room_list` instead. When rendering or applying filtering, just lookup `&room_list[idx]`. This reduced search/filter update overhead effectively.
+## 2024-06-25 - [Optimize bulk space filter traversals]
+**Learning:** Checking Space inclusions via upward `is_child_of_recursive` traversal required parsing string `room.id` into `RoomId` for every room in the app state on every keystroke, leading to `O(N * depth)` overhead and high allocation. Space hierarchy children are a mirror of parents.
+**Action:** In `cosmic-ext-constellations`, to optimize bulk Space filtering, avoid iterative upward `SpaceHierarchy` tree traversals and string parsing (`RoomId::parse`) per room. Instead, precompute the descendants of the target space via a downward traversal (`get_descendants_strs`) into a `HashSet<&str>`, enabling `O(1)` allocations-free membership checks.

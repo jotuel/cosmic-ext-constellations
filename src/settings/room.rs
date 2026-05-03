@@ -1134,6 +1134,8 @@ impl State {
 
             let filter = self.member_filter.to_lowercase();
 
+            let filter_is_ascii = self.member_filter.is_ascii();
+
             fn contains_ignore_ascii_case(haystack: &str, needle_lower: &str) -> bool {
                 if needle_lower.is_empty() {
                     return true;
@@ -1149,8 +1151,16 @@ impl State {
 
             for (user_id, level) in users {
                 let user_id_str = user_id.as_str();
-                if !filter.is_empty() && !contains_ignore_ascii_case(user_id_str, &filter) {
-                    continue;
+                if !filter.is_empty() {
+                    let matches = if filter_is_ascii && user_id_str.is_ascii() {
+                        contains_ignore_ascii_case(user_id_str, &filter)
+                    } else {
+                        user_id_str.to_lowercase().contains(&filter)
+                    };
+
+                    if !matches {
+                        continue;
+                    }
                 }
 
                 let is_updating = self.updating_power_level_for.as_deref() == Some(user_id_str);
