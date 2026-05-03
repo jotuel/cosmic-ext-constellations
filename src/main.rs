@@ -430,7 +430,7 @@ impl Constellations {
         // Avoids costly heap allocations from `.to_lowercase()`
         let is_query_ascii = search_query.is_ascii();
         let search_query_lower = search_query.to_lowercase();
-        let search_query_bytes = search_query.as_bytes();
+        let search_query_bytes = search_query_lower.as_bytes();
         let search_query_len = search_query_bytes.len();
 
         let filter_by_search = |room: &matrix::RoomData| {

@@ -164,6 +164,21 @@ impl SpaceHierarchy {
         self.is_child_of_recursive(room_id, space_id, &mut visited)
     }
 
+    pub fn get_descendants_strs<'a>(&'a self, space_id: &'a RoomId) -> HashSet<&'a str> {
+        let mut descendants = HashSet::new();
+        let mut queue = vec![space_id];
+        while let Some(current) = queue.pop() {
+            if descendants.insert(current.as_str()) {
+                if let Some(children) = self.children.get(current) {
+                    for child in children.keys() {
+                        queue.push(child);
+                    }
+                }
+            }
+        }
+        descendants
+    }
+
     fn is_child_of_recursive<'a>(
         &'a self,
         current_id: &'a RoomId,
@@ -1750,13 +1765,12 @@ impl MatrixEngine {
     {
         match self.inner.try_read() {
             Ok(inner) => {
+                // Bolt Optimization: Calculate all space descendants once (O(S))
+                // to avoid O(N) string parsing and O(N * D) tree traversals.
+                let descendants = inner.space_hierarchy.get_descendants_strs(space_id);
                 for (val, room) in rooms {
-                    if let Ok(room_id) = RoomId::parse(&*room.id) {
-                        if inner.space_hierarchy.is_in_space(&room_id, space_id)
-                            && filter_by_search(room)
-                        {
-                            out.push(val);
-                        }
+                    if descendants.contains(&*room.id) && filter_by_search(room) {
+                        out.push(val);
                     }
                 }
             }
