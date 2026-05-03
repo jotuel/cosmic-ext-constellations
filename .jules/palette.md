@@ -51,3 +51,11 @@
 ## 2024-05-19 - [Visual Feedback for Async Operations]
 **Learning:** Loading states on interactive elements like "Load More" pagination buttons provide necessary visual feedback during async operations, preventing confusion and multiple clicks.
 **Action:** When adding async action triggers, always consider disabling the button and modifying its text or displaying a spinner to reflect the busy state.
+
+## 2026-06-10 - Tooltips for Disabled Action Buttons
+**Learning:** Action buttons like "Ignore User", "Send" or "Add" for forms can lead to user confusion if they are conditionally disabled without a tooltip explaining why.
+**Action:** When conditionally disabling primary action buttons based on empty required inputs, always wrap them in a `cosmic::widget::tooltip` explaining the missing requirement (e.g., "Enter an email address to add").
+
+## 2026-06-10 - Avoiding Actionless Buttons for Decorative Icons
+**Learning:** Using `button::icon` for purely decorative icons (like the medium icons in a list) creates an unclickable disabled button. This creates a misleading disabled state for screen readers and mouse users.
+**Action:** Always use `cosmic::widget::icon::from_name(icon)` instead of an actionless `button::icon` for decorative or static icons to ensure proper accessibility.
