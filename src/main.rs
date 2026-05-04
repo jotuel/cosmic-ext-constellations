@@ -64,7 +64,7 @@ struct Constellations {
     matrix: Option<matrix::MatrixEngine>,
     sync_status: matrix::SyncStatus,
     room_list: Vec<matrix::RoomData>,
-    filtered_room_list: Vec<matrix::RoomData>,
+    filtered_room_list: Vec<usize>,
     other_rooms: Vec<matrix::RoomData>,
     selected_room: Option<std::sync::Arc<str>>,
     timeline_items: Vector<ConstellationsItem>,
@@ -466,17 +466,21 @@ impl Constellations {
             let mut rooms = Vec::new();
             if let Some(matrix) = &self.matrix {
                 matrix.filter_in_space_bulk_sync(
-                    self.room_list.iter().filter(|r| !r.is_space),
+                    self.room_list.iter().enumerate().filter(|(_, r)| !r.is_space),
                     selected_space,
                     &mut rooms,
                     filter_by_search,
                 );
             }
-            rooms.sort_by(|a, b| match (&a.order, &b.order) {
-                (Some(oa), Some(ob)) => oa.cmp(ob).then_with(|| a.id.cmp(&b.id)),
-                (Some(_), None) => std::cmp::Ordering::Less,
-                (None, Some(_)) => std::cmp::Ordering::Greater,
-                (None, None) => a.id.cmp(&b.id),
+            rooms.sort_by(|&a_idx, &b_idx| {
+                let a = &self.room_list[a_idx];
+                let b = &self.room_list[b_idx];
+                match (&a.order, &b.order) {
+                    (Some(oa), Some(ob)) => oa.cmp(ob).then_with(|| a.id.cmp(&b.id)),
+                    (Some(_), None) => std::cmp::Ordering::Less,
+                    (None, Some(_)) => std::cmp::Ordering::Greater,
+                    (None, None) => a.id.cmp(&b.id),
+                }
             });
             self.filtered_room_list = rooms;
 
@@ -487,10 +491,15 @@ impl Constellations {
             let mut rooms: Vec<_> = self
                 .room_list
                 .iter()
-                .filter(|r| !r.is_space && filter_by_search(r))
-                .cloned()
+                .enumerate()
+                .filter(|(_, r)| !r.is_space && filter_by_search(r))
+                .map(|(idx, _)| idx)
                 .collect();
-            rooms.sort_by(|a, b| a.id.cmp(&b.id));
+            rooms.sort_by(|&a_idx, &b_idx| {
+                let a = &self.room_list[a_idx];
+                let b = &self.room_list[b_idx];
+                a.id.cmp(&b.id)
+            });
             self.filtered_room_list = rooms;
             self.other_rooms.clear();
         }
@@ -1578,7 +1587,10 @@ mod tests {
         app.update_filtered_rooms();
 
         assert_eq!(app.filtered_room_list.len(), 1);
-        assert_eq!(app.filtered_room_list[0].id.as_ref(), "!room1:matrix.org");
+        assert_eq!(
+            app.room_list[app.filtered_room_list[0]].id.as_ref(),
+            "!room1:matrix.org"
+        );
     }
 
     #[test]
@@ -1621,7 +1633,10 @@ mod tests {
         app.update_filtered_rooms();
 
         assert_eq!(app.filtered_room_list.len(), 1);
-        assert_eq!(app.filtered_room_list[0].id.as_ref(), "!room1:matrix.org");
+        assert_eq!(
+            app.room_list[app.filtered_room_list[0]].id.as_ref(),
+            "!room1:matrix.org"
+        );
     }
 
     #[test]
@@ -1664,7 +1679,10 @@ mod tests {
         app.update_filtered_rooms();
 
         assert_eq!(app.filtered_room_list.len(), 1);
-        assert_eq!(app.filtered_room_list[0].id.as_ref(), "!room2:matrix.org");
+        assert_eq!(
+            app.room_list[app.filtered_room_list[0]].id.as_ref(),
+            "!room2:matrix.org"
+        );
     }
 
     #[test]

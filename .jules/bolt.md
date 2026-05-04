@@ -13,3 +13,7 @@
 ## 2024-05-30 - [Optimize bulk space filter]
 **Learning:** To reduce RwLock contention, batch filtering logic utilizing iterators directly inside the lock method avoids overheads of massive `Vec` capacity preallocations and iterative atomic locks.
 **Action:** When migrating N loops on locked traits, use internal iterator callbacks inside a scoped read guard instead of pre-collecting into N-size Vectors to fetch them piecemeal.
+
+## 2026-05-04 - [List Filtering Indirection]
+**Learning:** Filtering large collections using indices to external data instead of fully cloning the elements prevents expensive string allocations on `O(N)` scans.
+**Action:** When working with huge data collections inside UI update loops, use indirection via `Vec<usize>` representing the matching target items in the original backing store rather than generating subsets using deep copies (`.clone()`).
