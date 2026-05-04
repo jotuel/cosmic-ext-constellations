@@ -59,3 +59,7 @@
 ## 2026-06-10 - Avoiding Actionless Buttons for Decorative Icons
 **Learning:** Using `button::icon` for purely decorative icons (like the medium icons in a list) creates an unclickable disabled button. This creates a misleading disabled state for screen readers and mouse users.
 **Action:** Always use `cosmic::widget::icon::from_name(icon)` instead of an actionless `button::icon` for decorative or static icons to ensure proper accessibility.
+
+## 2024-05-04 - [Empty State Visual Polish]
+**Learning:** When lists or detail views are empty (like having no room selected), purely text-based empty states feel barren. Adding a simple, relevant icon makes the empty state much more pleasant and helps anchor the layout visually without distracting from the UI.
+**Action:** When creating empty states, include a relevant icon using `cosmic::widget::icon::from_name(...)` sized appropriately (e.g., 64px) above the title to improve the visual hierarchy and overall feel.

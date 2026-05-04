@@ -1049,6 +1049,7 @@ impl Constellations {
                 Column::new()
                     .spacing(10)
                     .align_x(Alignment::Center)
+                    .push(cosmic::widget::icon::from_name("chat-bubble-symbolic").size(64))
                     .push(text::title1("No room selected"))
                     .push(text::body(
                         "Select a room from the sidebar to start chatting.",
