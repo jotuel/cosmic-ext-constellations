@@ -19,3 +19,6 @@
 ## 2024-06-25 - [Optimize bulk space filter traversals]
 **Learning:** Checking Space inclusions via upward `is_child_of_recursive` traversal required parsing string `room.id` into `RoomId` for every room in the app state on every keystroke, leading to `O(N * depth)` overhead and high allocation. Space hierarchy children are a mirror of parents.
 **Action:** In `cosmic-ext-constellations`, to optimize bulk Space filtering, avoid iterative upward `SpaceHierarchy` tree traversals and string parsing (`RoomId::parse`) per room. Instead, precompute the descendants of the target space via a downward traversal (`get_descendants_strs`) into a `HashSet<&str>`, enabling `O(1)` allocations-free membership checks.
+## 2024-07-28 - [Removed String clone in hot filtering function]
+**Learning:** `update_filtered_rooms` used to clone the entire `search_query` String every time it was called. Because it is called on every keystroke during a search to update the UI, this led to frequent unnecessary heap allocations.
+**Action:** When working with struct fields in hot functions like UI updates, access the fields by reference (e.g., `self.search_query.is_empty()`, `self.search_query.is_ascii()`, `self.search_query.to_lowercase()`) rather than cloning the entire String unnecessarily just to call getter methods on it.

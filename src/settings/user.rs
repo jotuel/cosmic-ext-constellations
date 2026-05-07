@@ -2336,10 +2336,7 @@ impl State {
                 });
                 let is_msisdn_empty = self.new_3pid_msisdn.trim().is_empty();
                 let is_country_empty = self.new_3pid_country_code.trim().is_empty();
-                if !self.is_requesting_3pid_token
-                    && !is_msisdn_empty
-                    && !is_country_empty
-                {
+                if !self.is_requesting_3pid_token && !is_msisdn_empty && !is_country_empty {
                     btn = btn.on_press(Message::Request3PIDMsisdnToken);
                 }
 
