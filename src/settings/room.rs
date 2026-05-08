@@ -49,6 +49,7 @@ pub struct State {
     pub join_rule: Option<matrix_sdk::ruma::events::room::join_rules::JoinRule>,
     pub pinned_events: Vec<matrix_sdk::ruma::OwnedEventId>,
     pub pinned_event_id_input: String,
+    pub is_encrypted: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -91,6 +92,8 @@ pub enum Message {
     PinnedEventIdChanged(String),
     PinEvent,
     UnpinEvent(matrix_sdk::ruma::OwnedEventId),
+    EnableEncryption,
+    EncryptionEnabled(Result<(), String>),
 }
 
 #[derive(Debug, Clone)]
@@ -114,6 +117,7 @@ pub struct RoomInfo {
     pub notification_mode: Option<matrix_sdk::notification_settings::RoomNotificationMode>,
     pub join_rule: Option<matrix_sdk::ruma::events::room::join_rules::JoinRule>,
     pub pinned_events: Vec<matrix_sdk::ruma::OwnedEventId>,
+    pub is_encrypted: bool,
 }
 
 impl State {
@@ -179,6 +183,8 @@ impl State {
                                 })
                                 .unwrap_or_default();
 
+                            let is_encrypted = room.encryption_settings().is_some();
+
                             Ok(RoomInfo {
                                 name: room.name().unwrap_or_default(),
                                 topic: room.topic().unwrap_or_default(),
@@ -192,6 +198,7 @@ impl State {
                                 notification_mode,
                                 join_rule,
                                 pinned_events,
+                                is_encrypted,
                             })
                         },
                         |res| Action::from(crate::Message::RoomSettings(Message::RoomLoaded(res))),
@@ -227,6 +234,7 @@ impl State {
                         self.join_rule = info.join_rule;
                         self.pinned_events = info.pinned_events;
                         self.pinned_event_id_input = String::new();
+                        self.is_encrypted = info.is_encrypted;
                         self.error = None;
 
                         let mut tasks = Vec::new();
@@ -900,6 +908,41 @@ impl State {
                 }
                 Task::none()
             }
+            Message::EnableEncryption => {
+                if let Some(matrix) = matrix
+                    && let Some(room_id) = &self.room_id
+                {
+                    let engine = matrix.clone();
+                    let room_id_clone = room_id.clone();
+                    return Task::perform(
+                        async move {
+                            engine
+                                .enable_encryption(&room_id_clone)
+                                .await
+                                .map_err(|e| e.to_string())
+                        },
+                        |res| {
+                            Action::from(crate::Message::RoomSettings(Message::EncryptionEnabled(
+                                res,
+                            )))
+                        },
+                    );
+                }
+                Task::none()
+            }
+            Message::EncryptionEnabled(res) => {
+                match res {
+                    Ok(_) => {
+                        if let Some(room_id) = &self.room_id {
+                            return self.update(Message::LoadRoom(room_id.clone()), matrix);
+                        }
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to enable encryption: {}", e));
+                    }
+                }
+                Task::none()
+            }
         }
     }
 
@@ -946,6 +989,28 @@ impl State {
                 .push(button::text("Dismiss").on_press(Message::DismissError))
                 .into()
         })
+    }
+
+    fn view_security(&self) -> Element<'_, Message> {
+        let mut col = Column::new().spacing(10);
+        col = col.push(text::title3("Security"));
+
+        let mut row = Row::new().spacing(10).align_y(Alignment::Center);
+        row = row.push(text::body("End-to-End Encryption").width(200));
+
+        if self.is_encrypted {
+            row = row.push(button::suggested("Enabled"));
+            col = col.push(row);
+        } else {
+            row = row.push(button::destructive("Enable Encryption").on_press(Message::EnableEncryption));
+            col = col.push(row);
+            col = col.push(
+                text::body("⚠️ This is a one-way action and cannot be undone.")
+                    .size(12),
+            );
+        }
+
+        col.into()
     }
 
     fn view_profile(&self) -> Element<'_, Message> {
@@ -1361,6 +1426,7 @@ impl State {
         }
 
         col = col.push(self.view_profile());
+        col = col.push(self.view_security());
         col = col.push(self.view_notifications());
         col = col.push(self.view_permissions());
         col = col.push(self.view_pinned_events());
