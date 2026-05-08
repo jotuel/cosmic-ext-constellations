@@ -298,6 +298,36 @@ impl Constellations {
                 self.user_settings.ignored_users = users;
                 Task::none()
             }
+            matrix::MatrixEvent::CallParticipantsChanged { room_id, participants } => {
+                self.call_participants.insert(room_id.into(), participants);
+                Task::none()
+            }
+        }
+    }
+
+    pub fn handle_join_call(&mut self) -> Task<Action<Message>> {
+        if let (Some(matrix), Some(room_id)) = (&self.matrix, &self.selected_room) {
+            let matrix = matrix.clone();
+            let room_id = room_id.to_string();
+            Task::perform(
+                async move { matrix.join_call(&room_id).await.map_err(|e| e.to_string()) },
+                |res| Action::from(Message::CallJoined(res)),
+            )
+        } else {
+            Task::none()
+        }
+    }
+
+    pub fn handle_leave_call(&mut self) -> Task<Action<Message>> {
+        if let (Some(matrix), Some(room_id)) = (&self.matrix, &self.selected_room) {
+            let matrix = matrix.clone();
+            let room_id = room_id.to_string();
+            Task::perform(
+                async move { matrix.leave_call(&room_id).await.map_err(|e| e.to_string()) },
+                |res| Action::from(Message::CallLeft(res)),
+            )
+        } else {
+            Task::none()
         }
     }
 

@@ -218,6 +218,10 @@ pub enum MatrixEvent {
         reaction: String,
     },
     IgnoredUsersChanged(Vec<matrix_sdk::ruma::OwnedUserId>),
+    CallParticipantsChanged {
+        room_id: String,
+        participants: Vec<matrix_sdk::ruma::OwnedUserId>,
+    },
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -249,6 +253,7 @@ struct MatrixEngineInner {
     space_hierarchy: SpaceHierarchy,
     oidc_client: Option<Client>,
     session_change_handle: Option<tokio::task::JoinHandle<()>>,
+    call_participants: HashMap<OwnedRoomId, HashSet<matrix_sdk::ruma::OwnedUserId>>,
 }
 
 impl std::fmt::Debug for MatrixEngineInner {
@@ -308,6 +313,7 @@ impl MatrixEngine {
             space_hierarchy: SpaceHierarchy::new(),
             oidc_client: None,
             session_change_handle: None,
+            call_participants: HashMap::new(),
         };
 
         let engine = Self {
@@ -561,6 +567,39 @@ impl MatrixEngine {
                                 "Space hierarchy updated: {} removed as parent of {} (redacted)",
                                 parent_id, child_id
                             );
+                        }
+                    }
+                }
+            },
+        );
+
+        let inner_clone = self.inner.clone();
+        client.add_event_handler(
+            move |event: SyncStateEvent<
+                matrix_sdk::ruma::events::call::member::CallMemberEventContent,
+            >,
+                  room: Room| {
+                let inner = inner_clone.clone();
+                async move {
+                    let room_id = room.room_id().to_owned();
+                    let user_id = match UserId::parse(event.state_key()) {
+                        Ok(id) => id,
+                        Err(_) => return,
+                    };
+
+                    let mut inner_write = inner.write().await;
+                    let participants = inner_write.call_participants.entry(room_id).or_default();
+
+                    match event {
+                        SyncStateEvent::Original(ev) => {
+                            if ev.content.memberships().is_empty() {
+                                participants.remove(&user_id);
+                            } else {
+                                participants.insert(user_id);
+                            }
+                        }
+                        SyncStateEvent::Redacted(_) => {
+                            participants.remove(&user_id);
                         }
                     }
                 }
@@ -2071,6 +2110,65 @@ impl MatrixEngine {
             Ok(content.ignored_users.contains_key(user_id))
         } else {
             Ok(false)
+        }
+    }
+
+    pub async fn join_call(&self, room_id: &str) -> Result<()> {
+        let room_id_parsed = RoomId::parse(room_id)?;
+        let client = self.client().await;
+        let room = client.get_room(&room_id_parsed).context("Room not found")?;
+        let user_id = client.user_id().context("No user ID")?.to_owned();
+        let device_id = client.device_id().context("No device ID")?.to_owned();
+
+        use matrix_sdk::ruma::events::call::member::{
+            ActiveFocus, ActiveLivekitFocus, Application, CallApplicationContent,
+            CallMemberEventContent, CallMemberStateKey, CallScope,
+        };
+
+        let application =
+            Application::Call(CallApplicationContent::new("".to_string(), CallScope::Room));
+        let focus_active = ActiveFocus::Livekit(ActiveLivekitFocus::new());
+        let foci_preferred = Vec::new();
+
+        let content = CallMemberEventContent::new(
+            application,
+            device_id,
+            focus_active,
+            foci_preferred,
+            None,
+            None,
+        );
+
+        let state_key = CallMemberStateKey::new(user_id, None, false);
+        room.send_state_event_for_key(&state_key, content).await?;
+
+        Ok(())
+    }
+
+    pub async fn leave_call(&self, room_id: &str) -> Result<()> {
+        let room_id_parsed = RoomId::parse(room_id)?;
+        let client = self.client().await;
+        let room = client.get_room(&room_id_parsed).context("Room not found")?;
+        let user_id = client.user_id().context("No user ID")?.to_owned();
+
+        use matrix_sdk::ruma::events::call::member::{CallMemberEventContent, CallMemberStateKey};
+        let content = CallMemberEventContent::new_empty(None);
+        let state_key = CallMemberStateKey::new(user_id, None, false);
+        room.send_state_event_for_key(&state_key, content).await?;
+
+        Ok(())
+    }
+
+    pub async fn get_call_participants(&self, room_id: &str) -> Vec<matrix_sdk::ruma::OwnedUserId> {
+        if let Ok(room_id_parsed) = RoomId::parse(room_id) {
+            let inner = self.inner.read().await;
+            inner
+                .call_participants
+                .get(&room_id_parsed)
+                .map(|p| p.iter().cloned().collect())
+                .unwrap_or_default()
+        } else {
+            Vec::new()
         }
     }
 
