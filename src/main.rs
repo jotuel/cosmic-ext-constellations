@@ -60,6 +60,28 @@ pub fn parse_markdown(text: &str) -> Vec<PreviewEvent> {
     events
 }
 
+// ⚡ Bolt Optimization: Fast path for ASCII string filtering
+// Avoids costly heap allocations from `.to_lowercase()`
+pub fn contains_ignore_ascii_case(haystack: &str, query_lower: &str, is_query_ascii: bool) -> bool {
+    if query_lower.is_empty() {
+        return true;
+    }
+    let query_bytes = query_lower.as_bytes();
+    let query_len = query_bytes.len();
+
+    if is_query_ascii && haystack.is_ascii() {
+        if haystack.len() < query_len {
+            return false;
+        }
+        haystack
+            .as_bytes()
+            .windows(query_len)
+            .any(|w| w.eq_ignore_ascii_case(query_bytes))
+    } else {
+        haystack.to_lowercase().contains(query_lower)
+    }
+}
+
 struct Constellations {
     core: Core,
     matrix: Option<matrix::MatrixEngine>,
@@ -67,6 +89,7 @@ struct Constellations {
     room_list: Vec<matrix::RoomData>,
     filtered_room_list: Vec<usize>,
     other_rooms: Vec<matrix::RoomData>,
+    filtered_other_rooms: Vec<usize>,
     selected_room: Option<std::sync::Arc<str>>,
     timeline_items: Vector<ConstellationsItem>,
     composer_text: String,
@@ -370,6 +393,7 @@ impl<C: VectorOperations<T>, T: Clone> ApplyVectorDiffExt<T> for C {
 #[derive(Clone, Debug)]
 pub struct ConstellationsItem {
     pub item: Arc<matrix::TimelineItem>,
+    pub sender_id: matrix_sdk::ruma::OwnedUserId,
     pub sender_name: String,
     pub avatar_url: Option<String>,
     pub timestamp: String,
@@ -379,6 +403,7 @@ pub struct ConstellationsItem {
 
 impl ConstellationsItem {
     fn new(item: Arc<matrix::TimelineItem>, user_id: Option<&str>) -> Self {
+        let mut sender_id = matrix_sdk::ruma::user_id!("@unknown:example.com").to_owned();
         let mut sender_name = String::new();
         let mut avatar_url = None;
         let mut timestamp = String::new();
@@ -386,6 +411,7 @@ impl ConstellationsItem {
         let mut markdown = Vec::new();
 
         if let Some(event) = item.as_event() {
+            sender_id = event.sender().to_owned();
             if let Some(msg) = event.content().as_message() {
                 markdown = crate::parse_markdown(msg.body());
             }
@@ -411,11 +437,12 @@ impl ConstellationsItem {
                 .format("%Y-%m-%d %H:%M:%S")
                 .to_string();
 
-            is_me = user_id == Some(&sender_name);
+            is_me = user_id == Some(event.sender().as_str());
         }
 
         Self {
             item,
+            sender_id,
             sender_name,
             avatar_url,
             timestamp,
@@ -429,12 +456,8 @@ impl Constellations {
     pub fn update_filtered_rooms(&mut self) {
         let is_search_empty = self.search_query.is_empty();
 
-        // Bolt Optimization: Fast path for ASCII string filtering
-        // Avoids costly heap allocations from `.to_lowercase()`
         let is_query_ascii = self.search_query.is_ascii();
         let search_query_lower = self.search_query.to_lowercase();
-        let search_query_bytes = search_query_lower.as_bytes();
-        let search_query_len = search_query_bytes.len();
 
         let filter_by_search = |room: &matrix::RoomData| {
             if is_search_empty {
@@ -442,26 +465,9 @@ impl Constellations {
             } else {
                 room.name
                     .as_ref()
-                    .map(|n| {
-                        if is_query_ascii && n.is_ascii() {
-                            n.as_bytes()
-                                .windows(search_query_len)
-                                .any(|w| w.eq_ignore_ascii_case(search_query_bytes))
-                        } else {
-                            n.to_lowercase().contains(&search_query_lower)
-                        }
-                    })
+                    .map(|n| contains_ignore_ascii_case(n, &search_query_lower, is_query_ascii))
                     .unwrap_or(false)
-                    || {
-                        if is_query_ascii && room.id.is_ascii() {
-                            room.id
-                                .as_bytes()
-                                .windows(search_query_len)
-                                .any(|w| w.eq_ignore_ascii_case(search_query_bytes))
-                        } else {
-                            room.id.to_lowercase().contains(&search_query_lower)
-                        }
-                    }
+                    || contains_ignore_ascii_case(&room.id, &search_query_lower, is_query_ascii)
             }
         };
 
@@ -493,6 +499,14 @@ impl Constellations {
             // Re-filter other_rooms to remove any that we've now joined
             self.other_rooms
                 .retain(|r| !self.joined_room_ids.contains(r.id.as_ref()));
+
+            self.filtered_other_rooms = self
+                .other_rooms
+                .iter()
+                .enumerate()
+                .filter(|(_, r)| filter_by_search(r))
+                .map(|(i, _)| i)
+                .collect();
         } else {
             let mut rooms: Vec<_> = self
                 .room_list
@@ -504,6 +518,7 @@ impl Constellations {
             rooms.sort_by(|&a, &b| self.room_list[a].id.cmp(&self.room_list[b].id));
             self.filtered_room_list = rooms;
             self.other_rooms.clear();
+            self.filtered_other_rooms.clear();
         }
     }
 
@@ -589,6 +604,23 @@ impl Constellations {
                         matrix::MatrixEvent::SyncIndicatorChanged(show),
                     ));
                 }
+            });
+
+            let tx_ignored = tx.clone();
+            let engine_ignored = engine.clone();
+            tokio::spawn(async move {
+                let client = engine_ignored.client().await;
+                client.add_event_handler(
+                    move |ev: matrix_sdk::ruma::events::ignored_user_list::IgnoredUserListEvent| {
+                        let tx = tx_ignored.clone();
+                        async move {
+                            let users = ev.content.ignored_users.keys().cloned().collect();
+                            let _ = tx.send(Message::Matrix(
+                                matrix::MatrixEvent::IgnoredUsersChanged(users),
+                            ));
+                        }
+                    },
+                );
             });
 
             let tx_rooms = tx.clone();
@@ -885,6 +917,8 @@ impl Application for Constellations {
             tasks.push(Task::done(Action::from(Message::OidcCallback(url))));
         }
 
+        let config = settings::config::Config::load();
+
         let mut app = Constellations {
             core: core.clone(),
             matrix: None,
@@ -892,6 +926,7 @@ impl Application for Constellations {
             room_list: Vec::new(),
             filtered_room_list: Vec::new(),
             other_rooms: Vec::new(),
+            filtered_other_rooms: Vec::new(),
             selected_room: None,
             timeline_items: Vector::new(),
             composer_text: String::new(),
@@ -923,10 +958,10 @@ impl Application for Constellations {
             replying_to: None,
             selected_space: None,
             current_settings_panel: None,
-            user_settings: Default::default(),
+            user_settings: settings::user::State::from_config(&config),
             room_settings: Default::default(),
             space_settings: Default::default(),
-            app_settings: Default::default(),
+            app_settings: settings::app::State::from_config(&config),
         };
 
         let title_task = app.update_title();
@@ -1276,6 +1311,19 @@ impl Application for Constellations {
             Message::OpenSettings(panel) => {
                 self.current_settings_panel = Some(panel.clone());
                 self.core.set_show_context(true);
+
+                if self.is_search_active {
+                    match panel {
+                        SettingsPanel::Room => {
+                            self.room_settings.member_filter = self.search_query.clone();
+                        }
+                        SettingsPanel::Space => {
+                            self.space_settings.child_filter = self.search_query.clone();
+                        }
+                        _ => {}
+                    }
+                }
+
                 if panel == SettingsPanel::User {
                     return self
                         .user_settings
@@ -1312,17 +1360,52 @@ impl Application for Constellations {
                 }
                 _ => self.app_settings.update(msg),
             },
-            Message::AppSettingChanged => Task::none(),
+            Message::AppSettingChanged => {
+                let config = settings::config::Config {
+                    show_sync_indicator: self.app_settings.show_sync_indicator,
+                    send_typing_notifications: self.app_settings.send_typing_notifications,
+                    render_markdown: self.app_settings.render_markdown,
+                    compact_mode: self.app_settings.compact_mode,
+                    media_previews_display_policy: self.user_settings.media_previews_display_policy,
+                    invite_avatars_display_policy: self.user_settings.invite_avatars_display_policy,
+                };
+                Task::perform(async move { config.save() }, |_| {
+                    Action::from(Message::NoOp)
+                })
+            }
             Message::ToggleSearch => {
                 self.is_search_active = !self.is_search_active;
                 if !self.is_search_active {
                     self.search_query.clear();
-                    self.update_filtered_rooms();
+                    self.room_settings.member_filter.clear();
+                    self.space_settings.child_filter.clear();
+                } else if let Some(panel) = &self.current_settings_panel {
+                    match panel {
+                        SettingsPanel::Room => {
+                            self.search_query = self.room_settings.member_filter.clone();
+                        }
+                        SettingsPanel::Space => {
+                            self.search_query = self.space_settings.child_filter.clone();
+                        }
+                        _ => {}
+                    }
                 }
+                self.update_filtered_rooms();
                 Task::none()
             }
             Message::SearchQueryChanged(query) => {
-                self.search_query = query;
+                self.search_query = query.clone();
+                if let Some(panel) = &self.current_settings_panel {
+                    match panel {
+                        SettingsPanel::Room => {
+                            self.room_settings.member_filter = query;
+                        }
+                        SettingsPanel::Space => {
+                            self.space_settings.child_filter = query;
+                        }
+                        _ => {}
+                    }
+                }
                 self.update_filtered_rooms();
                 Task::none()
             }
@@ -1525,6 +1608,7 @@ mod tests {
             room_list: Vec::new(),
             filtered_room_list: Vec::new(),
             other_rooms: Vec::new(),
+            filtered_other_rooms: Vec::new(),
             selected_room: None,
             timeline_items: eyeball_im::Vector::new(),
             composer_text: String::new(),

@@ -64,6 +64,7 @@ pub struct State {
     pub restricted_space_id: String,
     pub pinned_events: Vec<matrix_sdk::ruma::OwnedEventId>,
     pub pinned_event_id_input: String,
+    pub ignored_users: Vec<matrix_sdk::ruma::OwnedUserId>,
     pub is_encrypted: bool,
     pub canonical_alias: String,
     pub original_canonical_alias: String,
@@ -118,6 +119,8 @@ pub enum Message {
     PinnedEventIdChanged(String),
     PinEvent,
     UnpinEvent(matrix_sdk::ruma::OwnedEventId),
+    IgnoreUser(matrix_sdk::ruma::OwnedUserId),
+    UnignoreUser(matrix_sdk::ruma::OwnedUserId),
     EnableEncryption,
     EncryptionEnabled(Result<(), String>),
     CanonicalAliasChanged(String),
@@ -152,6 +155,7 @@ pub struct RoomInfo {
     pub join_rule: Option<matrix_sdk::ruma::events::room::join_rules::JoinRule>,
     pub history_visibility: Option<HistoryVisibility>,
     pub pinned_events: Vec<matrix_sdk::ruma::OwnedEventId>,
+    pub ignored_users: Vec<matrix_sdk::ruma::OwnedUserId>,
     pub is_encrypted: bool,
     pub canonical_alias: Option<String>,
     pub alt_aliases: Vec<String>,
@@ -236,6 +240,7 @@ impl State {
                                 })
                                 .unwrap_or_default();
 
+                            let ignored_users = engine.ignored_users().await.unwrap_or_default();
                             let is_encrypted = room.encryption_settings().is_some();
                             let (canonical_alias, alt_aliases) = room
                                 .get_state_event_static::<matrix_sdk::ruma::events::room::canonical_alias::RoomCanonicalAliasEventContent>()
@@ -278,6 +283,7 @@ impl State {
                                 join_rule,
                                 history_visibility,
                                 pinned_events,
+                                ignored_users,
                                 is_encrypted,
                                 canonical_alias,
                                 alt_aliases,
@@ -338,6 +344,7 @@ impl State {
                         };
                         self.pinned_events = info.pinned_events;
                         self.pinned_event_id_input = String::new();
+                        self.ignored_users = info.ignored_users;
                         self.is_encrypted = info.is_encrypted;
                         self.canonical_alias = info.canonical_alias.clone().unwrap_or_default();
                         self.original_canonical_alias = info.canonical_alias.unwrap_or_default();
@@ -1061,6 +1068,33 @@ impl State {
                 self.error = None;
                 Task::none()
             }
+            Message::JoinRuleChanged(join_rule) => {
+                if let Some(matrix) = matrix
+                    && let Some(room_id) = &self.room_id
+                {
+                    let engine = matrix.clone();
+                    let room_id_clone = room_id.to_string();
+                    let room_id_clone_reload = room_id.clone();
+                    return Task::perform(
+                        async move {
+                            engine
+                                .set_room_join_rule(&room_id_clone, join_rule)
+                                .await
+                                .map_err(|e| e.to_string())
+                        },
+                        move |res| {
+                            Action::from(crate::Message::RoomSettings(match res {
+                                Ok(_) => {
+                                    // Reload room data to reflect changes
+                                    Message::LoadRoom(room_id_clone_reload.clone())
+                                }
+                                Err(e) => Message::RoomSaved(Err(e)),
+                            }))
+                        },
+                    );
+                }
+                Task::none()
+            }
             Message::RestrictedSpaceIdChanged(id) => {
                 self.restricted_space_id = id;
                 Task::none()
@@ -1105,6 +1139,46 @@ impl State {
                             self.error = Some(format!("Invalid Event ID: {}", e));
                         }
                     }
+                }
+                Task::none()
+            }
+            Message::IgnoreUser(user_id) => {
+                if let Some(matrix) = matrix
+                    && let Some(room_id) = &self.room_id
+                {
+                    let engine = matrix.clone();
+                    let room_id_clone_reload = room_id.clone();
+                    return Task::perform(
+                        async move {
+                            engine.ignore_user(&user_id).await.map_err(|e| e.to_string())
+                        },
+                        move |res| {
+                            Action::from(crate::Message::RoomSettings(match res {
+                                Ok(_) => Message::LoadRoom(room_id_clone_reload.clone()),
+                                Err(e) => Message::RoomSaved(Err(e)),
+                            }))
+                        },
+                    );
+                }
+                Task::none()
+            }
+            Message::UnignoreUser(user_id) => {
+                if let Some(matrix) = matrix
+                    && let Some(room_id) = &self.room_id
+                {
+                    let engine = matrix.clone();
+                    let room_id_clone_reload = room_id.clone();
+                    return Task::perform(
+                        async move {
+                            engine.unignore_user(&user_id).await.map_err(|e| e.to_string())
+                        },
+                        move |res| {
+                            Action::from(crate::Message::RoomSettings(match res {
+                                Ok(_) => Message::LoadRoom(room_id_clone_reload.clone()),
+                                Err(e) => Message::RoomSaved(Err(e)),
+                            }))
+                        },
+                    );
                 }
                 Task::none()
             }
@@ -1644,27 +1718,11 @@ impl State {
 
             let filter_is_ascii = self.member_filter.is_ascii();
 
-            fn contains_ignore_ascii_case(haystack: &str, needle_lower: &str) -> bool {
-                if needle_lower.is_empty() {
-                    return true;
-                }
-                if haystack.len() < needle_lower.len() {
-                    return false;
-                }
-                haystack
-                    .as_bytes()
-                    .windows(needle_lower.len())
-                    .any(|window| window.eq_ignore_ascii_case(needle_lower.as_bytes()))
-            }
-
             for (user_id, level) in users {
                 let user_id_str = user_id.as_str();
                 if !filter.is_empty() {
-                    let matches = if filter_is_ascii && user_id_str.is_ascii() {
-                        contains_ignore_ascii_case(user_id_str, &filter)
-                    } else {
-                        user_id_str.to_lowercase().contains(&filter)
-                    };
+                    let matches =
+                        crate::contains_ignore_ascii_case(user_id_str, &filter, filter_is_ascii);
 
                     if !matches {
                         continue;
@@ -1711,6 +1769,20 @@ impl State {
                                 .on_press(Message::BanUser(user_id_str.to_string())),
                         );
                     }
+
+                    let is_ignored = self.ignored_users.contains(user_id);
+                    if is_ignored {
+                        action_row = action_row.push(
+                            button::text("Unignore")
+                                .on_press(Message::UnignoreUser(user_id.clone())),
+                        );
+                    } else {
+                        action_row = action_row.push(
+                            button::destructive("Ignore")
+                                .on_press(Message::IgnoreUser(user_id.clone())),
+                        );
+                    }
+
                     pl_col = pl_col.push(action_row);
                 }
             }

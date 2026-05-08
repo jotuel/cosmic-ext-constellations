@@ -71,6 +71,12 @@ impl Constellations {
         tasks.push(title_task);
 
         if let Some(matrix) = &self.matrix {
+            let matrix_ignored = matrix.clone();
+            tasks.push(Task::perform(
+                async move { matrix_ignored.ignored_users().await.unwrap_or_default() },
+                |users| Message::UserSettings(crate::settings::user::Message::IgnoredUsersLoaded(Ok(users))).into(),
+            ));
+
             let mut media_fetches = Vec::new();
             for room in self.room_list.iter() {
                 if let Some(avatar_url) = &room.avatar_url {
@@ -286,6 +292,10 @@ impl Constellations {
             }
             matrix::MatrixEvent::ReactionAdded { .. } => {
                 // For now, we don't do anything specific as reactions are handled via TimelineDiff
+                Task::none()
+            }
+            matrix::MatrixEvent::IgnoredUsersChanged(users) => {
+                self.user_settings.ignored_users = users;
                 Task::none()
             }
         }
@@ -896,6 +906,7 @@ mod tests {
             room_list: Vec::new(),
             other_rooms: Vec::new(),
             filtered_room_list: Vec::new(),
+            filtered_other_rooms: Vec::new(),
             selected_room: None,
             timeline_items: eyeball_im::Vector::new(),
             composer_text: String::new(),

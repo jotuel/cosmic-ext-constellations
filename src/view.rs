@@ -19,6 +19,12 @@ impl Constellations {
     pub fn view_thread(&self) -> Element<'_, Message> {
         let mut timeline = Column::new().spacing(10).width(cosmic::iced::Length::Fill);
 
+        let filter = self.search_query.to_lowercase();
+        let filter_is_ascii = self.search_query.is_ascii();
+        let is_filtering = self.is_search_active
+            && !filter.is_empty()
+            && self.current_settings_panel.is_none();
+
         if self.selected_room.is_some() {
             timeline = timeline.push(
                 Row::new()
@@ -30,7 +36,17 @@ impl Constellations {
         }
 
         for item in &self.threaded_timeline_items {
-            if item.item.as_event().is_some() {
+            if let Some(event) = item.item.as_event() {
+                if is_filtering {
+                    let body = event
+                        .content()
+                        .as_message()
+                        .map(|m| m.body())
+                        .unwrap_or_default();
+                    if !crate::contains_ignore_ascii_case(body, &filter, filter_is_ascii) {
+                        continue;
+                    }
+                }
                 timeline = timeline.push(self.view_item(item));
             }
         }
@@ -42,6 +58,12 @@ impl Constellations {
 
     pub fn view_timeline(&self) -> Element<'_, Message> {
         let mut timeline = Column::new().spacing(10).width(cosmic::iced::Length::Fill);
+
+        let filter = self.search_query.to_lowercase();
+        let filter_is_ascii = self.search_query.is_ascii();
+        let is_filtering = self.is_search_active
+            && !filter.is_empty()
+            && self.current_settings_panel.is_none();
 
         if self.selected_room.is_some() {
             let load_btn = if self.is_loading_more {
@@ -59,7 +81,17 @@ impl Constellations {
         }
 
         for item in &self.timeline_items {
-            if item.item.as_event().is_some() {
+            if let Some(event) = item.item.as_event() {
+                if is_filtering {
+                    let body = event
+                        .content()
+                        .as_message()
+                        .map(|m| m.body())
+                        .unwrap_or_default();
+                    if !crate::contains_ignore_ascii_case(body, &filter, filter_is_ascii) {
+                        continue;
+                    }
+                }
                 timeline = timeline.push(self.view_item(item));
             } else if let Some(matrix::VirtualTimelineItem::DateDivider(_date)) =
                 item.item.as_virtual()
@@ -153,6 +185,9 @@ impl Constellations {
         avatar_url: Option<&'a str>,
         sender_name: &'a str,
         timestamp: &'a str,
+        sender_id: Option<matrix_sdk::ruma::OwnedUserId>,
+        is_ignored: bool,
+        is_me: bool,
     ) -> Row<'a, Message, cosmic::Theme> {
         let mut sender_info = Row::new().spacing(5).align_y(Alignment::Center);
 
@@ -174,6 +209,29 @@ impl Constellations {
         }
 
         sender_info = sender_info.push(text::body(sender_name).size(10));
+
+        if !is_me {
+            if let Some(id) = sender_id {
+                if is_ignored {
+                    sender_info = sender_info.push(
+                        button::icon(Named::new("dialog-error-symbolic"))
+                            .on_press(Message::UserSettings(
+                                crate::settings::user::Message::UnignoreUserById(id),
+                            ))
+                            .tooltip("Unignore User"),
+                    );
+                } else {
+                    sender_info = sender_info.push(
+                        button::icon(Named::new("dialog-error-symbolic"))
+                            .on_press(Message::UserSettings(
+                                crate::settings::user::Message::IgnoreUserById(id),
+                            ))
+                            .tooltip("Ignore User"),
+                    );
+                }
+            }
+        }
+
         sender_info = sender_info.push(text::body(timestamp).size(10));
 
         sender_info
@@ -320,6 +378,12 @@ impl Constellations {
     pub fn view_threaded_timeline(&self) -> Element<'_, Message> {
         let mut timeline = Column::new().spacing(10).width(cosmic::iced::Length::Fill);
 
+        let filter = self.search_query.to_lowercase();
+        let filter_is_ascii = self.search_query.is_ascii();
+        let is_filtering = self.is_search_active
+            && !filter.is_empty()
+            && self.current_settings_panel.is_none();
+
         let header = Row::new()
             .spacing(10)
             .align_y(Alignment::Center)
@@ -333,7 +397,17 @@ impl Constellations {
         // For simplicity, we assume it's part of the threaded timeline from the SDK.
 
         for item in &self.threaded_timeline_items {
-            if item.item.as_event().is_some() {
+            if let Some(event) = item.item.as_event() {
+                if is_filtering {
+                    let body = event
+                        .content()
+                        .as_message()
+                        .map(|m| m.body())
+                        .unwrap_or_default();
+                    if !crate::contains_ignore_ascii_case(body, &filter, filter_is_ascii) {
+                        continue;
+                    }
+                }
                 timeline = timeline.push(self.view_item(item));
             }
         }
@@ -542,10 +616,14 @@ impl Constellations {
                 let is_me = item.is_me;
 
                 let reaction_row = self.view_reactions(event);
+                let is_ignored = self.user_settings.ignored_users.contains(&item.sender_id);
                 let sender_info = self.view_sender_info(
                     item.avatar_url.as_deref(),
                     item.sender_name.as_str(),
                     item.timestamp.as_str(),
+                    Some(item.sender_id.clone()),
+                    is_ignored,
+                    is_me,
                 );
 
                 let mut bubble_col = Column::new()
@@ -899,11 +977,12 @@ impl Constellations {
             room_list = room_list.push(btn);
         }
 
-        if !self.other_rooms.is_empty() {
+        if !self.filtered_other_rooms.is_empty() {
             room_list = room_list
                 .push(container(text::title3(crate::fl!("other-rooms")).size(14)).padding([10, 5, 5, 5]));
 
-            for room in &self.other_rooms {
+            for &idx in &self.filtered_other_rooms {
+                let room = &self.other_rooms[idx];
                 let name = room.name.as_deref().unwrap_or_else(|| {
                     let id = &room.id;
                     id.strip_prefix('!')

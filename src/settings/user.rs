@@ -234,6 +234,8 @@ pub enum Message {
     KeywordAdded(Result<(), String>),
     RemoveKeyword(String),
     KeywordRemoved(Result<(), String>),
+    IgnoreUserById(matrix_sdk::ruma::OwnedUserId),
+    UnignoreUserById(matrix_sdk::ruma::OwnedUserId),
 }
 
 impl State {
@@ -354,6 +356,20 @@ impl State {
                     ]);
                 }
                 Task::none()
+            }
+            Message::IgnoreUserById(user_id) => {
+                if let Some(matrix) = matrix {
+                    let matrix = matrix.clone();
+                    self.is_loading_ignored_users = true;
+                    return Task::perform(
+                        async move { matrix.ignore_user(&user_id).await.map_err(|e| e.to_string()) },
+                        |res| Action::from(crate::Message::UserSettings(Message::UserIgnored(res))),
+                    );
+                }
+                Task::none()
+            }
+            Message::UnignoreUserById(user_id) => {
+                self.update(Message::UnignoreUser(user_id), matrix)
             }
             Message::LoadIgnoredUsers => {
                 if let Some(matrix) = matrix {

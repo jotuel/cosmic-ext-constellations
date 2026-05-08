@@ -576,6 +576,10 @@ impl State {
                 self.new_child_order = order;
                 Task::none()
             }
+            Message::ChildFilterChanged(filter) => {
+                self.child_filter = filter;
+                Task::none()
+            }
             Message::DismissError => {
                 self.error = None;
                 Task::none()
@@ -744,50 +748,30 @@ impl State {
 
         // Manage Children
         let mut children_col = Column::new().spacing(10);
+
+        children_col = children_col.push(
+            text_input::text_input("Filter rooms/subspaces...", &self.child_filter)
+                .on_input(Message::ChildFilterChanged),
+        );
+
         if self.is_loading_children {
             children_col = children_col.push(text::body("Loading children..."));
         } else {
-            children_col = children_col.push(
-                text_input::text_input("Filter rooms...", &self.child_filter)
-                    .on_input(Message::ChildFilterChanged),
-            );
-
             let filter = self.child_filter.to_lowercase();
-            // Bolt Optimization: Pre-check if filter is ASCII to use faster byte-level comparison
             let filter_is_ascii = self.child_filter.is_ascii();
-
-            fn contains_ignore_ascii_case(haystack: &str, needle_lower: &str) -> bool {
-                if needle_lower.is_empty() {
-                    return true;
-                }
-                if haystack.len() < needle_lower.len() {
-                    return false;
-                }
-                haystack
-                    .as_bytes()
-                    .windows(needle_lower.len())
-                    .any(|window| window.eq_ignore_ascii_case(needle_lower.as_bytes()))
-            }
 
             for child in &self.children {
                 let name = child.name.as_deref().unwrap_or(&child.id);
 
                 if !filter.is_empty() {
-                    // Bolt Optimization: Use fast-path ASCII comparison to avoid heap allocations
-                    // from .to_lowercase() when both strings are ASCII.
-                    let matches_name = if filter_is_ascii && name.is_ascii() {
-                        contains_ignore_ascii_case(name, &filter)
-                    } else {
-                        name.to_lowercase().contains(&filter)
-                    };
+                    let matches = crate::contains_ignore_ascii_case(name, &filter, filter_is_ascii)
+                        || crate::contains_ignore_ascii_case(
+                            child.id.as_ref(),
+                            &filter,
+                            filter_is_ascii,
+                        );
 
-                    let matches_id = if filter_is_ascii && child.id.is_ascii() {
-                        contains_ignore_ascii_case(&child.id, &filter)
-                    } else {
-                        child.id.to_lowercase().contains(&filter)
-                    };
-
-                    if !matches_name && !matches_id {
+                    if !matches {
                         continue;
                     }
                 }
