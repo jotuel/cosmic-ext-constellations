@@ -33,10 +33,22 @@ pub struct State {
     pub original_kick_level: i64,
     pub redact_level: i64,
     pub original_redact_level: i64,
+    pub events_default_level: i64,
+    pub original_events_default_level: i64,
+    pub room_name_level: i64,
+    pub original_room_name_level: i64,
+    pub room_topic_level: i64,
+    pub original_room_topic_level: i64,
+    pub room_avatar_level: i64,
+    pub original_room_avatar_level: i64,
     pub invite_level_str: String,
     pub kick_level_str: String,
     pub ban_level_str: String,
     pub redact_level_str: String,
+    pub events_default_level_str: String,
+    pub room_name_level_str: String,
+    pub room_topic_level_str: String,
+    pub room_avatar_level_str: String,
     pub invite_user_id: String,
     pub kick_user_id: String,
     pub ban_user_id: String,
@@ -76,6 +88,10 @@ pub enum Message {
     InviteLevelChanged(String),
     KickLevelChanged(String),
     RedactLevelChanged(String),
+    EventsDefaultLevelChanged(String),
+    RoomNameLevelChanged(String),
+    RoomTopicLevelChanged(String),
+    RoomAvatarLevelChanged(String),
     InviteUser,
     UserInvited(Result<(), String>),
     KickUser(String),
@@ -110,6 +126,10 @@ pub struct RoomInfo {
     pub invite_level: i64,
     pub kick_level: i64,
     pub redact_level: i64,
+    pub events_default_level: i64,
+    pub room_name_level: i64,
+    pub room_topic_level: i64,
+    pub room_avatar_level: i64,
     pub current_user_id: Option<String>,
     pub notification_mode: Option<matrix_sdk::notification_settings::RoomNotificationMode>,
     pub join_rule: Option<matrix_sdk::ruma::events::room::join_rules::JoinRule>,
@@ -188,6 +208,10 @@ impl State {
                                 invite_level: pl.invite.into(),
                                 kick_level: pl.kick.into(),
                                 redact_level: pl.redact.into(),
+                                events_default_level: pl.events_default.into(),
+                                room_name_level: pl.events.get(&matrix_sdk::ruma::events::TimelineEventType::RoomName).map(|l| (*l).into()).unwrap_or(pl.state_default.into()),
+                                room_topic_level: pl.events.get(&matrix_sdk::ruma::events::TimelineEventType::RoomTopic).map(|l| (*l).into()).unwrap_or(pl.state_default.into()),
+                                room_avatar_level: pl.events.get(&matrix_sdk::ruma::events::TimelineEventType::RoomAvatar).map(|l| (*l).into()).unwrap_or(pl.state_default.into()),
                                 current_user_id,
                                 notification_mode,
                                 join_rule,
@@ -222,6 +246,18 @@ impl State {
                         self.invite_level = info.invite_level;
                         self.original_invite_level = info.invite_level;
                         self.invite_level_str = info.invite_level.to_string();
+                        self.events_default_level = info.events_default_level;
+                        self.original_events_default_level = info.events_default_level;
+                        self.events_default_level_str = info.events_default_level.to_string();
+                        self.room_name_level = info.room_name_level;
+                        self.original_room_name_level = info.room_name_level;
+                        self.room_name_level_str = info.room_name_level.to_string();
+                        self.room_topic_level = info.room_topic_level;
+                        self.original_room_topic_level = info.room_topic_level;
+                        self.room_topic_level_str = info.room_topic_level.to_string();
+                        self.room_avatar_level = info.room_avatar_level;
+                        self.original_room_avatar_level = info.room_avatar_level;
+                        self.room_avatar_level_str = info.room_avatar_level.to_string();
                         self.current_user_id = info.current_user_id;
                         self.notification_mode = info.notification_mode;
                         self.join_rule = info.join_rule;
@@ -259,6 +295,34 @@ impl State {
                     Err(e) => {
                         self.error = Some(e);
                     }
+                }
+                Task::none()
+            }
+            Message::EventsDefaultLevelChanged(l) => {
+                self.events_default_level_str = l.clone();
+                if let Ok(l) = l.parse() {
+                    self.events_default_level = l;
+                }
+                Task::none()
+            }
+            Message::RoomNameLevelChanged(l) => {
+                self.room_name_level_str = l.clone();
+                if let Ok(l) = l.parse() {
+                    self.room_name_level = l;
+                }
+                Task::none()
+            }
+            Message::RoomTopicLevelChanged(l) => {
+                self.room_topic_level_str = l.clone();
+                if let Ok(l) = l.parse() {
+                    self.room_topic_level = l;
+                }
+                Task::none()
+            }
+            Message::RoomAvatarLevelChanged(l) => {
+                self.room_avatar_level_str = l.clone();
+                if let Ok(l) = l.parse() {
+                    self.room_avatar_level = l;
                 }
                 Task::none()
             }
@@ -561,10 +625,19 @@ impl State {
                         let original_invite = self.original_invite_level;
                         let original_kick = self.original_kick_level;
                         let original_redact = self.original_redact_level;
+                        let original_events_default = self.original_events_default_level;
+                        let original_room_name = self.original_room_name_level;
+                        let original_room_topic = self.original_room_topic_level;
+                        let original_room_avatar = self.original_room_avatar_level;
+
                         let new_ban = self.ban_level;
                         let new_invite = self.invite_level;
                         let new_kick = self.kick_level;
                         let new_redact = self.redact_level;
+                        let new_events_default = self.events_default_level;
+                        let new_room_name = self.room_name_level;
+                        let new_room_topic = self.room_topic_level;
+                        let new_room_avatar = self.room_avatar_level;
 
                         Task::perform(
                             async move {
@@ -584,6 +657,10 @@ impl State {
                                     || new_invite != original_invite
                                     || new_kick != original_kick
                                     || new_redact != original_redact
+                                    || new_events_default != original_events_default
+                                    || new_room_name != original_room_name
+                                    || new_room_topic != original_room_topic
+                                    || new_room_avatar != original_room_avatar
                                 {
                                     engine
                                         .update_room_power_level_settings(
@@ -605,6 +682,26 @@ impl State {
                                             },
                                             if new_redact != original_redact {
                                                 Some(new_redact)
+                                            } else {
+                                                None
+                                            },
+                                            if new_events_default != original_events_default {
+                                                Some(new_events_default)
+                                            } else {
+                                                None
+                                            },
+                                            if new_room_name != original_room_name {
+                                                Some(new_room_name)
+                                            } else {
+                                                None
+                                            },
+                                            if new_room_topic != original_room_topic {
+                                                Some(new_room_topic)
+                                            } else {
+                                                None
+                                            },
+                                            if new_room_avatar != original_room_avatar {
+                                                Some(new_room_avatar)
                                             } else {
                                                 None
                                             },
@@ -635,6 +732,10 @@ impl State {
                         self.original_invite_level = self.invite_level;
                         self.original_kick_level = self.kick_level;
                         self.original_redact_level = self.redact_level;
+                        self.original_events_default_level = self.events_default_level;
+                        self.original_room_name_level = self.room_name_level;
+                        self.original_room_topic_level = self.room_topic_level;
+                        self.original_room_avatar_level = self.room_avatar_level;
                         self.error = None;
                     }
                     Err(e) => {
@@ -1078,6 +1179,46 @@ impl State {
                         .on_input(Message::RedactLevelChanged),
                 ),
         );
+        perm_col = perm_col.push(
+            Row::new()
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .push(text::body("Send messages").width(100))
+                .push(
+                    text_input::text_input("0", &self.events_default_level_str)
+                        .on_input(Message::EventsDefaultLevelChanged),
+                ),
+        );
+        perm_col = perm_col.push(
+            Row::new()
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .push(text::body("Change name").width(100))
+                .push(
+                    text_input::text_input("50", &self.room_name_level_str)
+                        .on_input(Message::RoomNameLevelChanged),
+                ),
+        );
+        perm_col = perm_col.push(
+            Row::new()
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .push(text::body("Change topic").width(100))
+                .push(
+                    text_input::text_input("50", &self.room_topic_level_str)
+                        .on_input(Message::RoomTopicLevelChanged),
+                ),
+        );
+        perm_col = perm_col.push(
+            Row::new()
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .push(text::body("Change avatar").width(100))
+                .push(
+                    text_input::text_input("50", &self.room_avatar_level_str)
+                        .on_input(Message::RoomAvatarLevelChanged),
+                ),
+        );
         perm_col.into()
     }
 
@@ -1093,7 +1234,11 @@ impl State {
             || self.ban_level != self.original_ban_level
             || self.invite_level != self.original_invite_level
             || self.kick_level != self.original_kick_level
-            || self.redact_level != self.original_redact_level;
+            || self.redact_level != self.original_redact_level
+            || self.events_default_level != self.original_events_default_level
+            || self.room_name_level != self.original_room_name_level
+            || self.room_topic_level != self.original_room_topic_level
+            || self.room_avatar_level != self.original_room_avatar_level;
 
         if has_changes && !self.is_saving {
             save_btn = save_btn.on_press(Message::SaveRoom);
