@@ -1226,6 +1226,56 @@ impl MatrixEngine {
         Ok(())
     }
 
+    pub async fn set_room_history_visibility(
+        &self,
+        room_id: &str,
+        history_visibility: matrix_sdk::ruma::events::room::history_visibility::HistoryVisibility,
+        ) -> Result<()> {
+        use matrix_sdk::ruma::events::room::history_visibility::RoomHistoryVisibilityEventContent;
+        let content = RoomHistoryVisibilityEventContent::new(history_visibility);
+          
+        room.send_state_event(content).await?;
+        Ok(())
+    }
+  
+    pub async fn update_room_aliases(
+        &self,
+        room_id: &str,
+        canonical_alias: Option<String>,
+        alt_aliases: Vec<String>,
+    ) -> Result<()> {
+        let room_id_parsed = RoomId::parse(room_id)?;
+        let client = self.client().await;
+        let room = client.get_room(&room_id_parsed).context("Room not found")?;
+
+        use matrix_sdk::ruma::RoomAliasId;
+        use matrix_sdk::ruma::events::room::canonical_alias::RoomCanonicalAliasEventContent;
+
+        let mut content = room
+            .get_state_event_static::<RoomCanonicalAliasEventContent>()
+            .await?
+            .and_then(|e| e.deserialize().ok())
+            .and_then(|e| {
+                e.as_sync()
+                    .and_then(|s| s.as_original().map(|o| o.content.clone()))
+                    .or_else(|| e.as_stripped().map(|s| s.content.clone()))
+            })
+            .unwrap_or_else(RoomCanonicalAliasEventContent::new);
+
+        content.alias = canonical_alias
+            .filter(|s| !s.is_empty())
+            .map(|s| RoomAliasId::parse(s).map(|a| a.to_owned()))
+            .transpose()?;
+
+        content.alt_aliases = alt_aliases
+            .into_iter()
+            .map(|s| RoomAliasId::parse(s).map(|a| a.to_owned()))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        room.send_state_event(content).await?;
+        Ok(())
+    }
+
     pub async fn set_pinned_events(
         &self,
         room_id: &str,
@@ -1365,6 +1415,10 @@ impl MatrixEngine {
         invite: Option<i64>,
         kick: Option<i64>,
         redact: Option<i64>,
+        events_default: Option<i64>,
+        room_name: Option<i64>,
+        room_topic: Option<i64>,
+        room_avatar: Option<i64>,
     ) -> Result<()> {
         let room_id_parsed = RoomId::parse(room_id)?;
         let client = self.client().await;
@@ -1375,6 +1429,10 @@ impl MatrixEngine {
         changes.invite = invite;
         changes.kick = kick;
         changes.redact = redact;
+        changes.events_default = events_default;
+        changes.room_name = room_name;
+        changes.room_topic = room_topic;
+        changes.room_avatar = room_avatar;
 
         room.apply_power_level_changes(changes).await?;
         Ok(())
@@ -1639,6 +1697,38 @@ impl MatrixEngine {
         };
 
         room.send(content).await?;
+        Ok(())
+    }
+
+    pub async fn send_reply(
+        &self,
+        room_id: &str,
+        reply_to_event_id: &matrix_sdk::ruma::EventId,
+        reply_to_sender: &matrix_sdk::ruma::UserId,
+        body: String,
+        html_body: Option<String>,
+    ) -> Result<()> {
+        let room_id = RoomId::parse(room_id)?;
+        let client = self.client().await;
+        let room = client.get_room(&room_id).context("Room not found")?;
+
+        let content = if let Some(html) = html_body {
+            RoomMessageEventContent::text_html(body, html)
+        } else {
+            RoomMessageEventContent::text_plain(body)
+        };
+
+        let reply = content.make_for_thread(
+            matrix_sdk::ruma::events::room::message::ReplyMetadata::new(
+                reply_to_event_id,
+                reply_to_sender,
+                None,
+            ),
+            matrix_sdk::ruma::events::room::message::ReplyWithinThread::No,
+            matrix_sdk::ruma::events::room::message::AddMentions::Yes,
+        );
+
+        room.send(reply).await?;
         Ok(())
     }
 

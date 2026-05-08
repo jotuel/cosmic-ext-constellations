@@ -357,25 +357,52 @@ impl Constellations {
             let mut tasks = Vec::new();
 
             if !body.is_empty() {
-                let html_body = matrix::markdown_to_html(&body);
+                let html_body = if self.app_settings.render_markdown {
+                    Some(matrix::markdown_to_html(&body))
+                } else {
+                    None
+                };
                 let matrix_clone = matrix.clone();
                 let room_id_clone = room_id.clone();
 
-                tasks.push(Task::perform(
-                    async move {
-                        matrix_clone
-                            .send_message(&room_id_clone, body, Some(html_body))
-                            .await
-                            .map_err(|e| e.to_string())
-                    },
-                    |res| Action::from(Message::MessageSent(res)),
-                ));
+                if let Some(replying_to) = self.replying_to.clone() {
+                    tasks.push(Task::perform(
+                        async move {
+                            let event = replying_to.item.as_event().ok_or("Not an event")?;
+                            let event_id = event.event_id().ok_or("No event ID")?;
+                            let sender = event.sender();
+
+                            matrix_clone
+                                .send_reply(
+                                    &room_id_clone,
+                                    event_id,
+                                    sender,
+                                    body,
+                                    html_body,
+                                )
+                                .await
+                                .map_err(|e| e.to_string())
+                        },
+                        |res| Action::from(Message::MessageSent(res)),
+                    ));
+                } else {
+                    tasks.push(Task::perform(
+                        async move {
+                            matrix_clone
+                                .send_message(&room_id_clone, body, html_body)
+                                .await
+                                .map_err(|e| e.to_string())
+                        },
+                        |res| Action::from(Message::MessageSent(res)),
+                    ));
+                }
             } else {
                 // If only sending attachments, we clear the composer text state manually
                 // because MessageSent clears it but might not run for empty body
                 self.composer_text.clear();
                 self.composer_preview_events.clear();
                 self.composer_is_preview = false;
+                self.replying_to = None;
             }
 
             for path in attachments {
@@ -903,6 +930,7 @@ mod tests {
             active_thread_root: None,
             threaded_timeline_items: GenericVector::new(),
             is_loading_more: false,
+            replying_to: None,
         }
     }
 
@@ -937,7 +965,7 @@ mod tests {
         app.is_initializing = true;
         assert_eq!(app.error, None);
 
-        let err_res = Err(matrix::SyncError::Generic(
+        let err_res = Err(matrix::SyncError::Anyhow(
             "Initial sync failed".to_string(),
         ));
         let _task = app.handle_engine_ready(err_res);

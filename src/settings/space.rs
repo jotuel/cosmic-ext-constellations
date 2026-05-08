@@ -30,6 +30,7 @@ pub struct State {
     pub original_is_public: bool,
     pub is_invite_only: bool,
     pub original_is_invite_only: bool,
+    pub child_filter: String,
 }
 
 #[derive(Debug, Clone)]
@@ -62,6 +63,7 @@ pub enum Message {
     AvatarFileSelected(Option<std::path::PathBuf>),
     AvatarUploaded(Result<(), String>),
     SetChildJoinRule(String, matrix_sdk::ruma::events::room::join_rules::JoinRule),
+    ChildFilterChanged(String),
 }
 
 #[derive(Debug, Clone)]
@@ -599,6 +601,10 @@ impl State {
                     Task::none()
                 }
             }
+            Message::ChildFilterChanged(filter) => {
+                self.child_filter = filter;
+                Task::none()
+            }
         }
     }
 
@@ -741,8 +747,51 @@ impl State {
         if self.is_loading_children {
             children_col = children_col.push(text::body("Loading children..."));
         } else {
+            children_col = children_col.push(
+                text_input::text_input("Filter rooms...", &self.child_filter)
+                    .on_input(Message::ChildFilterChanged),
+            );
+
+            let filter = self.child_filter.to_lowercase();
+            // Bolt Optimization: Pre-check if filter is ASCII to use faster byte-level comparison
+            let filter_is_ascii = self.child_filter.is_ascii();
+
+            fn contains_ignore_ascii_case(haystack: &str, needle_lower: &str) -> bool {
+                if needle_lower.is_empty() {
+                    return true;
+                }
+                if haystack.len() < needle_lower.len() {
+                    return false;
+                }
+                haystack
+                    .as_bytes()
+                    .windows(needle_lower.len())
+                    .any(|window| window.eq_ignore_ascii_case(needle_lower.as_bytes()))
+            }
+
             for child in &self.children {
                 let name = child.name.as_deref().unwrap_or(&child.id);
+
+                if !filter.is_empty() {
+                    // Bolt Optimization: Use fast-path ASCII comparison to avoid heap allocations
+                    // from .to_lowercase() when both strings are ASCII.
+                    let matches_name = if filter_is_ascii && name.is_ascii() {
+                        contains_ignore_ascii_case(name, &filter)
+                    } else {
+                        name.to_lowercase().contains(&filter)
+                    };
+
+                    let matches_id = if filter_is_ascii && child.id.is_ascii() {
+                        contains_ignore_ascii_case(&child.id, &filter)
+                    } else {
+                        child.id.to_lowercase().contains(&filter)
+                    };
+
+                    if !matches_name && !matches_id {
+                        continue;
+                    }
+                }
+
                 let current_order = child.order.as_deref().unwrap_or_default();
                 let order_to_show = self
                     .pending_child_orders
@@ -935,5 +984,12 @@ mod tests {
         state.error = Some("An error occurred".to_string());
         let _ = state.update(Message::DismissError, &None);
         assert_eq!(state.error, None);
+    }
+
+    #[test]
+    fn test_child_filter_changed() {
+        let mut state = State::default();
+        let _ = state.update(Message::ChildFilterChanged("test".to_string()), &None);
+        assert_eq!(state.child_filter, "test");
     }
 }
