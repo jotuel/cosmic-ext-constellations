@@ -23,7 +23,7 @@ impl Constellations {
             timeline = timeline.push(
                 Row::new()
                     .align_y(Alignment::Center)
-                    .push(button::text("Close Thread").on_press(Message::CloseThread))
+                    .push(button::text(crate::fl!("close-thread")).on_press(Message::CloseThread))
                     .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
                     .padding(10),
             );
@@ -45,9 +45,9 @@ impl Constellations {
 
         if self.selected_room.is_some() {
             let load_btn = if self.is_loading_more {
-                button::text("Loading...")
+                button::text(crate::fl!("loading"))
             } else {
-                button::text("Load More").on_press(Message::LoadMore)
+                button::text(crate::fl!("load-more")).on_press(Message::LoadMore)
             };
 
             timeline = timeline.push(
@@ -132,7 +132,7 @@ impl Constellations {
                     .padding([2, 4]),
             )
             .on_press(Message::OpenReactionPicker(None));
-            let cancel_tooltip = tooltip(cancel_btn, text::body("Close Picker"), Position::Top);
+            let cancel_tooltip = tooltip(cancel_btn, text::body(crate::fl!("close-picker")), Position::Top);
             reaction_row = reaction_row.push(cancel_tooltip);
         } else {
             // "Add reaction" button
@@ -141,7 +141,7 @@ impl Constellations {
                     .padding(2),
             )
             .on_press(Message::OpenReactionPicker(Some(item_id.clone())));
-            let btn_tooltip = tooltip(btn, text::body("Add Reaction"), Position::Top);
+            let btn_tooltip = tooltip(btn, text::body(crate::fl!("add-reaction")), Position::Top);
             reaction_row = reaction_row.push(btn_tooltip);
         }
 
@@ -323,9 +323,9 @@ impl Constellations {
         let header = Row::new()
             .spacing(10)
             .align_y(Alignment::Center)
-            .push(text::title3("Thread"))
+            .push(text::title3(crate::fl!("thread")))
             .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
-            .push(button::text("Close").on_press(Message::CloseThread));
+            .push(button::text(crate::fl!("cancel")).on_press(Message::CloseThread));
 
         timeline = timeline.push(container(header).padding(10));
 
@@ -392,11 +392,10 @@ impl Constellations {
 
     pub fn view_login(&self) -> Element<'_, Message> {
         let title = if self.is_registering_mode {
-            "Create Matrix Account"
+            crate::fl!("register-title")
         } else {
-            "Login to Matrix"
+            crate::fl!("login-title")
         };
-
         let mut content = Column::new()
             .spacing(10)
             .padding(20)
@@ -414,9 +413,9 @@ impl Constellations {
             content = content.push(text::body(error));
         }
 
-        let homeserver_input = text_input("Homeserver", &self.login_homeserver);
-        let username_input = text_input("Username", &self.login_username);
-        let password_input = text_input("Password", &self.login_password).password();
+        let homeserver_input = text_input(crate::fl!("homeserver"), &self.login_homeserver);
+        let username_input = text_input(crate::fl!("username"), &self.login_username);
+        let password_input = text_input(crate::fl!("password"), &self.login_password).password();
 
         let (homeserver_input, username_input, password_input) =
             if self.is_logging_in || self.is_oidc_logging_in || self.is_registering {
@@ -448,16 +447,16 @@ impl Constellations {
 
         let main_button: Element<'_, Message> = if self.is_registering_mode {
             if self.is_registering {
-                button::text("Creating account...").into()
+                button::text(crate::fl!("creating-account")).into()
             } else {
-                let mut btn = button::text("Create Account");
+                let mut btn = button::text(crate::fl!("create-account-button"));
                 if !is_missing_fields {
                     btn = btn.on_press(Message::SubmitRegister);
                 }
                 if is_missing_fields {
                     tooltip(
                         btn,
-                        text::body("Fill in all fields to create an account"),
+                        text::body(crate::fl!("fill-all-fields-register")),
                         Position::Top,
                     )
                     .into()
@@ -466,16 +465,16 @@ impl Constellations {
                 }
             }
         } else if self.is_logging_in {
-            button::text("Logging in...").into()
+            button::text(crate::fl!("logging-in")).into()
         } else {
-            let mut btn = button::text("Login");
+            let mut btn = button::text(crate::fl!("login-button"));
             if !is_missing_fields && !self.is_oidc_logging_in {
                 btn = btn.on_press(Message::SubmitLogin);
             }
             if is_missing_fields {
                 tooltip(
                     btn,
-                    text::body("Fill in all fields to login"),
+                    text::body(crate::fl!("fill-all-fields-login")),
                     Position::Top,
                 )
                 .into()
@@ -485,9 +484,9 @@ impl Constellations {
         };
 
         let oidc_button = if self.is_oidc_logging_in {
-            button::text("Waiting for browser...")
+            button::text(crate::fl!("waiting-for-browser"))
         } else {
-            let mut btn = button::text("Login with OIDC");
+            let mut btn = button::text(crate::fl!("oidc-login-button"));
             if !self.login_homeserver.is_empty() && !self.is_logging_in && !self.is_registering_mode
             {
                 btn = btn.on_press(Message::SubmitOidcLogin);
@@ -496,9 +495,9 @@ impl Constellations {
         };
 
         let toggle_mode_button = if self.is_registering_mode {
-            button::text("Already have an account? Login")
+            button::text(crate::fl!("already-have-account"))
         } else {
-            button::text("Need an account? Register")
+            button::text(crate::fl!("need-account"))
         };
 
         let toggle_mode_button =
@@ -599,7 +598,7 @@ impl Constellations {
 
                     // Start a thread
                     let root_id = event.identifier();
-                    let start_thread_btn = button::text("Open Thread").on_press(match root_id {
+                    let start_thread_btn = button::text(crate::fl!("open-thread")).on_press(match root_id {
                         matrix::TimelineEventItemId::EventId(id) => {
                             Message::OpenThread(id.to_owned())
                         }
@@ -607,7 +606,7 @@ impl Constellations {
                     });
                     action_row = action_row.push(start_thread_btn);
 
-                    let reply_btn = button::text("Reply").on_press(Message::StartReply(item.clone()));
+                    let reply_btn = button::text(crate::fl!("reply")).on_press(Message::StartReply(item.clone()));
                     action_row = action_row.push(reply_btn);
 
                     bubble_col = bubble_col.push(action_row);
@@ -650,7 +649,7 @@ impl Constellations {
             button::icon(Named::new("system-users")).on_press(Message::SelectSpace(None))
         };
 
-        let global_tooltip = tooltip(global_btn, text::body("All Rooms"), Position::Right);
+        let global_tooltip = tooltip(global_btn, text::body(crate::fl!("all-rooms")), Position::Right);
 
         content = content.push(global_tooltip);
 
@@ -776,7 +775,7 @@ impl Constellations {
 
             let is_empty = self.new_room_name.trim().is_empty();
 
-            let mut create_btn = button::text("Create");
+            let mut create_btn = button::text(crate::fl!("create"));
             if !is_empty {
                 if self.creating_room {
                     name_input =
@@ -815,7 +814,7 @@ impl Constellations {
                 Row::new()
                     .spacing(5)
                     .push(create_btn_widget)
-                    .push(button::text("Cancel").on_press(cancel_msg)),
+                    .push(button::text(crate::fl!("cancel")).on_press(cancel_msg)),
             );
 
             room_list = room_list.push(container(create_ui).padding(5));
@@ -841,7 +840,7 @@ impl Constellations {
 
             if !self.other_rooms.is_empty() {
                 room_list = room_list
-                    .push(container(text::title3("Joined Rooms").size(14)).padding([10, 5, 5, 5]));
+                    .push(container(text::title3(crate::fl!("joined-rooms")).size(14)).padding([10, 5, 5, 5]));
             }
         }
 
@@ -902,7 +901,7 @@ impl Constellations {
 
         if !self.other_rooms.is_empty() {
             room_list = room_list
-                .push(container(text::title3("Other Rooms").size(14)).padding([10, 5, 5, 5]));
+                .push(container(text::title3(crate::fl!("other-rooms")).size(14)).padding([10, 5, 5, 5]));
 
             for room in &self.other_rooms {
                 let name = room.name.as_deref().unwrap_or_else(|| {
@@ -1025,10 +1024,10 @@ impl Constellations {
                 let reply_bar = Row::new()
                     .spacing(10)
                     .align_y(Alignment::Center)
-                    .push(text::body(format!("Replying to {}: ", replying_to.sender_name)).size(12))
+                    .push(text::body(crate::fl!("replying-to", user = replying_to.sender_name.as_str())).size(12))
                     .push(text::body(snippet).size(12))
                     .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
-                    .push(button::text("Cancel").on_press(Message::CancelReply));
+                    .push(button::text(crate::fl!("cancel")).on_press(Message::CancelReply));
                 content = content.push(container(reply_bar).padding(10));
             }
 
@@ -1036,7 +1035,7 @@ impl Constellations {
                 self.view_preview()
             } else {
                 container(
-                    text_input("Type a message...", &self.composer_text)
+                    text_input(crate::fl!("type-message"), &self.composer_text)
                         .on_input(Message::ComposerChanged)
                         .on_submit(|_| Message::SendMessage),
                 )
@@ -1073,7 +1072,7 @@ impl Constellations {
             let send_btn_widget: Element<'_, Message> = if is_empty {
                 tooltip(
                     send_btn,
-                    text::body("Type a message or attach a file to send"),
+                    text::body(crate::fl!("type-message-or-attach")),
                     Position::Top,
                 )
                 .into()
@@ -1083,7 +1082,7 @@ impl Constellations {
 
             let controls = Row::new()
                 .spacing(10)
-                .push(button::text("Attach").on_press(Message::AddAttachment))
+                .push(button::text(crate::fl!("attach")).on_press(Message::AddAttachment))
                 .push(
                     button::text(if self.composer_is_preview {
                         "Edit"
@@ -1126,7 +1125,7 @@ impl Constellations {
                     .spacing(10)
                     .align_y(Alignment::Center)
                     .push(text::body(error))
-                    .push(button::text("Dismiss").on_press(Message::DismissError)),
+                    .push(button::text(crate::fl!("dismiss")).on_press(Message::DismissError)),
             )
             .padding(10);
             content = content.push(error_bar);

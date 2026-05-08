@@ -1222,7 +1222,7 @@ impl MatrixEngine {
             .map(|s| RoomAliasId::parse(s).map(|a| a.to_owned()))
             .transpose()?;
 
-        room.send_state_event(content).await?;
+
         Ok(())
     }
 
@@ -1231,9 +1231,11 @@ impl MatrixEngine {
         room_id: &str,
         history_visibility: matrix_sdk::ruma::events::room::history_visibility::HistoryVisibility,
         ) -> Result<()> {
+        let room_id_parsed = RoomId::parse(room_id)?;
+        let client = self.client().await;
+        let room = client.get_room(&room_id_parsed).context("Room not found")?;
         use matrix_sdk::ruma::events::room::history_visibility::RoomHistoryVisibilityEventContent;
         let content = RoomHistoryVisibilityEventContent::new(history_visibility);
-          
         room.send_state_event(content).await?;
         Ok(())
     }
@@ -1272,7 +1274,7 @@ impl MatrixEngine {
             .map(|s| RoomAliasId::parse(s).map(|a| a.to_owned()))
             .collect::<Result<Vec<_>, _>>()?;
 
-        room.send_state_event(content).await?;
+
         Ok(())
     }
 
