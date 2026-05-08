@@ -117,6 +117,7 @@ struct Constellations {
     active_thread_root: Option<matrix_sdk::ruma::OwnedEventId>,
     threaded_timeline_items: Vector<ConstellationsItem>,
     joined_room_ids: std::collections::HashSet<std::sync::Arc<str>>,
+    replying_to: Option<ConstellationsItem>,
     selected_space: Option<OwnedRoomId>,
     current_settings_panel: Option<SettingsPanel>,
     user_settings: settings::user::State,
@@ -168,6 +169,8 @@ pub enum Message {
     SpaceChildrenFetched(OwnedRoomId, Result<Vec<matrix::RoomData>, String>),
     OpenThread(matrix_sdk::ruma::OwnedEventId),
     CloseThread,
+    StartReply(ConstellationsItem),
+    CancelReply,
     MatrixThreadDiff(
         matrix_sdk::ruma::OwnedEventId,
         eyeball_im::VectorDiff<std::sync::Arc<matrix::TimelineItem>>,
@@ -387,7 +390,7 @@ impl<C: VectorOperations<T>, T: Clone> ApplyVectorDiffExt<T> for C {
 }
 
 #[derive(Clone, Debug)]
-struct ConstellationsItem {
+pub struct ConstellationsItem {
     pub item: Arc<matrix::TimelineItem>,
     pub sender_name: String,
     pub avatar_url: Option<String>,
@@ -907,6 +910,8 @@ impl Application for Constellations {
             tasks.push(Task::done(Action::from(Message::OidcCallback(url))));
         }
 
+        let config = settings::config::Config::load();
+
         let mut app = Constellations {
             core: core.clone(),
             matrix: None,
@@ -943,12 +948,13 @@ impl Application for Constellations {
             active_thread_root: None,
             threaded_timeline_items: Vector::new(),
             joined_room_ids: std::collections::HashSet::new(),
+            replying_to: None,
             selected_space: None,
             current_settings_panel: None,
-            user_settings: Default::default(),
+            user_settings: settings::user::State::from_config(&config),
             room_settings: Default::default(),
             space_settings: Default::default(),
-            app_settings: Default::default(),
+            app_settings: settings::app::State::from_config(&config),
         };
 
         let title_task = app.update_title();
@@ -1002,6 +1008,14 @@ impl Application for Constellations {
             Message::OpenThread(root_id) => {
                 self.active_thread_root = Some(root_id);
                 self.threaded_timeline_items.clear();
+                Task::none()
+            }
+            Message::StartReply(item) => {
+                self.replying_to = Some(item);
+                Task::none()
+            }
+            Message::CancelReply => {
+                self.replying_to = None;
                 Task::none()
             }
             Message::CloseThread => {
@@ -1093,6 +1107,7 @@ impl Application for Constellations {
                         self.composer_text.clear();
                         self.composer_preview_events.clear();
                         self.composer_is_preview = false;
+                        self.replying_to = None;
                     }
                     Err(e) => {
                         self.error = Some(format!("Failed to send message: {}", e));
@@ -1338,7 +1353,19 @@ impl Application for Constellations {
                 }
                 _ => self.app_settings.update(msg),
             },
-            Message::AppSettingChanged => Task::none(),
+            Message::AppSettingChanged => {
+                let config = settings::config::Config {
+                    show_sync_indicator: self.app_settings.show_sync_indicator,
+                    send_typing_notifications: self.app_settings.send_typing_notifications,
+                    render_markdown: self.app_settings.render_markdown,
+                    compact_mode: self.app_settings.compact_mode,
+                    media_previews_display_policy: self.user_settings.media_previews_display_policy,
+                    invite_avatars_display_policy: self.user_settings.invite_avatars_display_policy,
+                };
+                Task::perform(async move { config.save() }, |_| {
+                    Action::from(Message::NoOp)
+                })
+            }
             Message::ToggleSearch => {
                 self.is_search_active = !self.is_search_active;
                 if !self.is_search_active {
@@ -1607,6 +1634,7 @@ mod tests {
             active_thread_root: None,
             threaded_timeline_items: GenericVector::new(),
             is_loading_more: false,
+            replying_to: None,
         }
     }
 

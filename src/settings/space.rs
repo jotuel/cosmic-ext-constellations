@@ -605,6 +605,10 @@ impl State {
                     Task::none()
                 }
             }
+            Message::ChildFilterChanged(filter) => {
+                self.child_filter = filter;
+                Task::none()
+            }
         }
     }
 
@@ -964,5 +968,12 @@ mod tests {
         state.error = Some("An error occurred".to_string());
         let _ = state.update(Message::DismissError, &None);
         assert_eq!(state.error, None);
+    }
+
+    #[test]
+    fn test_child_filter_changed() {
+        let mut state = State::default();
+        let _ = state.update(Message::ChildFilterChanged("test".to_string()), &None);
+        assert_eq!(state.child_filter, "test");
     }
 }

@@ -20,6 +20,15 @@ pub enum Message {
 }
 
 impl State {
+    pub fn from_config(config: &super::config::Config) -> Self {
+        Self {
+            show_sync_indicator: config.show_sync_indicator,
+            send_typing_notifications: config.send_typing_notifications,
+            render_markdown: config.render_markdown,
+            compact_mode: config.compact_mode,
+        }
+    }
+
     pub fn update(&mut self, message: Message) -> Task<Action<crate::Message>> {
         match message {
             Message::ToggleSyncIndicator(show) => {

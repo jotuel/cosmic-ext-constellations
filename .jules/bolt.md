@@ -22,3 +22,6 @@
 ## 2024-07-28 - [Removed String clone in hot filtering function]
 **Learning:** `update_filtered_rooms` used to clone the entire `search_query` String every time it was called. Because it is called on every keystroke during a search to update the UI, this led to frequent unnecessary heap allocations.
 **Action:** When working with struct fields in hot functions like UI updates, access the fields by reference (e.g., `self.search_query.is_empty()`, `self.search_query.is_ascii()`, `self.search_query.to_lowercase()`) rather than cloning the entire String unnecessarily just to call getter methods on it.
+## 2026-05-08 - [Optimization] Case-insensitive child filtering in Space settings
+ **Learning:** In Rust UI applications, performing case-insensitive filtering in the view loop can be expensive due to repeated heap allocations from `.to_lowercase()`.
+ **Action:** Implemented a fast-path ASCII optimization using byte-level comparison (`eq_ignore_ascii_case`) when both the filter query and the target string are ASCII, significantly reducing allocation overhead in the hot view loop.
