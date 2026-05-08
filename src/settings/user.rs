@@ -239,6 +239,14 @@ pub enum Message {
 }
 
 impl State {
+    pub fn from_config(config: &super::config::Config) -> Self {
+        Self {
+            media_previews_display_policy: config.media_previews_display_policy,
+            invite_avatars_display_policy: config.invite_avatars_display_policy,
+            ..Default::default()
+        }
+    }
+
     pub fn update(
         &mut self,
         message: Message,

@@ -576,10 +576,6 @@ impl State {
                 self.new_child_order = order;
                 Task::none()
             }
-            Message::ChildFilterChanged(filter) => {
-                self.child_filter = filter;
-                Task::none()
-            }
             Message::DismissError => {
                 self.error = None;
                 Task::none()
