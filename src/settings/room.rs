@@ -64,6 +64,7 @@ pub struct State {
     pub restricted_space_id: String,
     pub pinned_events: Vec<matrix_sdk::ruma::OwnedEventId>,
     pub pinned_event_id_input: String,
+    pub is_encrypted: bool,
     pub canonical_alias: String,
     pub original_canonical_alias: String,
     pub alt_aliases: Vec<String>,
@@ -117,6 +118,8 @@ pub enum Message {
     PinnedEventIdChanged(String),
     PinEvent,
     UnpinEvent(matrix_sdk::ruma::OwnedEventId),
+    EnableEncryption,
+    EncryptionEnabled(Result<(), String>),
     CanonicalAliasChanged(String),
     AltAliasAdded,
     AltAliasRemoved(String),
@@ -149,6 +152,7 @@ pub struct RoomInfo {
     pub join_rule: Option<matrix_sdk::ruma::events::room::join_rules::JoinRule>,
     pub history_visibility: Option<HistoryVisibility>,
     pub pinned_events: Vec<matrix_sdk::ruma::OwnedEventId>,
+    pub is_encrypted: bool,
     pub canonical_alias: Option<String>,
     pub alt_aliases: Vec<String>,
 }
@@ -232,6 +236,7 @@ impl State {
                                 })
                                 .unwrap_or_default();
 
+                            let is_encrypted = room.encryption_settings().is_some();
                             let (canonical_alias, alt_aliases) = room
                                 .get_state_event_static::<matrix_sdk::ruma::events::room::canonical_alias::RoomCanonicalAliasEventContent>()
                                 .await
@@ -273,6 +278,7 @@ impl State {
                                 join_rule,
                                 history_visibility,
                                 pinned_events,
+                                is_encrypted,
                                 canonical_alias,
                                 alt_aliases,
                             })
@@ -333,6 +339,7 @@ impl State {
                         };
                         self.pinned_events = info.pinned_events;
                         self.pinned_event_id_input = String::new();
+                        self.is_encrypted = info.is_encrypted;
                         self.canonical_alias = info.canonical_alias.clone().unwrap_or_default();
                         self.original_canonical_alias = info.canonical_alias.unwrap_or_default();
                         self.alt_aliases = info.alt_aliases.clone();
@@ -1128,6 +1135,41 @@ impl State {
                 }
                 Task::none()
             }
+            Message::EnableEncryption => {
+                if let Some(matrix) = matrix
+                    && let Some(room_id) = &self.room_id
+                {
+                    let engine = matrix.clone();
+                    let room_id_clone = room_id.clone();
+                    return Task::perform(
+                        async move {
+                            engine
+                                .enable_encryption(&room_id_clone)
+                                .await
+                                .map_err(|e| e.to_string())
+                        },
+                        |res| {
+                            Action::from(crate::Message::RoomSettings(Message::EncryptionEnabled(
+                                res,
+                            )))
+                        },
+                    );
+                }
+                Task::none()
+            }
+            Message::EncryptionEnabled(res) => {
+                match res {
+                    Ok(_) => {
+                        if let Some(room_id) = &self.room_id {
+                            return self.update(Message::LoadRoom(room_id.clone()), matrix);
+                        }
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to enable encryption: {}", e));
+                    }
+                }
+                Task::none()
+            }
             Message::CanonicalAliasChanged(alias) => {
                 self.canonical_alias = alias;
                 Task::none()
@@ -1194,6 +1236,28 @@ impl State {
                 .push(button::text("Dismiss").on_press(Message::DismissError))
                 .into()
         })
+    }
+
+    fn view_security(&self) -> Element<'_, Message> {
+        let mut col = Column::new().spacing(10);
+        col = col.push(text::title3("Security"));
+
+        let mut row = Row::new().spacing(10).align_y(Alignment::Center);
+        row = row.push(text::body("End-to-End Encryption").width(200));
+
+        if self.is_encrypted {
+            row = row.push(button::suggested("Enabled"));
+            col = col.push(row);
+        } else {
+            row = row.push(button::destructive("Enable Encryption").on_press(Message::EnableEncryption));
+            col = col.push(row);
+            col = col.push(
+                text::body("⚠️ This is a one-way action and cannot be undone.")
+                    .size(12),
+            );
+        }
+
+        col.into()
     }
 
     fn view_profile(&self) -> Element<'_, Message> {
@@ -1806,6 +1870,7 @@ impl State {
         }
 
         col = col.push(self.view_profile());
+        col = col.push(self.view_security());
         col = col.push(self.view_aliases());
         col = col.push(self.view_notifications());
         col = col.push(self.view_permissions());

@@ -1167,6 +1167,21 @@ impl MatrixEngine {
         Ok(())
     }
 
+    pub async fn is_room_encrypted(&self, room_id: &str) -> Result<bool> {
+        let room_id_parsed = RoomId::parse(room_id)?;
+        let client = self.client().await;
+        let room = client.get_room(&room_id_parsed).context("Room not found")?;
+        Ok(room.encryption_settings().is_some())
+    }
+
+    pub async fn enable_encryption(&self, room_id: &str) -> Result<()> {
+        let room_id_parsed = RoomId::parse(room_id)?;
+        let client = self.client().await;
+        let room = client.get_room(&room_id_parsed).context("Room not found")?;
+        room.enable_encryption().await?;
+        Ok(())
+    }
+
     pub async fn set_room_name(&self, room_id: &str, name: String) -> Result<()> {
         let room_id_parsed = RoomId::parse(room_id)?;
         let client = self.client().await;
