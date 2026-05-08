@@ -884,6 +884,8 @@ impl Application for Constellations {
             tasks.push(Task::done(Action::from(Message::OidcCallback(url))));
         }
 
+        let config = settings::config::Config::load();
+
         let mut app = Constellations {
             core: core.clone(),
             matrix: None,
@@ -922,10 +924,10 @@ impl Application for Constellations {
             replying_to: None,
             selected_space: None,
             current_settings_panel: None,
-            user_settings: Default::default(),
+            user_settings: settings::user::State::from_config(&config),
             room_settings: Default::default(),
             space_settings: Default::default(),
-            app_settings: Default::default(),
+            app_settings: settings::app::State::from_config(&config),
         };
 
         let title_task = app.update_title();
@@ -1311,7 +1313,19 @@ impl Application for Constellations {
                 }
                 _ => self.app_settings.update(msg),
             },
-            Message::AppSettingChanged => Task::none(),
+            Message::AppSettingChanged => {
+                let config = settings::config::Config {
+                    show_sync_indicator: self.app_settings.show_sync_indicator,
+                    send_typing_notifications: self.app_settings.send_typing_notifications,
+                    render_markdown: self.app_settings.render_markdown,
+                    compact_mode: self.app_settings.compact_mode,
+                    media_previews_display_policy: self.user_settings.media_previews_display_policy,
+                    invite_avatars_display_policy: self.user_settings.invite_avatars_display_policy,
+                };
+                Task::perform(async move { config.save() }, |_| {
+                    Action::from(Message::NoOp)
+                })
+            }
             Message::ToggleSearch => {
                 self.is_search_active = !self.is_search_active;
                 if !self.is_search_active {
