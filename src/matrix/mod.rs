@@ -217,6 +217,7 @@ pub enum MatrixEvent {
         event_id: String,
         reaction: String,
     },
+    IgnoredUsersChanged(Vec<matrix_sdk::ruma::OwnedUserId>),
 }
 
 #[derive(Serialize, Deserialize, Debug)]

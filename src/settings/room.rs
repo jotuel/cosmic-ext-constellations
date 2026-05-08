@@ -49,6 +49,7 @@ pub struct State {
     pub join_rule: Option<matrix_sdk::ruma::events::room::join_rules::JoinRule>,
     pub pinned_events: Vec<matrix_sdk::ruma::OwnedEventId>,
     pub pinned_event_id_input: String,
+    pub ignored_users: Vec<matrix_sdk::ruma::OwnedUserId>,
 }
 
 #[derive(Debug, Clone)]
@@ -91,6 +92,8 @@ pub enum Message {
     PinnedEventIdChanged(String),
     PinEvent,
     UnpinEvent(matrix_sdk::ruma::OwnedEventId),
+    IgnoreUser(matrix_sdk::ruma::OwnedUserId),
+    UnignoreUser(matrix_sdk::ruma::OwnedUserId),
 }
 
 #[derive(Debug, Clone)]
@@ -114,6 +117,7 @@ pub struct RoomInfo {
     pub notification_mode: Option<matrix_sdk::notification_settings::RoomNotificationMode>,
     pub join_rule: Option<matrix_sdk::ruma::events::room::join_rules::JoinRule>,
     pub pinned_events: Vec<matrix_sdk::ruma::OwnedEventId>,
+    pub ignored_users: Vec<matrix_sdk::ruma::OwnedUserId>,
 }
 
 impl State {
@@ -179,6 +183,8 @@ impl State {
                                 })
                                 .unwrap_or_default();
 
+                            let ignored_users = engine.ignored_users().await.unwrap_or_default();
+
                             Ok(RoomInfo {
                                 name: room.name().unwrap_or_default(),
                                 topic: room.topic().unwrap_or_default(),
@@ -192,6 +198,7 @@ impl State {
                                 notification_mode,
                                 join_rule,
                                 pinned_events,
+                                ignored_users,
                             })
                         },
                         |res| Action::from(crate::Message::RoomSettings(Message::RoomLoaded(res))),
@@ -227,6 +234,7 @@ impl State {
                         self.join_rule = info.join_rule;
                         self.pinned_events = info.pinned_events;
                         self.pinned_event_id_input = String::new();
+                        self.ignored_users = info.ignored_users;
                         self.error = None;
 
                         let mut tasks = Vec::new();
@@ -809,7 +817,7 @@ impl State {
                     && let Some(room_id) = &self.room_id
                 {
                     let engine = matrix.clone();
-                    let room_id_clone = room_id.clone();
+                    let room_id_clone = room_id.to_string();
                     let room_id_clone_reload = room_id.clone();
                     return Task::perform(
                         async move {
@@ -871,6 +879,46 @@ impl State {
                             self.error = Some(format!("Invalid Event ID: {}", e));
                         }
                     }
+                }
+                Task::none()
+            }
+            Message::IgnoreUser(user_id) => {
+                if let Some(matrix) = matrix
+                    && let Some(room_id) = &self.room_id
+                {
+                    let engine = matrix.clone();
+                    let room_id_clone_reload = room_id.clone();
+                    return Task::perform(
+                        async move {
+                            engine.ignore_user(&user_id).await.map_err(|e| e.to_string())
+                        },
+                        move |res| {
+                            Action::from(crate::Message::RoomSettings(match res {
+                                Ok(_) => Message::LoadRoom(room_id_clone_reload.clone()),
+                                Err(e) => Message::RoomSaved(Err(e)),
+                            }))
+                        },
+                    );
+                }
+                Task::none()
+            }
+            Message::UnignoreUser(user_id) => {
+                if let Some(matrix) = matrix
+                    && let Some(room_id) = &self.room_id
+                {
+                    let engine = matrix.clone();
+                    let room_id_clone_reload = room_id.clone();
+                    return Task::perform(
+                        async move {
+                            engine.unignore_user(&user_id).await.map_err(|e| e.to_string())
+                        },
+                        move |res| {
+                            Action::from(crate::Message::RoomSettings(match res {
+                                Ok(_) => Message::LoadRoom(room_id_clone_reload.clone()),
+                                Err(e) => Message::RoomSaved(Err(e)),
+                            }))
+                        },
+                    );
                 }
                 Task::none()
             }
@@ -1203,6 +1251,20 @@ impl State {
                                 .on_press(Message::BanUser(user_id_str.to_string())),
                         );
                     }
+
+                    let is_ignored = self.ignored_users.contains(user_id);
+                    if is_ignored {
+                        action_row = action_row.push(
+                            button::text("Unignore")
+                                .on_press(Message::UnignoreUser(user_id.clone())),
+                        );
+                    } else {
+                        action_row = action_row.push(
+                            button::destructive("Ignore")
+                                .on_press(Message::IgnoreUser(user_id.clone())),
+                        );
+                    }
+
                     pl_col = pl_col.push(action_row);
                 }
             }
