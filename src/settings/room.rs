@@ -47,6 +47,7 @@ pub struct State {
     pub notification_mode: Option<matrix_sdk::notification_settings::RoomNotificationMode>,
     pub is_loading_notifications: bool,
     pub join_rule: Option<matrix_sdk::ruma::events::room::join_rules::JoinRule>,
+    pub restricted_space_id: String,
     pub pinned_events: Vec<matrix_sdk::ruma::OwnedEventId>,
     pub pinned_event_id_input: String,
 }
@@ -88,6 +89,7 @@ pub enum Message {
     NotificationModeChanged(matrix_sdk::notification_settings::RoomNotificationMode),
     NotificationModeSet(Result<(), String>),
     JoinRuleChanged(matrix_sdk::ruma::events::room::join_rules::JoinRule),
+    RestrictedSpaceIdChanged(String),
     PinnedEventIdChanged(String),
     PinEvent,
     UnpinEvent(matrix_sdk::ruma::OwnedEventId),
@@ -224,7 +226,16 @@ impl State {
                         self.invite_level_str = info.invite_level.to_string();
                         self.current_user_id = info.current_user_id;
                         self.notification_mode = info.notification_mode;
-                        self.join_rule = info.join_rule;
+                        self.join_rule = info.join_rule.clone();
+                        self.restricted_space_id = match &info.join_rule {
+                            Some(matrix_sdk::ruma::events::room::join_rules::JoinRule::Restricted(r)) => {
+                                r.allow.iter().find_map(|a| match a {
+                                    matrix_sdk::ruma::events::room::join_rules::AllowRule::RoomMembership(m) => Some(m.room_id.to_string()),
+                                    _ => None,
+                                }).unwrap_or_default()
+                            }
+                            _ => String::new(),
+                        };
                         self.pinned_events = info.pinned_events;
                         self.pinned_event_id_input = String::new();
                         self.error = None;
@@ -375,6 +386,34 @@ impl State {
                                 user_id_clone,
                                 res,
                             )))
+                        },
+                    );
+                }
+                Task::none()
+            }
+            Message::JoinRuleChanged(join_rule) => {
+                self.join_rule = Some(join_rule.clone());
+                if let Some(matrix) = matrix
+                    && let Some(room_id) = &self.room_id
+                {
+                    let engine = matrix.clone();
+                    let room_id_clone = room_id.clone();
+                    let room_id_clone_reload = room_id.clone();
+                    return Task::perform(
+                        async move {
+                            engine
+                                .set_room_join_rule(&room_id_clone, join_rule)
+                                .await
+                                .map_err(|e| e.to_string())
+                        },
+                        move |res| {
+                            Action::from(crate::Message::RoomSettings(match res {
+                                Ok(_) => {
+                                    // Reload room data to reflect changes
+                                    Message::LoadRoom(room_id_clone_reload.clone())
+                                }
+                                Err(e) => Message::RoomSaved(Err(e)),
+                            }))
                         },
                     );
                 }
@@ -804,31 +843,8 @@ impl State {
                 self.error = None;
                 Task::none()
             }
-            Message::JoinRuleChanged(join_rule) => {
-                if let Some(matrix) = matrix
-                    && let Some(room_id) = &self.room_id
-                {
-                    let engine = matrix.clone();
-                    let room_id_clone = room_id.clone();
-                    let room_id_clone_reload = room_id.clone();
-                    return Task::perform(
-                        async move {
-                            engine
-                                .set_room_join_rule(&room_id_clone, join_rule)
-                                .await
-                                .map_err(|e| e.to_string())
-                        },
-                        move |res| {
-                            Action::from(crate::Message::RoomSettings(match res {
-                                Ok(_) => {
-                                    // Reload room data to reflect changes
-                                    Message::LoadRoom(room_id_clone_reload.clone())
-                                }
-                                Err(e) => Message::RoomSaved(Err(e)),
-                            }))
-                        },
-                    );
-                }
+            Message::RestrictedSpaceIdChanged(id) => {
+                self.restricted_space_id = id;
                 Task::none()
             }
             Message::PinnedEventIdChanged(id) => {
@@ -1003,7 +1019,7 @@ impl State {
     }
 
     fn view_permissions(&self) -> Element<'_, Message> {
-        use matrix_sdk::ruma::events::room::join_rules::JoinRule;
+        use matrix_sdk::ruma::events::room::join_rules::{AllowRule, JoinRule, Restricted};
 
         let mut perm_col = Column::new().spacing(10);
         perm_col = perm_col.push(text::title3("Permissions"));
@@ -1011,10 +1027,11 @@ impl State {
         let mut join_rule_row = Row::new().spacing(10).align_y(Alignment::Center);
         join_rule_row = join_rule_row.push(text::body("Join Rule").width(100));
 
-        for rule in [JoinRule::Public, JoinRule::Invite] {
+        for rule in [JoinRule::Public, JoinRule::Invite, JoinRule::Knock] {
             let label = match rule {
                 JoinRule::Public => "Public",
                 JoinRule::Invite => "Invite Only",
+                JoinRule::Knock => "Knock",
                 _ => unreachable!(),
             };
 
@@ -1031,12 +1048,59 @@ impl State {
             join_rule_row = join_rule_row.push(btn);
         }
 
-        // Show Restricted if it's currently restricted, or if it's already allowed by some space
-        if let Some(JoinRule::Restricted(_)) = &self.join_rule {
-            join_rule_row = join_rule_row.push(button::suggested("Restricted"));
+        let is_restricted = matches!(self.join_rule, Some(JoinRule::Restricted(_)));
+
+        let parsed_restricted_space_id = RoomId::parse(&self.restricted_space_id).ok();
+
+        let mut restricted_btn = if is_restricted {
+            button::suggested("Restricted")
+        } else {
+            button::text("Restricted")
+        };
+
+        if !is_restricted {
+            if let Some(space_id) = &parsed_restricted_space_id {
+                let restricted = Restricted::new(vec![AllowRule::room_membership(space_id.clone())]);
+                restricted_btn =
+                    restricted_btn.on_press(Message::JoinRuleChanged(JoinRule::Restricted(restricted)));
+            }
         }
 
+        join_rule_row = join_rule_row.push(restricted_btn);
+
         perm_col = perm_col.push(join_rule_row);
+
+        if is_restricted || !self.restricted_space_id.is_empty() {
+            let mut restricted_row = Row::new().spacing(10).align_y(Alignment::Center);
+            restricted_row = restricted_row.push(text::body("Space ID").width(100));
+            restricted_row = restricted_row.push(
+                text_input::text_input("!space_id:example.com", &self.restricted_space_id)
+                    .on_input(Message::RestrictedSpaceIdChanged),
+            );
+
+            if let Some(space_id) = parsed_restricted_space_id {
+                let current_restricted_match =
+                    if let Some(JoinRule::Restricted(r)) = &self.join_rule {
+                        r.allow.iter().any(|a| match a {
+                            AllowRule::RoomMembership(m) => m.room_id == space_id,
+                            _ => false,
+                        })
+                    } else {
+                        false
+                    };
+
+                if !current_restricted_match {
+                    let restricted = Restricted::new(vec![AllowRule::room_membership(space_id)]);
+                    restricted_row = restricted_row.push(
+                        button::text("Apply").on_press(Message::JoinRuleChanged(
+                            JoinRule::Restricted(restricted),
+                        )),
+                    );
+                }
+            }
+
+            perm_col = perm_col.push(restricted_row);
+        }
 
         perm_col = perm_col.push(
             Row::new()
@@ -1466,5 +1530,24 @@ mod tests {
             &None,
         );
         assert_eq!(state.pinned_event_id_input, "$event:example.com");
+    }
+
+    #[test]
+    fn test_restricted_space_id_changed() {
+        let mut state = State::default();
+        let _ = state.update(
+            Message::RestrictedSpaceIdChanged("!space:example.com".to_string()),
+            &None,
+        );
+        assert_eq!(state.restricted_space_id, "!space:example.com");
+    }
+
+    #[test]
+    fn test_join_rule_changed_knock() {
+        use matrix_sdk::ruma::events::room::join_rules::JoinRule;
+        let mut state = State::default();
+        state.room_id = Some(Arc::from("!room:example.com"));
+        let _ = state.update(Message::JoinRuleChanged(JoinRule::Knock), &None);
+        assert_eq!(state.join_rule, Some(JoinRule::Knock));
     }
 }
