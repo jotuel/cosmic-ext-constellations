@@ -275,9 +275,21 @@ impl State {
                                 kick_level: pl.kick.into(),
                                 redact_level: pl.redact.into(),
                                 events_default_level: pl.events_default.into(),
-                                room_name_level: pl.events.get(&matrix_sdk::ruma::events::TimelineEventType::RoomName).map(|l| (*l).into()).unwrap_or(pl.state_default.into()),
-                                room_topic_level: pl.events.get(&matrix_sdk::ruma::events::TimelineEventType::RoomTopic).map(|l| (*l).into()).unwrap_or(pl.state_default.into()),
-                                room_avatar_level: pl.events.get(&matrix_sdk::ruma::events::TimelineEventType::RoomAvatar).map(|l| (*l).into()).unwrap_or(pl.state_default.into()),
+                                room_name_level: pl
+                                    .events
+                                    .get(&matrix_sdk::ruma::events::TimelineEventType::RoomName)
+                                    .map(|l| (*l).into())
+                                    .unwrap_or(pl.state_default.into()),
+                                room_topic_level: pl
+                                    .events
+                                    .get(&matrix_sdk::ruma::events::TimelineEventType::RoomTopic)
+                                    .map(|l| (*l).into())
+                                    .unwrap_or(pl.state_default.into()),
+                                room_avatar_level: pl
+                                    .events
+                                    .get(&matrix_sdk::ruma::events::TimelineEventType::RoomAvatar)
+                                    .map(|l| (*l).into())
+                                    .unwrap_or(pl.state_default.into()),
                                 current_user_id,
                                 notification_mode,
                                 join_rule,
@@ -410,8 +422,8 @@ impl State {
                             }))
                         },
                     );
-              }
-              Task::none()
+                }
+                Task::none()
             }
             Message::EventsDefaultLevelChanged(l) => {
                 self.events_default_level_str = l.clone();
@@ -1068,33 +1080,6 @@ impl State {
                 self.error = None;
                 Task::none()
             }
-            Message::JoinRuleChanged(join_rule) => {
-                if let Some(matrix) = matrix
-                    && let Some(room_id) = &self.room_id
-                {
-                    let engine = matrix.clone();
-                    let room_id_clone = room_id.to_string();
-                    let room_id_clone_reload = room_id.clone();
-                    return Task::perform(
-                        async move {
-                            engine
-                                .set_room_join_rule(&room_id_clone, join_rule)
-                                .await
-                                .map_err(|e| e.to_string())
-                        },
-                        move |res| {
-                            Action::from(crate::Message::RoomSettings(match res {
-                                Ok(_) => {
-                                    // Reload room data to reflect changes
-                                    Message::LoadRoom(room_id_clone_reload.clone())
-                                }
-                                Err(e) => Message::RoomSaved(Err(e)),
-                            }))
-                        },
-                    );
-                }
-                Task::none()
-            }
             Message::RestrictedSpaceIdChanged(id) => {
                 self.restricted_space_id = id;
                 Task::none()
@@ -1150,7 +1135,10 @@ impl State {
                     let room_id_clone_reload = room_id.clone();
                     return Task::perform(
                         async move {
-                            engine.ignore_user(&user_id).await.map_err(|e| e.to_string())
+                            engine
+                                .ignore_user(&user_id)
+                                .await
+                                .map_err(|e| e.to_string())
                         },
                         move |res| {
                             Action::from(crate::Message::RoomSettings(match res {
@@ -1170,7 +1158,10 @@ impl State {
                     let room_id_clone_reload = room_id.clone();
                     return Task::perform(
                         async move {
-                            engine.unignore_user(&user_id).await.map_err(|e| e.to_string())
+                            engine
+                                .unignore_user(&user_id)
+                                .await
+                                .map_err(|e| e.to_string())
                         },
                         move |res| {
                             Action::from(crate::Message::RoomSettings(match res {
@@ -1322,12 +1313,11 @@ impl State {
             row = row.push(button::suggested("Enabled"));
             col = col.push(row);
         } else {
-            row = row.push(button::destructive("Enable Encryption").on_press(Message::EnableEncryption));
+            row = row
+                .push(button::destructive("Enable Encryption").on_press(Message::EnableEncryption));
             col = col.push(row);
-            col = col.push(
-                text::body("⚠️ This is a one-way action and cannot be undone.")
-                    .size(12),
-            );
+            col =
+                col.push(text::body("⚠️ This is a one-way action and cannot be undone.").size(12));
         }
 
         col.into()
@@ -1391,8 +1381,7 @@ impl State {
                     .spacing(5)
                     .push(text::body("Room ID").size(12))
                     .push(
-                        text_input::text_input("", id.as_ref())
-                            // Read-only by not providing on_input
+                        text_input::text_input("", id.as_ref()), // Read-only by not providing on_input
                     ),
             );
         }
@@ -1424,8 +1413,7 @@ impl State {
                 .push(text::body(alias).size(14))
                 .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
                 .push(
-                    button::destructive("Remove")
-                        .on_press(Message::AltAliasRemoved(alias.clone())),
+                    button::destructive("Remove").on_press(Message::AltAliasRemoved(alias.clone())),
                 );
             col = col.push(row);
         }
@@ -1444,12 +1432,7 @@ impl State {
         }
 
         let add_widget: Element<'_, Message> = if is_empty {
-            tooltip(
-                add_btn,
-                text::body("Enter an alias to add"),
-                Position::Top,
-            )
-            .into()
+            tooltip(add_btn, text::body("Enter an alias to add"), Position::Top).into()
         } else {
             add_btn.into()
         };
@@ -1502,9 +1485,10 @@ impl State {
 
         if !is_restricted {
             if let Some(space_id) = &parsed_restricted_space_id {
-                let restricted = Restricted::new(vec![AllowRule::room_membership(space_id.clone())]);
-                restricted_btn =
-                    restricted_btn.on_press(Message::JoinRuleChanged(JoinRule::Restricted(restricted)));
+                let restricted =
+                    Restricted::new(vec![AllowRule::room_membership(space_id.clone())]);
+                restricted_btn = restricted_btn
+                    .on_press(Message::JoinRuleChanged(JoinRule::Restricted(restricted)));
             }
         }
 
@@ -1564,9 +1548,8 @@ impl State {
                 if !current_restricted_match {
                     let restricted = Restricted::new(vec![AllowRule::room_membership(space_id)]);
                     restricted_row = restricted_row.push(
-                        button::text("Apply").on_press(Message::JoinRuleChanged(
-                            JoinRule::Restricted(restricted),
-                        )),
+                        button::text("Apply")
+                            .on_press(Message::JoinRuleChanged(JoinRule::Restricted(restricted))),
                     );
                 }
             }
@@ -2056,9 +2039,12 @@ mod tests {
         let mut state = State::default();
         state.room_id = Some(Arc::from("!room:example.com"));
         // This won't actually call the engine since we pass None
-        let _task = state.update(Message::HistoryVisibilityChanged(HistoryVisibility::Shared), &None);
+        let _task = state.update(
+            Message::HistoryVisibilityChanged(HistoryVisibility::Shared),
+            &None,
+        );
     }
-  
+
     #[test]
     fn test_restricted_space_id_changed() {
         let mut state = State::default();
@@ -2077,17 +2063,23 @@ mod tests {
         let _ = state.update(Message::JoinRuleChanged(JoinRule::Knock), &None);
         assert_eq!(state.join_rule, Some(JoinRule::Knock));
     }
-  
+
     #[test]
     fn test_aliases_changed() {
         let mut state = State::default();
 
         // Test canonical alias change
-        let _ = state.update(Message::CanonicalAliasChanged("#new:example.com".to_string()), &None);
+        let _ = state.update(
+            Message::CanonicalAliasChanged("#new:example.com".to_string()),
+            &None,
+        );
         assert_eq!(state.canonical_alias, "#new:example.com");
 
         // Test alt alias input
-        let _ = state.update(Message::NewAltAliasInputChanged("#alt1:example.com".to_string()), &None);
+        let _ = state.update(
+            Message::NewAltAliasInputChanged("#alt1:example.com".to_string()),
+            &None,
+        );
         assert_eq!(state.new_alt_alias_input, "#alt1:example.com");
 
         // Test alt alias addition
@@ -2096,7 +2088,10 @@ mod tests {
         assert_eq!(state.new_alt_alias_input, "");
 
         // Test alt alias removal
-        let _ = state.update(Message::AltAliasRemoved("#alt1:example.com".to_string()), &None);
+        let _ = state.update(
+            Message::AltAliasRemoved("#alt1:example.com".to_string()),
+            &None,
+        );
         assert!(state.alt_aliases.is_empty());
     }
 }

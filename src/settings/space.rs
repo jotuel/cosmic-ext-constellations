@@ -605,10 +605,6 @@ impl State {
                     Task::none()
                 }
             }
-            Message::ChildFilterChanged(filter) => {
-                self.child_filter = filter;
-                Task::none()
-            }
         }
     }
 
