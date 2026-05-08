@@ -1211,6 +1211,18 @@ impl MatrixEngine {
         Ok(())
     }
 
+    pub async fn set_room_history_visibility(
+        &self,
+        room_id: &str,
+        history_visibility: matrix_sdk::ruma::events::room::history_visibility::HistoryVisibility,
+        ) -> Result<()> {
+        use matrix_sdk::ruma::events::room::history_visibility::RoomHistoryVisibilityEventContent;
+        let content = RoomHistoryVisibilityEventContent::new(history_visibility);
+          
+        room.send_state_event(content).await?;
+        Ok(())
+    }
+  
     pub async fn update_room_aliases(
         &self,
         room_id: &str,

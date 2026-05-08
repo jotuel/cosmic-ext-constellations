@@ -4,6 +4,7 @@ use cosmic::widget::{Column, Row, button, text, text_input, tooltip, tooltip::Po
 use cosmic::{Action, Element, Task};
 use matrix_sdk::ruma::RoomId;
 use matrix_sdk::ruma::events::room::MediaSource;
+use matrix_sdk::ruma::events::room::history_visibility::HistoryVisibility;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -59,6 +60,7 @@ pub struct State {
     pub notification_mode: Option<matrix_sdk::notification_settings::RoomNotificationMode>,
     pub is_loading_notifications: bool,
     pub join_rule: Option<matrix_sdk::ruma::events::room::join_rules::JoinRule>,
+    pub history_visibility: Option<HistoryVisibility>,
     pub restricted_space_id: String,
     pub pinned_events: Vec<matrix_sdk::ruma::OwnedEventId>,
     pub pinned_event_id_input: String,
@@ -110,6 +112,7 @@ pub enum Message {
     NotificationModeChanged(matrix_sdk::notification_settings::RoomNotificationMode),
     NotificationModeSet(Result<(), String>),
     JoinRuleChanged(matrix_sdk::ruma::events::room::join_rules::JoinRule),
+    HistoryVisibilityChanged(HistoryVisibility),
     RestrictedSpaceIdChanged(String),
     PinnedEventIdChanged(String),
     PinEvent,
@@ -144,6 +147,7 @@ pub struct RoomInfo {
     pub current_user_id: Option<String>,
     pub notification_mode: Option<matrix_sdk::notification_settings::RoomNotificationMode>,
     pub join_rule: Option<matrix_sdk::ruma::events::room::join_rules::JoinRule>,
+    pub history_visibility: Option<HistoryVisibility>,
     pub pinned_events: Vec<matrix_sdk::ruma::OwnedEventId>,
     pub canonical_alias: Option<String>,
     pub alt_aliases: Vec<String>,
@@ -192,6 +196,22 @@ impl State {
                                     matrix_sdk_base::deserialized_responses::SyncOrStrippedState::Stripped(
                                         ev,
                                     ) => Some(ev.content.join_rule),
+                                    _ => None,
+                                });
+
+                            let history_visibility = room
+                                .get_state_event_static::<matrix_sdk::ruma::events::room::history_visibility::RoomHistoryVisibilityEventContent>()
+                                .await
+                                .ok()
+                                .flatten()
+                                .and_then(|e| e.deserialize().ok())
+                                .and_then(|e| match e {
+                                    matrix_sdk_base::deserialized_responses::SyncOrStrippedState::Sync(
+                                        matrix_sdk::ruma::events::SyncStateEvent::Original(ev),
+                                    ) => Some(ev.content.history_visibility),
+                                    matrix_sdk_base::deserialized_responses::SyncOrStrippedState::Stripped(
+                                        ev,
+                                    ) => Some(ev.content.history_visibility),
                                     _ => None,
                                 });
 
@@ -251,6 +271,7 @@ impl State {
                                 current_user_id,
                                 notification_mode,
                                 join_rule,
+                                history_visibility,
                                 pinned_events,
                                 canonical_alias,
                                 alt_aliases,
@@ -298,6 +319,8 @@ impl State {
                         self.room_avatar_level_str = info.room_avatar_level.to_string();
                         self.current_user_id = info.current_user_id;
                         self.notification_mode = info.notification_mode;
+                        self.join_rule = info.join_rule;
+                        self.history_visibility = info.history_visibility;
                         self.join_rule = info.join_rule.clone();
                         self.restricted_space_id = match &info.join_rule {
                             Some(matrix_sdk::ruma::events::room::join_rules::JoinRule::Restricted(r)) => {
@@ -349,6 +372,33 @@ impl State {
                     }
                 }
                 Task::none()
+            }
+            Message::HistoryVisibilityChanged(history_visibility) => {
+                if let Some(matrix) = matrix
+                    && let Some(room_id) = &self.room_id
+                {
+                    let engine = matrix.clone();
+                    let room_id_clone = room_id.clone();
+                    let room_id_clone_reload = room_id.clone();
+                    return Task::perform(
+                        async move {
+                            engine
+                                .set_room_history_visibility(&room_id_clone, history_visibility)
+                                .await
+                                .map_err(|e| e.to_string())
+                        },
+                        move |res| {
+                            Action::from(crate::Message::RoomSettings(match res {
+                                Ok(_) => {
+                                    // Reload room data to reflect changes
+                                    Message::LoadRoom(room_id_clone_reload.clone())
+                                }
+                                Err(e) => Message::RoomSaved(Err(e)),
+                            }))
+                        },
+                    );
+              }
+              Task::none()
             }
             Message::EventsDefaultLevelChanged(l) => {
                 self.events_default_level_str = l.clone();
@@ -1325,6 +1375,36 @@ impl State {
 
         perm_col = perm_col.push(join_rule_row);
 
+        let mut history_visibility_row = Row::new().spacing(10).align_y(Alignment::Center);
+        history_visibility_row =
+            history_visibility_row.push(text::body("History Visibility").width(100));
+
+        for visibility in [
+            HistoryVisibility::Shared,
+            HistoryVisibility::Invited,
+            HistoryVisibility::Joined,
+        ] {
+            let label = match visibility {
+                HistoryVisibility::Shared => "Shared",
+                HistoryVisibility::Invited => "Invited",
+                HistoryVisibility::Joined => "Joined",
+                _ => unreachable!(),
+            };
+
+            let is_selected = self.history_visibility.as_ref() == Some(&visibility);
+            let mut btn = if is_selected {
+                button::suggested(label)
+            } else {
+                button::text(label)
+            };
+
+            if !is_selected {
+                btn = btn.on_press(Message::HistoryVisibilityChanged(visibility));
+            }
+            history_visibility_row = history_visibility_row.push(btn);
+        }
+
+        perm_col = perm_col.push(history_visibility_row);
         if is_restricted || !self.restricted_space_id.is_empty() {
             let mut restricted_row = Row::new().spacing(10).align_y(Alignment::Center);
             restricted_row = restricted_row.push(text::body("Space ID").width(100));
@@ -1834,6 +1914,15 @@ mod tests {
         assert_eq!(state.pinned_event_id_input, "$event:example.com");
     }
 
+    #[test]
+    fn test_history_visibility_changed() {
+        use matrix_sdk::ruma::events::room::history_visibility::HistoryVisibility;
+        let mut state = State::default();
+        state.room_id = Some(Arc::from("!room:example.com"));
+        // This won't actually call the engine since we pass None
+        let _task = state.update(Message::HistoryVisibilityChanged(HistoryVisibility::Shared), &None);
+    }
+  
     #[test]
     fn test_restricted_space_id_changed() {
         let mut state = State::default();
