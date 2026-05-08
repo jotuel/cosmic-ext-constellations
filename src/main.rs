@@ -1,6 +1,7 @@
 #![recursion_limit = "1024"]
 
 mod handlers;
+pub mod i18n;
 mod ipc;
 mod matrix;
 pub mod settings;
@@ -20,7 +21,7 @@ use matrix_sdk::ruma::OwnedRoomId;
 use matrix_sdk::ruma::events::room::MediaSource;
 use matrix_sdk_ui::sync_service::State as SyncServiceState;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use url::Url;
 
 const CONSTELLATIONS_ICON: &[u8] = include_bytes!("../res/const.svg");
@@ -843,27 +844,12 @@ impl Application for Constellations {
         if self.is_search_active {
             let search_btn =
                 button::icon(Named::new("edit-find-symbolic")).on_press(Message::ToggleSearch);
-            let search_tooltip = tooltip(search_btn, text::body("Close Search"), Position::Bottom);
-
-            let placeholder = if let Some(panel) = &self.current_settings_panel {
-                match panel {
-                    SettingsPanel::Room => "Search members...",
-                    SettingsPanel::Space => "Search rooms/subspaces...",
-                    _ => "Search settings...",
-                }
-            } else if self.selected_room.is_some() {
-                "Search in conversation..."
-            } else if self.selected_space.is_some() {
-                "Search in space..."
-            } else {
-                "Search rooms..."
-            };
-
+            let search_tooltip = tooltip(search_btn, text::body(crate::fl!("close-search")), Position::Bottom);
             let row = Row::new()
                 .align_y(Alignment::Center)
                 .push(search_tooltip)
                 .push(
-                    text_input(placeholder, &self.search_query)
+                    text_input(crate::fl!("search-placeholder"), &self.search_query)
                         .on_input(Message::SearchQueryChanged)
                         .width(200.0),
                 );
@@ -871,7 +857,7 @@ impl Application for Constellations {
         } else {
             let search_btn =
                 button::icon(Named::new("edit-find-symbolic")).on_press(Message::ToggleSearch);
-            let search_tooltip = tooltip(search_btn, text::body("Search"), Position::Bottom);
+            let search_tooltip = tooltip(search_btn, text::body(crate::fl!("search")), Position::Bottom);
             start.push(search_tooltip.into());
         }
 
@@ -891,9 +877,9 @@ impl Application for Constellations {
                 menu::items(
                     &key_binds,
                     vec![
-                        menu::Item::Button("App Settings", None, MenuAct::AppSettings),
-                        menu::Item::Button("User Settings", None, MenuAct::UserSettings),
-                        menu::Item::Button("Logout", None, MenuAct::Logout),
+                        menu::Item::Button(crate::fl!("app-settings"), None, MenuAct::AppSettings),
+                        menu::Item::Button(crate::fl!("user-settings"), None, MenuAct::UserSettings),
+                        menu::Item::Button(crate::fl!("logout"), None, MenuAct::Logout),
                     ],
                 ),
             );
@@ -989,10 +975,10 @@ impl Application for Constellations {
     ) -> Option<cosmic::app::context_drawer::ContextDrawer<'_, Self::Message>> {
         if let Some(panel) = &self.current_settings_panel {
             let title = match panel {
-                SettingsPanel::App => "App Settings",
-                SettingsPanel::User => "User Settings",
-                SettingsPanel::Room => "Room Settings",
-                SettingsPanel::Space => "Space Settings",
+                SettingsPanel::App => crate::fl!("app-settings"),
+                SettingsPanel::User => crate::fl!("user-settings"),
+                SettingsPanel::Room => crate::fl!("room-settings"),
+                SettingsPanel::Space => crate::fl!("space-settings"),
             };
 
             let panel_content = match panel {
@@ -1004,7 +990,7 @@ impl Application for Constellations {
 
             Some(
                 cosmic::app::context_drawer::context_drawer(panel_content, Message::CloseSettings)
-                    .title(title),
+                    .title(title.to_string()),
             )
         } else {
             None
@@ -1562,6 +1548,8 @@ fn redact_url(url: &Url) -> String {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    LazyLock::force(&i18n::LOAD_LOCALIZATION);
+
     tracing_subscriber::fmt()
         .with_env_filter("matrix_sdk=debug,matrix_sdk_ui=debug,cosmic_ext_constellations=debug")
         .with_writer(std::io::stderr)

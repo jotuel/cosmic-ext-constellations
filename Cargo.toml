@@ -48,6 +48,10 @@ rand = { version = "0.10.1", features = ["std_rng"] }
 notify-rust = "4.15.0"
 futures = "0.3.32"
 ruma-events = "0.32.1"
+i18n-embed = { version = "0.15", features = ["fluent-system", "desktop-requester"] }
+i18n-embed-fl = "0.9"
+rust-embed = "8"
+unic-langid = "0.9"
 
 [dev-dependencies]
 matrix-sdk-test = "0.16.0"

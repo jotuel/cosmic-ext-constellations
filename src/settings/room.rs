@@ -331,9 +331,8 @@ impl State {
                         self.room_avatar_level_str = info.room_avatar_level.to_string();
                         self.current_user_id = info.current_user_id;
                         self.notification_mode = info.notification_mode;
-                        self.join_rule = info.join_rule;
-                        self.history_visibility = info.history_visibility;
                         self.join_rule = info.join_rule.clone();
+                        self.history_visibility = info.history_visibility;
                         self.restricted_space_id = match &info.join_rule {
                             Some(matrix_sdk::ruma::events::room::join_rules::JoinRule::Restricted(r)) => {
                                 r.allow.iter().find_map(|a| match a {
@@ -1672,7 +1671,7 @@ impl State {
             || self.kick_level != self.original_kick_level
             || self.redact_level != self.original_redact_level
             || self.canonical_alias != self.original_canonical_alias
-            || self.alt_aliases != self.original_alt_aliases;
+            || self.alt_aliases != self.original_alt_aliases
             || self.events_default_level != self.original_events_default_level
             || self.room_name_level != self.original_room_name_level
             || self.room_topic_level != self.original_room_topic_level
