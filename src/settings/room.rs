@@ -61,6 +61,11 @@ pub struct State {
     pub join_rule: Option<matrix_sdk::ruma::events::room::join_rules::JoinRule>,
     pub pinned_events: Vec<matrix_sdk::ruma::OwnedEventId>,
     pub pinned_event_id_input: String,
+    pub canonical_alias: String,
+    pub original_canonical_alias: String,
+    pub alt_aliases: Vec<String>,
+    pub original_alt_aliases: Vec<String>,
+    pub new_alt_alias_input: String,
 }
 
 #[derive(Debug, Clone)]
@@ -107,6 +112,10 @@ pub enum Message {
     PinnedEventIdChanged(String),
     PinEvent,
     UnpinEvent(matrix_sdk::ruma::OwnedEventId),
+    CanonicalAliasChanged(String),
+    AltAliasAdded,
+    AltAliasRemoved(String),
+    NewAltAliasInputChanged(String),
 }
 
 #[derive(Debug, Clone)]
@@ -134,6 +143,8 @@ pub struct RoomInfo {
     pub notification_mode: Option<matrix_sdk::notification_settings::RoomNotificationMode>,
     pub join_rule: Option<matrix_sdk::ruma::events::room::join_rules::JoinRule>,
     pub pinned_events: Vec<matrix_sdk::ruma::OwnedEventId>,
+    pub canonical_alias: Option<String>,
+    pub alt_aliases: Vec<String>,
 }
 
 impl State {
@@ -199,6 +210,29 @@ impl State {
                                 })
                                 .unwrap_or_default();
 
+                            let (canonical_alias, alt_aliases) = room
+                                .get_state_event_static::<matrix_sdk::ruma::events::room::canonical_alias::RoomCanonicalAliasEventContent>()
+                                .await
+                                .ok()
+                                .flatten()
+                                .and_then(|e| e.deserialize().ok())
+                                .and_then(|e| match e {
+                                    matrix_sdk_base::deserialized_responses::SyncOrStrippedState::Sync(
+                                        matrix_sdk::ruma::events::SyncStateEvent::Original(ev),
+                                    ) => Some((
+                                        ev.content.alias.map(|a| a.to_string()),
+                                        ev.content.alt_aliases.into_iter().map(|a| a.to_string()).collect(),
+                                    )),
+                                    matrix_sdk_base::deserialized_responses::SyncOrStrippedState::Stripped(
+                                        ev,
+                                    ) => Some((
+                                        ev.content.alias.map(|a| a.to_string()),
+                                        ev.content.alt_aliases.into_iter().map(|a| a.to_string()).collect(),
+                                    )),
+                                    _ => None,
+                                })
+                                .unwrap_or((None, Vec::new()));
+
                             Ok(RoomInfo {
                                 name: room.name().unwrap_or_default(),
                                 topic: room.topic().unwrap_or_default(),
@@ -216,6 +250,8 @@ impl State {
                                 notification_mode,
                                 join_rule,
                                 pinned_events,
+                                canonical_alias,
+                                alt_aliases,
                             })
                         },
                         |res| Action::from(crate::Message::RoomSettings(Message::RoomLoaded(res))),
@@ -263,6 +299,11 @@ impl State {
                         self.join_rule = info.join_rule;
                         self.pinned_events = info.pinned_events;
                         self.pinned_event_id_input = String::new();
+                        self.canonical_alias = info.canonical_alias.clone().unwrap_or_default();
+                        self.original_canonical_alias = info.canonical_alias.unwrap_or_default();
+                        self.alt_aliases = info.alt_aliases.clone();
+                        self.original_alt_aliases = info.alt_aliases;
+                        self.new_alt_alias_input = String::new();
                         self.error = None;
 
                         let mut tasks = Vec::new();
@@ -634,6 +675,14 @@ impl State {
                         let new_invite = self.invite_level;
                         let new_kick = self.kick_level;
                         let new_redact = self.redact_level;
+                        let original_canonical = self.original_canonical_alias.clone();
+                        let new_canonical = if self.canonical_alias.is_empty() {
+                            None
+                        } else {
+                            Some(self.canonical_alias.clone())
+                        };
+                        let original_alt = self.original_alt_aliases.clone();
+                        let new_alt = self.alt_aliases.clone();
                         let new_events_default = self.events_default_level;
                         let new_room_name = self.room_name_level;
                         let new_room_topic = self.room_topic_level;
@@ -709,6 +758,16 @@ impl State {
                                         .await
                                         .map_err(|e| e.to_string())?;
                                 }
+
+                                if new_canonical.as_deref() != Some(&original_canonical)
+                                    || new_alt != original_alt
+                                {
+                                    engine
+                                        .update_room_aliases(&room_id_clone, new_canonical, new_alt)
+                                        .await
+                                        .map_err(|e| e.to_string())?;
+                                }
+
                                 Ok(())
                             },
                             |res| {
@@ -732,6 +791,8 @@ impl State {
                         self.original_invite_level = self.invite_level;
                         self.original_kick_level = self.kick_level;
                         self.original_redact_level = self.redact_level;
+                        self.original_canonical_alias = self.canonical_alias.clone();
+                        self.original_alt_aliases = self.alt_aliases.clone();
                         self.original_events_default_level = self.events_default_level;
                         self.original_room_name_level = self.room_name_level;
                         self.original_room_topic_level = self.room_topic_level;
@@ -1001,6 +1062,26 @@ impl State {
                 }
                 Task::none()
             }
+            Message::CanonicalAliasChanged(alias) => {
+                self.canonical_alias = alias;
+                Task::none()
+            }
+            Message::AltAliasAdded => {
+                let alias = self.new_alt_alias_input.trim().to_string();
+                if !alias.is_empty() && !self.alt_aliases.contains(&alias) {
+                    self.alt_aliases.push(alias);
+                }
+                self.new_alt_alias_input = String::new();
+                Task::none()
+            }
+            Message::AltAliasRemoved(alias) => {
+                self.alt_aliases.retain(|a| a != &alias);
+                Task::none()
+            }
+            Message::NewAltAliasInputChanged(input) => {
+                self.new_alt_alias_input = input;
+                Task::none()
+            }
         }
     }
 
@@ -1099,6 +1180,79 @@ impl State {
                 .push(text::body("Room Topic").size(12))
                 .push(text_input::text_input("Topic", &self.topic).on_input(Message::TopicChanged)),
         );
+
+        // Room ID
+        if let Some(id) = &self.room_id {
+            col = col.push(
+                Column::new()
+                    .spacing(5)
+                    .push(text::body("Room ID").size(12))
+                    .push(
+                        text_input::text_input("", id.as_ref())
+                            // Read-only by not providing on_input
+                    ),
+            );
+        }
+
+        col.into()
+    }
+
+    fn view_aliases(&self) -> Element<'_, Message> {
+        let mut col = Column::new().spacing(10);
+        col = col.push(text::title3("Room Aliases"));
+
+        // Canonical Alias
+        col = col.push(
+            Column::new()
+                .spacing(5)
+                .push(text::body("Canonical Alias").size(12))
+                .push(
+                    text_input::text_input("#alias:example.com", &self.canonical_alias)
+                        .on_input(Message::CanonicalAliasChanged),
+                ),
+        );
+
+        // Alternative Aliases
+        col = col.push(text::body("Alternative Aliases").size(12));
+        for alias in &self.alt_aliases {
+            let row = Row::new()
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .push(text::body(alias).size(14))
+                .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
+                .push(
+                    button::destructive("Remove")
+                        .on_press(Message::AltAliasRemoved(alias.clone())),
+                );
+            col = col.push(row);
+        }
+
+        // Add Alternative Alias
+        let mut add_alias_input = Row::new().spacing(10).align_y(Alignment::Center).push(
+            text_input::text_input("#new-alias:example.com", &self.new_alt_alias_input)
+                .on_input(Message::NewAltAliasInputChanged)
+                .on_submit(|_| Message::AltAliasAdded),
+        );
+
+        let is_empty = self.new_alt_alias_input.trim().is_empty();
+        let mut add_btn = button::text("Add");
+        if !is_empty {
+            add_btn = add_btn.on_press(Message::AltAliasAdded);
+        }
+
+        let add_widget: Element<'_, Message> = if is_empty {
+            tooltip(
+                add_btn,
+                text::body("Enter an alias to add"),
+                Position::Top,
+            )
+            .into()
+        } else {
+            add_btn.into()
+        };
+
+        add_alias_input = add_alias_input.push(add_widget);
+        col = col.push(add_alias_input);
 
         col.into()
     }
@@ -1235,6 +1389,8 @@ impl State {
             || self.invite_level != self.original_invite_level
             || self.kick_level != self.original_kick_level
             || self.redact_level != self.original_redact_level
+            || self.canonical_alias != self.original_canonical_alias
+            || self.alt_aliases != self.original_alt_aliases;
             || self.events_default_level != self.original_events_default_level
             || self.room_name_level != self.original_room_name_level
             || self.room_topic_level != self.original_room_topic_level
@@ -1506,6 +1662,7 @@ impl State {
         }
 
         col = col.push(self.view_profile());
+        col = col.push(self.view_aliases());
         col = col.push(self.view_notifications());
         col = col.push(self.view_permissions());
         col = col.push(self.view_pinned_events());
@@ -1611,5 +1768,27 @@ mod tests {
             &None,
         );
         assert_eq!(state.pinned_event_id_input, "$event:example.com");
+    }
+
+    #[test]
+    fn test_aliases_changed() {
+        let mut state = State::default();
+
+        // Test canonical alias change
+        let _ = state.update(Message::CanonicalAliasChanged("#new:example.com".to_string()), &None);
+        assert_eq!(state.canonical_alias, "#new:example.com");
+
+        // Test alt alias input
+        let _ = state.update(Message::NewAltAliasInputChanged("#alt1:example.com".to_string()), &None);
+        assert_eq!(state.new_alt_alias_input, "#alt1:example.com");
+
+        // Test alt alias addition
+        let _ = state.update(Message::AltAliasAdded, &None);
+        assert_eq!(state.alt_aliases, vec!["#alt1:example.com".to_string()]);
+        assert_eq!(state.new_alt_alias_input, "");
+
+        // Test alt alias removal
+        let _ = state.update(Message::AltAliasRemoved("#alt1:example.com".to_string()), &None);
+        assert!(state.alt_aliases.is_empty());
     }
 }
