@@ -19,6 +19,12 @@ impl Constellations {
     pub fn view_thread(&self) -> Element<'_, Message> {
         let mut timeline = Column::new().spacing(10).width(cosmic::iced::Length::Fill);
 
+        let filter = self.search_query.to_lowercase();
+        let filter_is_ascii = self.search_query.is_ascii();
+        let is_filtering = self.is_search_active
+            && !filter.is_empty()
+            && self.current_settings_panel.is_none();
+
         if self.selected_room.is_some() {
             timeline = timeline.push(
                 Row::new()
@@ -30,7 +36,17 @@ impl Constellations {
         }
 
         for item in &self.threaded_timeline_items {
-            if item.item.as_event().is_some() {
+            if let Some(event) = item.item.as_event() {
+                if is_filtering {
+                    let body = event
+                        .content()
+                        .as_message()
+                        .map(|m| m.body())
+                        .unwrap_or_default();
+                    if !crate::contains_ignore_ascii_case(body, &filter, filter_is_ascii) {
+                        continue;
+                    }
+                }
                 timeline = timeline.push(self.view_item(item));
             }
         }
@@ -42,6 +58,12 @@ impl Constellations {
 
     pub fn view_timeline(&self) -> Element<'_, Message> {
         let mut timeline = Column::new().spacing(10).width(cosmic::iced::Length::Fill);
+
+        let filter = self.search_query.to_lowercase();
+        let filter_is_ascii = self.search_query.is_ascii();
+        let is_filtering = self.is_search_active
+            && !filter.is_empty()
+            && self.current_settings_panel.is_none();
 
         if self.selected_room.is_some() {
             let load_btn = if self.is_loading_more {
@@ -59,7 +81,17 @@ impl Constellations {
         }
 
         for item in &self.timeline_items {
-            if item.item.as_event().is_some() {
+            if let Some(event) = item.item.as_event() {
+                if is_filtering {
+                    let body = event
+                        .content()
+                        .as_message()
+                        .map(|m| m.body())
+                        .unwrap_or_default();
+                    if !crate::contains_ignore_ascii_case(body, &filter, filter_is_ascii) {
+                        continue;
+                    }
+                }
                 timeline = timeline.push(self.view_item(item));
             } else if let Some(matrix::VirtualTimelineItem::DateDivider(_date)) =
                 item.item.as_virtual()
@@ -346,6 +378,12 @@ impl Constellations {
     pub fn view_threaded_timeline(&self) -> Element<'_, Message> {
         let mut timeline = Column::new().spacing(10).width(cosmic::iced::Length::Fill);
 
+        let filter = self.search_query.to_lowercase();
+        let filter_is_ascii = self.search_query.is_ascii();
+        let is_filtering = self.is_search_active
+            && !filter.is_empty()
+            && self.current_settings_panel.is_none();
+
         let header = Row::new()
             .spacing(10)
             .align_y(Alignment::Center)
@@ -359,7 +397,17 @@ impl Constellations {
         // For simplicity, we assume it's part of the threaded timeline from the SDK.
 
         for item in &self.threaded_timeline_items {
-            if item.item.as_event().is_some() {
+            if let Some(event) = item.item.as_event() {
+                if is_filtering {
+                    let body = event
+                        .content()
+                        .as_message()
+                        .map(|m| m.body())
+                        .unwrap_or_default();
+                    if !crate::contains_ignore_ascii_case(body, &filter, filter_is_ascii) {
+                        continue;
+                    }
+                }
                 timeline = timeline.push(self.view_item(item));
             }
         }
@@ -583,6 +631,34 @@ impl Constellations {
                     .spacing(if self.app_settings.compact_mode { 0 } else { 2 })
                     .push(sender_info);
 
+                if let Some(in_reply_to) = event.content().in_reply_to() {
+                    let mut reply_snippet = String::from("Replying...");
+                    let mut reply_sender = String::new();
+
+                    if let matrix_sdk_ui::timeline::TimelineDetails::Ready(replied_ev) = &in_reply_to.event {
+                        reply_sender = replied_ev.sender.to_string();
+                        if let Some(msg) = replied_ev.content.as_message() {
+                            reply_snippet = msg.body().to_string();
+                        }
+                    }
+
+                    if reply_snippet.len() > 50 {
+                        reply_snippet.truncate(47);
+                        reply_snippet.push_str("...");
+                    }
+
+                    let reply_indicator = Row::new()
+                        .spacing(5)
+                        .push(text::body("⤴").size(10))
+                        .push(text::body(if reply_sender.is_empty() {
+                            reply_snippet
+                        } else {
+                            format!("{}: {}", reply_sender, reply_snippet)
+                        }).size(10));
+
+                    bubble_col = bubble_col.push(container(reply_indicator).padding([0, 0, 5, 10]));
+                }
+
                 match message.msgtype() {
                     MessageType::Image(image) => {
                         bubble_col = bubble_col.push(self.view_message_image(image));
@@ -597,6 +673,8 @@ impl Constellations {
                 }
 
                 if let MessageType::Text(_) = message.msgtype() {
+                    let mut action_row = Row::new().spacing(5).align_y(Alignment::Center);
+
                     // Start a thread
                     let root_id = event.identifier();
                     let start_thread_btn = button::text("Open Thread").on_press(match root_id {
@@ -605,7 +683,12 @@ impl Constellations {
                         }
                         _ => Message::NoOp,
                     });
-                    bubble_col = bubble_col.push(start_thread_btn);
+                    action_row = action_row.push(start_thread_btn);
+
+                    let reply_btn = button::text("Reply").on_press(Message::StartReply(item.clone()));
+                    action_row = action_row.push(reply_btn);
+
+                    bubble_col = bubble_col.push(action_row);
                 }
 
                 bubble_col = bubble_col.push(reaction_row);
@@ -895,11 +978,12 @@ impl Constellations {
             room_list = room_list.push(btn);
         }
 
-        if !self.other_rooms.is_empty() {
+        if !self.filtered_other_rooms.is_empty() {
             room_list = room_list
                 .push(container(text::title3("Other Rooms").size(14)).padding([10, 5, 5, 5]));
 
-            for room in &self.other_rooms {
+            for &idx in &self.filtered_other_rooms {
+                let room = &self.other_rooms[idx];
                 let name = room.name.as_deref().unwrap_or_else(|| {
                     let id = &room.id;
                     id.strip_prefix('!')
@@ -1004,6 +1088,28 @@ impl Constellations {
             } else {
                 self.view_timeline()
             });
+
+            if let Some(replying_to) = &self.replying_to {
+                let mut snippet = replying_to
+                    .item
+                    .as_event()
+                    .and_then(|ev| ev.content().as_message())
+                    .map(|msg| msg.body().to_string())
+                    .unwrap_or_default();
+                if snippet.len() > 100 {
+                    snippet.truncate(97);
+                    snippet.push_str("...");
+                }
+
+                let reply_bar = Row::new()
+                    .spacing(10)
+                    .align_y(Alignment::Center)
+                    .push(text::body(format!("Replying to {}: ", replying_to.sender_name)).size(12))
+                    .push(text::body(snippet).size(12))
+                    .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
+                    .push(button::text("Cancel").on_press(Message::CancelReply));
+                content = content.push(container(reply_bar).padding(10));
+            }
 
             let composer = if self.composer_is_preview {
                 self.view_preview()

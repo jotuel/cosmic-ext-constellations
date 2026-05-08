@@ -30,6 +30,7 @@ pub struct State {
     pub original_is_public: bool,
     pub is_invite_only: bool,
     pub original_is_invite_only: bool,
+    pub child_filter: String,
 }
 
 #[derive(Debug, Clone)]
@@ -62,6 +63,7 @@ pub enum Message {
     AvatarFileSelected(Option<std::path::PathBuf>),
     AvatarUploaded(Result<(), String>),
     SetChildJoinRule(String, matrix_sdk::ruma::events::room::join_rules::JoinRule),
+    ChildFilterChanged(String),
 }
 
 #[derive(Debug, Clone)]
@@ -574,6 +576,10 @@ impl State {
                 self.new_child_order = order;
                 Task::none()
             }
+            Message::ChildFilterChanged(filter) => {
+                self.child_filter = filter;
+                Task::none()
+            }
             Message::DismissError => {
                 self.error = None;
                 Task::none()
@@ -598,6 +604,10 @@ impl State {
                 } else {
                     Task::none()
                 }
+            }
+            Message::ChildFilterChanged(filter) => {
+                self.child_filter = filter;
+                Task::none()
             }
         }
     }
@@ -738,11 +748,34 @@ impl State {
 
         // Manage Children
         let mut children_col = Column::new().spacing(10);
+
+        children_col = children_col.push(
+            text_input::text_input("Filter rooms/subspaces...", &self.child_filter)
+                .on_input(Message::ChildFilterChanged),
+        );
+
         if self.is_loading_children {
             children_col = children_col.push(text::body("Loading children..."));
         } else {
+            let filter = self.child_filter.to_lowercase();
+            let filter_is_ascii = self.child_filter.is_ascii();
+
             for child in &self.children {
                 let name = child.name.as_deref().unwrap_or(&child.id);
+
+                if !filter.is_empty() {
+                    let matches = crate::contains_ignore_ascii_case(name, &filter, filter_is_ascii)
+                        || crate::contains_ignore_ascii_case(
+                            child.id.as_ref(),
+                            &filter,
+                            filter_is_ascii,
+                        );
+
+                    if !matches {
+                        continue;
+                    }
+                }
+
                 let current_order = child.order.as_deref().unwrap_or_default();
                 let order_to_show = self
                     .pending_child_orders
@@ -935,5 +968,12 @@ mod tests {
         state.error = Some("An error occurred".to_string());
         let _ = state.update(Message::DismissError, &None);
         assert_eq!(state.error, None);
+    }
+
+    #[test]
+    fn test_child_filter_changed() {
+        let mut state = State::default();
+        let _ = state.update(Message::ChildFilterChanged("test".to_string()), &None);
+        assert_eq!(state.child_filter, "test");
     }
 }
