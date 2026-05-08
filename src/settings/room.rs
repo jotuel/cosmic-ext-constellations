@@ -34,10 +34,22 @@ pub struct State {
     pub original_kick_level: i64,
     pub redact_level: i64,
     pub original_redact_level: i64,
+    pub events_default_level: i64,
+    pub original_events_default_level: i64,
+    pub room_name_level: i64,
+    pub original_room_name_level: i64,
+    pub room_topic_level: i64,
+    pub original_room_topic_level: i64,
+    pub room_avatar_level: i64,
+    pub original_room_avatar_level: i64,
     pub invite_level_str: String,
     pub kick_level_str: String,
     pub ban_level_str: String,
     pub redact_level_str: String,
+    pub events_default_level_str: String,
+    pub room_name_level_str: String,
+    pub room_topic_level_str: String,
+    pub room_avatar_level_str: String,
     pub invite_user_id: String,
     pub kick_user_id: String,
     pub ban_user_id: String,
@@ -49,8 +61,14 @@ pub struct State {
     pub is_loading_notifications: bool,
     pub join_rule: Option<matrix_sdk::ruma::events::room::join_rules::JoinRule>,
     pub history_visibility: Option<HistoryVisibility>,
+    pub restricted_space_id: String,
     pub pinned_events: Vec<matrix_sdk::ruma::OwnedEventId>,
     pub pinned_event_id_input: String,
+    pub canonical_alias: String,
+    pub original_canonical_alias: String,
+    pub alt_aliases: Vec<String>,
+    pub original_alt_aliases: Vec<String>,
+    pub new_alt_alias_input: String,
 }
 
 #[derive(Debug, Clone)]
@@ -78,6 +96,10 @@ pub enum Message {
     InviteLevelChanged(String),
     KickLevelChanged(String),
     RedactLevelChanged(String),
+    EventsDefaultLevelChanged(String),
+    RoomNameLevelChanged(String),
+    RoomTopicLevelChanged(String),
+    RoomAvatarLevelChanged(String),
     InviteUser,
     UserInvited(Result<(), String>),
     KickUser(String),
@@ -91,9 +113,14 @@ pub enum Message {
     NotificationModeSet(Result<(), String>),
     JoinRuleChanged(matrix_sdk::ruma::events::room::join_rules::JoinRule),
     HistoryVisibilityChanged(HistoryVisibility),
+    RestrictedSpaceIdChanged(String),
     PinnedEventIdChanged(String),
     PinEvent,
     UnpinEvent(matrix_sdk::ruma::OwnedEventId),
+    CanonicalAliasChanged(String),
+    AltAliasAdded,
+    AltAliasRemoved(String),
+    NewAltAliasInputChanged(String),
 }
 
 #[derive(Debug, Clone)]
@@ -113,11 +140,17 @@ pub struct RoomInfo {
     pub invite_level: i64,
     pub kick_level: i64,
     pub redact_level: i64,
+    pub events_default_level: i64,
+    pub room_name_level: i64,
+    pub room_topic_level: i64,
+    pub room_avatar_level: i64,
     pub current_user_id: Option<String>,
     pub notification_mode: Option<matrix_sdk::notification_settings::RoomNotificationMode>,
     pub join_rule: Option<matrix_sdk::ruma::events::room::join_rules::JoinRule>,
     pub history_visibility: Option<HistoryVisibility>,
     pub pinned_events: Vec<matrix_sdk::ruma::OwnedEventId>,
+    pub canonical_alias: Option<String>,
+    pub alt_aliases: Vec<String>,
 }
 
 impl State {
@@ -199,6 +232,29 @@ impl State {
                                 })
                                 .unwrap_or_default();
 
+                            let (canonical_alias, alt_aliases) = room
+                                .get_state_event_static::<matrix_sdk::ruma::events::room::canonical_alias::RoomCanonicalAliasEventContent>()
+                                .await
+                                .ok()
+                                .flatten()
+                                .and_then(|e| e.deserialize().ok())
+                                .and_then(|e| match e {
+                                    matrix_sdk_base::deserialized_responses::SyncOrStrippedState::Sync(
+                                        matrix_sdk::ruma::events::SyncStateEvent::Original(ev),
+                                    ) => Some((
+                                        ev.content.alias.map(|a| a.to_string()),
+                                        ev.content.alt_aliases.into_iter().map(|a| a.to_string()).collect(),
+                                    )),
+                                    matrix_sdk_base::deserialized_responses::SyncOrStrippedState::Stripped(
+                                        ev,
+                                    ) => Some((
+                                        ev.content.alias.map(|a| a.to_string()),
+                                        ev.content.alt_aliases.into_iter().map(|a| a.to_string()).collect(),
+                                    )),
+                                    _ => None,
+                                })
+                                .unwrap_or((None, Vec::new()));
+
                             Ok(RoomInfo {
                                 name: room.name().unwrap_or_default(),
                                 topic: room.topic().unwrap_or_default(),
@@ -208,11 +264,17 @@ impl State {
                                 invite_level: pl.invite.into(),
                                 kick_level: pl.kick.into(),
                                 redact_level: pl.redact.into(),
+                                events_default_level: pl.events_default.into(),
+                                room_name_level: pl.events.get(&matrix_sdk::ruma::events::TimelineEventType::RoomName).map(|l| (*l).into()).unwrap_or(pl.state_default.into()),
+                                room_topic_level: pl.events.get(&matrix_sdk::ruma::events::TimelineEventType::RoomTopic).map(|l| (*l).into()).unwrap_or(pl.state_default.into()),
+                                room_avatar_level: pl.events.get(&matrix_sdk::ruma::events::TimelineEventType::RoomAvatar).map(|l| (*l).into()).unwrap_or(pl.state_default.into()),
                                 current_user_id,
                                 notification_mode,
                                 join_rule,
                                 history_visibility,
                                 pinned_events,
+                                canonical_alias,
+                                alt_aliases,
                             })
                         },
                         |res| Action::from(crate::Message::RoomSettings(Message::RoomLoaded(res))),
@@ -243,12 +305,39 @@ impl State {
                         self.invite_level = info.invite_level;
                         self.original_invite_level = info.invite_level;
                         self.invite_level_str = info.invite_level.to_string();
+                        self.events_default_level = info.events_default_level;
+                        self.original_events_default_level = info.events_default_level;
+                        self.events_default_level_str = info.events_default_level.to_string();
+                        self.room_name_level = info.room_name_level;
+                        self.original_room_name_level = info.room_name_level;
+                        self.room_name_level_str = info.room_name_level.to_string();
+                        self.room_topic_level = info.room_topic_level;
+                        self.original_room_topic_level = info.room_topic_level;
+                        self.room_topic_level_str = info.room_topic_level.to_string();
+                        self.room_avatar_level = info.room_avatar_level;
+                        self.original_room_avatar_level = info.room_avatar_level;
+                        self.room_avatar_level_str = info.room_avatar_level.to_string();
                         self.current_user_id = info.current_user_id;
                         self.notification_mode = info.notification_mode;
                         self.join_rule = info.join_rule;
                         self.history_visibility = info.history_visibility;
+                        self.join_rule = info.join_rule.clone();
+                        self.restricted_space_id = match &info.join_rule {
+                            Some(matrix_sdk::ruma::events::room::join_rules::JoinRule::Restricted(r)) => {
+                                r.allow.iter().find_map(|a| match a {
+                                    matrix_sdk::ruma::events::room::join_rules::AllowRule::RoomMembership(m) => Some(m.room_id.to_string()),
+                                    _ => None,
+                                }).unwrap_or_default()
+                            }
+                            _ => String::new(),
+                        };
                         self.pinned_events = info.pinned_events;
                         self.pinned_event_id_input = String::new();
+                        self.canonical_alias = info.canonical_alias.clone().unwrap_or_default();
+                        self.original_canonical_alias = info.canonical_alias.unwrap_or_default();
+                        self.alt_aliases = info.alt_aliases.clone();
+                        self.original_alt_aliases = info.alt_aliases;
+                        self.new_alt_alias_input = String::new();
                         self.error = None;
 
                         let mut tasks = Vec::new();
@@ -308,6 +397,34 @@ impl State {
                             }))
                         },
                     );
+              }
+              Task::none()
+            }
+            Message::EventsDefaultLevelChanged(l) => {
+                self.events_default_level_str = l.clone();
+                if let Ok(l) = l.parse() {
+                    self.events_default_level = l;
+                }
+                Task::none()
+            }
+            Message::RoomNameLevelChanged(l) => {
+                self.room_name_level_str = l.clone();
+                if let Ok(l) = l.parse() {
+                    self.room_name_level = l;
+                }
+                Task::none()
+            }
+            Message::RoomTopicLevelChanged(l) => {
+                self.room_topic_level_str = l.clone();
+                if let Ok(l) = l.parse() {
+                    self.room_topic_level = l;
+                }
+                Task::none()
+            }
+            Message::RoomAvatarLevelChanged(l) => {
+                self.room_avatar_level_str = l.clone();
+                if let Ok(l) = l.parse() {
+                    self.room_avatar_level = l;
                 }
                 Task::none()
             }
@@ -424,6 +541,34 @@ impl State {
                                 user_id_clone,
                                 res,
                             )))
+                        },
+                    );
+                }
+                Task::none()
+            }
+            Message::JoinRuleChanged(join_rule) => {
+                self.join_rule = Some(join_rule.clone());
+                if let Some(matrix) = matrix
+                    && let Some(room_id) = &self.room_id
+                {
+                    let engine = matrix.clone();
+                    let room_id_clone = room_id.clone();
+                    let room_id_clone_reload = room_id.clone();
+                    return Task::perform(
+                        async move {
+                            engine
+                                .set_room_join_rule(&room_id_clone, join_rule)
+                                .await
+                                .map_err(|e| e.to_string())
+                        },
+                        move |res| {
+                            Action::from(crate::Message::RoomSettings(match res {
+                                Ok(_) => {
+                                    // Reload room data to reflect changes
+                                    Message::LoadRoom(room_id_clone_reload.clone())
+                                }
+                                Err(e) => Message::RoomSaved(Err(e)),
+                            }))
                         },
                     );
                 }
@@ -610,10 +755,27 @@ impl State {
                         let original_invite = self.original_invite_level;
                         let original_kick = self.original_kick_level;
                         let original_redact = self.original_redact_level;
+                        let original_events_default = self.original_events_default_level;
+                        let original_room_name = self.original_room_name_level;
+                        let original_room_topic = self.original_room_topic_level;
+                        let original_room_avatar = self.original_room_avatar_level;
+
                         let new_ban = self.ban_level;
                         let new_invite = self.invite_level;
                         let new_kick = self.kick_level;
                         let new_redact = self.redact_level;
+                        let original_canonical = self.original_canonical_alias.clone();
+                        let new_canonical = if self.canonical_alias.is_empty() {
+                            None
+                        } else {
+                            Some(self.canonical_alias.clone())
+                        };
+                        let original_alt = self.original_alt_aliases.clone();
+                        let new_alt = self.alt_aliases.clone();
+                        let new_events_default = self.events_default_level;
+                        let new_room_name = self.room_name_level;
+                        let new_room_topic = self.room_topic_level;
+                        let new_room_avatar = self.room_avatar_level;
 
                         Task::perform(
                             async move {
@@ -633,6 +795,10 @@ impl State {
                                     || new_invite != original_invite
                                     || new_kick != original_kick
                                     || new_redact != original_redact
+                                    || new_events_default != original_events_default
+                                    || new_room_name != original_room_name
+                                    || new_room_topic != original_room_topic
+                                    || new_room_avatar != original_room_avatar
                                 {
                                     engine
                                         .update_room_power_level_settings(
@@ -657,10 +823,40 @@ impl State {
                                             } else {
                                                 None
                                             },
+                                            if new_events_default != original_events_default {
+                                                Some(new_events_default)
+                                            } else {
+                                                None
+                                            },
+                                            if new_room_name != original_room_name {
+                                                Some(new_room_name)
+                                            } else {
+                                                None
+                                            },
+                                            if new_room_topic != original_room_topic {
+                                                Some(new_room_topic)
+                                            } else {
+                                                None
+                                            },
+                                            if new_room_avatar != original_room_avatar {
+                                                Some(new_room_avatar)
+                                            } else {
+                                                None
+                                            },
                                         )
                                         .await
                                         .map_err(|e| e.to_string())?;
                                 }
+
+                                if new_canonical.as_deref() != Some(&original_canonical)
+                                    || new_alt != original_alt
+                                {
+                                    engine
+                                        .update_room_aliases(&room_id_clone, new_canonical, new_alt)
+                                        .await
+                                        .map_err(|e| e.to_string())?;
+                                }
+
                                 Ok(())
                             },
                             |res| {
@@ -684,6 +880,12 @@ impl State {
                         self.original_invite_level = self.invite_level;
                         self.original_kick_level = self.kick_level;
                         self.original_redact_level = self.redact_level;
+                        self.original_canonical_alias = self.canonical_alias.clone();
+                        self.original_alt_aliases = self.alt_aliases.clone();
+                        self.original_events_default_level = self.events_default_level;
+                        self.original_room_name_level = self.room_name_level;
+                        self.original_room_topic_level = self.room_topic_level;
+                        self.original_room_avatar_level = self.room_avatar_level;
                         self.error = None;
                     }
                     Err(e) => {
@@ -853,31 +1055,8 @@ impl State {
                 self.error = None;
                 Task::none()
             }
-            Message::JoinRuleChanged(join_rule) => {
-                if let Some(matrix) = matrix
-                    && let Some(room_id) = &self.room_id
-                {
-                    let engine = matrix.clone();
-                    let room_id_clone = room_id.clone();
-                    let room_id_clone_reload = room_id.clone();
-                    return Task::perform(
-                        async move {
-                            engine
-                                .set_room_join_rule(&room_id_clone, join_rule)
-                                .await
-                                .map_err(|e| e.to_string())
-                        },
-                        move |res| {
-                            Action::from(crate::Message::RoomSettings(match res {
-                                Ok(_) => {
-                                    // Reload room data to reflect changes
-                                    Message::LoadRoom(room_id_clone_reload.clone())
-                                }
-                                Err(e) => Message::RoomSaved(Err(e)),
-                            }))
-                        },
-                    );
-                }
+            Message::RestrictedSpaceIdChanged(id) => {
+                self.restricted_space_id = id;
                 Task::none()
             }
             Message::PinnedEventIdChanged(id) => {
@@ -947,6 +1126,26 @@ impl State {
                         },
                     );
                 }
+                Task::none()
+            }
+            Message::CanonicalAliasChanged(alias) => {
+                self.canonical_alias = alias;
+                Task::none()
+            }
+            Message::AltAliasAdded => {
+                let alias = self.new_alt_alias_input.trim().to_string();
+                if !alias.is_empty() && !self.alt_aliases.contains(&alias) {
+                    self.alt_aliases.push(alias);
+                }
+                self.new_alt_alias_input = String::new();
+                Task::none()
+            }
+            Message::AltAliasRemoved(alias) => {
+                self.alt_aliases.retain(|a| a != &alias);
+                Task::none()
+            }
+            Message::NewAltAliasInputChanged(input) => {
+                self.new_alt_alias_input = input;
                 Task::none()
             }
         }
@@ -1048,11 +1247,84 @@ impl State {
                 .push(text_input::text_input("Topic", &self.topic).on_input(Message::TopicChanged)),
         );
 
+        // Room ID
+        if let Some(id) = &self.room_id {
+            col = col.push(
+                Column::new()
+                    .spacing(5)
+                    .push(text::body("Room ID").size(12))
+                    .push(
+                        text_input::text_input("", id.as_ref())
+                            // Read-only by not providing on_input
+                    ),
+            );
+        }
+
+        col.into()
+    }
+
+    fn view_aliases(&self) -> Element<'_, Message> {
+        let mut col = Column::new().spacing(10);
+        col = col.push(text::title3("Room Aliases"));
+
+        // Canonical Alias
+        col = col.push(
+            Column::new()
+                .spacing(5)
+                .push(text::body("Canonical Alias").size(12))
+                .push(
+                    text_input::text_input("#alias:example.com", &self.canonical_alias)
+                        .on_input(Message::CanonicalAliasChanged),
+                ),
+        );
+
+        // Alternative Aliases
+        col = col.push(text::body("Alternative Aliases").size(12));
+        for alias in &self.alt_aliases {
+            let row = Row::new()
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .push(text::body(alias).size(14))
+                .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
+                .push(
+                    button::destructive("Remove")
+                        .on_press(Message::AltAliasRemoved(alias.clone())),
+                );
+            col = col.push(row);
+        }
+
+        // Add Alternative Alias
+        let mut add_alias_input = Row::new().spacing(10).align_y(Alignment::Center).push(
+            text_input::text_input("#new-alias:example.com", &self.new_alt_alias_input)
+                .on_input(Message::NewAltAliasInputChanged)
+                .on_submit(|_| Message::AltAliasAdded),
+        );
+
+        let is_empty = self.new_alt_alias_input.trim().is_empty();
+        let mut add_btn = button::text("Add");
+        if !is_empty {
+            add_btn = add_btn.on_press(Message::AltAliasAdded);
+        }
+
+        let add_widget: Element<'_, Message> = if is_empty {
+            tooltip(
+                add_btn,
+                text::body("Enter an alias to add"),
+                Position::Top,
+            )
+            .into()
+        } else {
+            add_btn.into()
+        };
+
+        add_alias_input = add_alias_input.push(add_widget);
+        col = col.push(add_alias_input);
+
         col.into()
     }
 
     fn view_permissions(&self) -> Element<'_, Message> {
-        use matrix_sdk::ruma::events::room::join_rules::JoinRule;
+        use matrix_sdk::ruma::events::room::join_rules::{AllowRule, JoinRule, Restricted};
 
         let mut perm_col = Column::new().spacing(10);
         perm_col = perm_col.push(text::title3("Permissions"));
@@ -1060,10 +1332,11 @@ impl State {
         let mut join_rule_row = Row::new().spacing(10).align_y(Alignment::Center);
         join_rule_row = join_rule_row.push(text::body("Join Rule").width(100));
 
-        for rule in [JoinRule::Public, JoinRule::Invite] {
+        for rule in [JoinRule::Public, JoinRule::Invite, JoinRule::Knock] {
             let label = match rule {
                 JoinRule::Public => "Public",
                 JoinRule::Invite => "Invite Only",
+                JoinRule::Knock => "Knock",
                 _ => unreachable!(),
             };
 
@@ -1080,10 +1353,25 @@ impl State {
             join_rule_row = join_rule_row.push(btn);
         }
 
-        // Show Restricted if it's currently restricted, or if it's already allowed by some space
-        if let Some(JoinRule::Restricted(_)) = &self.join_rule {
-            join_rule_row = join_rule_row.push(button::suggested("Restricted"));
+        let is_restricted = matches!(self.join_rule, Some(JoinRule::Restricted(_)));
+
+        let parsed_restricted_space_id = RoomId::parse(&self.restricted_space_id).ok();
+
+        let mut restricted_btn = if is_restricted {
+            button::suggested("Restricted")
+        } else {
+            button::text("Restricted")
+        };
+
+        if !is_restricted {
+            if let Some(space_id) = &parsed_restricted_space_id {
+                let restricted = Restricted::new(vec![AllowRule::room_membership(space_id.clone())]);
+                restricted_btn =
+                    restricted_btn.on_press(Message::JoinRuleChanged(JoinRule::Restricted(restricted)));
+            }
         }
+
+        join_rule_row = join_rule_row.push(restricted_btn);
 
         perm_col = perm_col.push(join_rule_row);
 
@@ -1117,6 +1405,37 @@ impl State {
         }
 
         perm_col = perm_col.push(history_visibility_row);
+        if is_restricted || !self.restricted_space_id.is_empty() {
+            let mut restricted_row = Row::new().spacing(10).align_y(Alignment::Center);
+            restricted_row = restricted_row.push(text::body("Space ID").width(100));
+            restricted_row = restricted_row.push(
+                text_input::text_input("!space_id:example.com", &self.restricted_space_id)
+                    .on_input(Message::RestrictedSpaceIdChanged),
+            );
+
+            if let Some(space_id) = parsed_restricted_space_id {
+                let current_restricted_match =
+                    if let Some(JoinRule::Restricted(r)) = &self.join_rule {
+                        r.allow.iter().any(|a| match a {
+                            AllowRule::RoomMembership(m) => m.room_id == space_id,
+                            _ => false,
+                        })
+                    } else {
+                        false
+                    };
+
+                if !current_restricted_match {
+                    let restricted = Restricted::new(vec![AllowRule::room_membership(space_id)]);
+                    restricted_row = restricted_row.push(
+                        button::text("Apply").on_press(Message::JoinRuleChanged(
+                            JoinRule::Restricted(restricted),
+                        )),
+                    );
+                }
+            }
+
+            perm_col = perm_col.push(restricted_row);
+        }
 
         perm_col = perm_col.push(
             Row::new()
@@ -1158,6 +1477,46 @@ impl State {
                         .on_input(Message::RedactLevelChanged),
                 ),
         );
+        perm_col = perm_col.push(
+            Row::new()
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .push(text::body("Send messages").width(100))
+                .push(
+                    text_input::text_input("0", &self.events_default_level_str)
+                        .on_input(Message::EventsDefaultLevelChanged),
+                ),
+        );
+        perm_col = perm_col.push(
+            Row::new()
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .push(text::body("Change name").width(100))
+                .push(
+                    text_input::text_input("50", &self.room_name_level_str)
+                        .on_input(Message::RoomNameLevelChanged),
+                ),
+        );
+        perm_col = perm_col.push(
+            Row::new()
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .push(text::body("Change topic").width(100))
+                .push(
+                    text_input::text_input("50", &self.room_topic_level_str)
+                        .on_input(Message::RoomTopicLevelChanged),
+                ),
+        );
+        perm_col = perm_col.push(
+            Row::new()
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .push(text::body("Change avatar").width(100))
+                .push(
+                    text_input::text_input("50", &self.room_avatar_level_str)
+                        .on_input(Message::RoomAvatarLevelChanged),
+                ),
+        );
         perm_col.into()
     }
 
@@ -1173,7 +1532,13 @@ impl State {
             || self.ban_level != self.original_ban_level
             || self.invite_level != self.original_invite_level
             || self.kick_level != self.original_kick_level
-            || self.redact_level != self.original_redact_level;
+            || self.redact_level != self.original_redact_level
+            || self.canonical_alias != self.original_canonical_alias
+            || self.alt_aliases != self.original_alt_aliases;
+            || self.events_default_level != self.original_events_default_level
+            || self.room_name_level != self.original_room_name_level
+            || self.room_topic_level != self.original_room_topic_level
+            || self.room_avatar_level != self.original_room_avatar_level;
 
         if has_changes && !self.is_saving {
             save_btn = save_btn.on_press(Message::SaveRoom);
@@ -1441,6 +1806,7 @@ impl State {
         }
 
         col = col.push(self.view_profile());
+        col = col.push(self.view_aliases());
         col = col.push(self.view_notifications());
         col = col.push(self.view_permissions());
         col = col.push(self.view_pinned_events());
@@ -1555,5 +1921,46 @@ mod tests {
         state.room_id = Some(Arc::from("!room:example.com"));
         // This won't actually call the engine since we pass None
         let _task = state.update(Message::HistoryVisibilityChanged(HistoryVisibility::Shared), &None);
+    }
+  
+    #[test]
+    fn test_restricted_space_id_changed() {
+        let mut state = State::default();
+        let _ = state.update(
+            Message::RestrictedSpaceIdChanged("!space:example.com".to_string()),
+            &None,
+        );
+        assert_eq!(state.restricted_space_id, "!space:example.com");
+    }
+
+    #[test]
+    fn test_join_rule_changed_knock() {
+        use matrix_sdk::ruma::events::room::join_rules::JoinRule;
+        let mut state = State::default();
+        state.room_id = Some(Arc::from("!room:example.com"));
+        let _ = state.update(Message::JoinRuleChanged(JoinRule::Knock), &None);
+        assert_eq!(state.join_rule, Some(JoinRule::Knock));
+    }
+  
+    #[test]
+    fn test_aliases_changed() {
+        let mut state = State::default();
+
+        // Test canonical alias change
+        let _ = state.update(Message::CanonicalAliasChanged("#new:example.com".to_string()), &None);
+        assert_eq!(state.canonical_alias, "#new:example.com");
+
+        // Test alt alias input
+        let _ = state.update(Message::NewAltAliasInputChanged("#alt1:example.com".to_string()), &None);
+        assert_eq!(state.new_alt_alias_input, "#alt1:example.com");
+
+        // Test alt alias addition
+        let _ = state.update(Message::AltAliasAdded, &None);
+        assert_eq!(state.alt_aliases, vec!["#alt1:example.com".to_string()]);
+        assert_eq!(state.new_alt_alias_input, "");
+
+        // Test alt alias removal
+        let _ = state.update(Message::AltAliasRemoved("#alt1:example.com".to_string()), &None);
+        assert!(state.alt_aliases.is_empty());
     }
 }
