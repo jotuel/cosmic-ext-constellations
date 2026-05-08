@@ -185,6 +185,9 @@ impl Constellations {
         avatar_url: Option<&'a str>,
         sender_name: &'a str,
         timestamp: &'a str,
+        sender_id: Option<matrix_sdk::ruma::OwnedUserId>,
+        is_ignored: bool,
+        is_me: bool,
     ) -> Row<'a, Message, cosmic::Theme> {
         let mut sender_info = Row::new().spacing(5).align_y(Alignment::Center);
 
@@ -206,6 +209,29 @@ impl Constellations {
         }
 
         sender_info = sender_info.push(text::body(sender_name).size(10));
+
+        if !is_me {
+            if let Some(id) = sender_id {
+                if is_ignored {
+                    sender_info = sender_info.push(
+                        button::icon(Named::new("dialog-error-symbolic"))
+                            .on_press(Message::UserSettings(
+                                crate::settings::user::Message::UnignoreUserById(id),
+                            ))
+                            .tooltip("Unignore User"),
+                    );
+                } else {
+                    sender_info = sender_info.push(
+                        button::icon(Named::new("dialog-error-symbolic"))
+                            .on_press(Message::UserSettings(
+                                crate::settings::user::Message::IgnoreUserById(id),
+                            ))
+                            .tooltip("Ignore User"),
+                    );
+                }
+            }
+        }
+
         sender_info = sender_info.push(text::body(timestamp).size(10));
 
         sender_info
@@ -591,10 +617,14 @@ impl Constellations {
                 let is_me = item.is_me;
 
                 let reaction_row = self.view_reactions(event);
+                let is_ignored = self.user_settings.ignored_users.contains(&item.sender_id);
                 let sender_info = self.view_sender_info(
                     item.avatar_url.as_deref(),
                     item.sender_name.as_str(),
                     item.timestamp.as_str(),
+                    Some(item.sender_id.clone()),
+                    is_ignored,
+                    is_me,
                 );
 
                 let mut bubble_col = Column::new()

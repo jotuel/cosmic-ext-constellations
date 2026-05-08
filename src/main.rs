@@ -392,6 +392,7 @@ impl<C: VectorOperations<T>, T: Clone> ApplyVectorDiffExt<T> for C {
 #[derive(Clone, Debug)]
 pub struct ConstellationsItem {
     pub item: Arc<matrix::TimelineItem>,
+    pub sender_id: matrix_sdk::ruma::OwnedUserId,
     pub sender_name: String,
     pub avatar_url: Option<String>,
     pub timestamp: String,
@@ -401,6 +402,7 @@ pub struct ConstellationsItem {
 
 impl ConstellationsItem {
     fn new(item: Arc<matrix::TimelineItem>, user_id: Option<&str>) -> Self {
+        let mut sender_id = matrix_sdk::ruma::user_id!("@unknown:example.com").to_owned();
         let mut sender_name = String::new();
         let mut avatar_url = None;
         let mut timestamp = String::new();
@@ -408,6 +410,7 @@ impl ConstellationsItem {
         let mut markdown = Vec::new();
 
         if let Some(event) = item.as_event() {
+            sender_id = event.sender().to_owned();
             if let Some(msg) = event.content().as_message() {
                 markdown = crate::parse_markdown(msg.body());
             }
@@ -433,11 +436,12 @@ impl ConstellationsItem {
                 .format("%Y-%m-%d %H:%M:%S")
                 .to_string();
 
-            is_me = user_id == Some(&sender_name);
+            is_me = user_id == Some(event.sender().as_str());
         }
 
         Self {
             item,
+            sender_id,
             sender_name,
             avatar_url,
             timestamp,
@@ -599,6 +603,23 @@ impl Constellations {
                         matrix::MatrixEvent::SyncIndicatorChanged(show),
                     ));
                 }
+            });
+
+            let tx_ignored = tx.clone();
+            let engine_ignored = engine.clone();
+            tokio::spawn(async move {
+                let client = engine_ignored.client().await;
+                client.add_event_handler(
+                    move |ev: matrix_sdk::ruma::events::ignored_user_list::IgnoredUserListEvent| {
+                        let tx = tx_ignored.clone();
+                        async move {
+                            let users = ev.content.ignored_users.keys().cloned().collect();
+                            let _ = tx.send(Message::Matrix(
+                                matrix::MatrixEvent::IgnoredUsersChanged(users),
+                            ));
+                        }
+                    },
+                );
             });
 
             let tx_rooms = tx.clone();
