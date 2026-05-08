@@ -1685,6 +1685,38 @@ impl MatrixEngine {
         Ok(())
     }
 
+    pub async fn send_reply(
+        &self,
+        room_id: &str,
+        reply_to_event_id: &matrix_sdk::ruma::EventId,
+        reply_to_sender: &matrix_sdk::ruma::UserId,
+        body: String,
+        html_body: Option<String>,
+    ) -> Result<()> {
+        let room_id = RoomId::parse(room_id)?;
+        let client = self.client().await;
+        let room = client.get_room(&room_id).context("Room not found")?;
+
+        let content = if let Some(html) = html_body {
+            RoomMessageEventContent::text_html(body, html)
+        } else {
+            RoomMessageEventContent::text_plain(body)
+        };
+
+        let reply = content.make_for_thread(
+            matrix_sdk::ruma::events::room::message::ReplyMetadata::new(
+                reply_to_event_id,
+                reply_to_sender,
+                None,
+            ),
+            matrix_sdk::ruma::events::room::message::ReplyWithinThread::No,
+            matrix_sdk::ruma::events::room::message::AddMentions::Yes,
+        );
+
+        room.send(reply).await?;
+        Ok(())
+    }
+
     pub async fn send_threaded_message(
         &self,
         room_id: &str,

@@ -94,6 +94,7 @@ struct Constellations {
     active_thread_root: Option<matrix_sdk::ruma::OwnedEventId>,
     threaded_timeline_items: Vector<ConstellationsItem>,
     joined_room_ids: std::collections::HashSet<std::sync::Arc<str>>,
+    replying_to: Option<ConstellationsItem>,
     selected_space: Option<OwnedRoomId>,
     current_settings_panel: Option<SettingsPanel>,
     user_settings: settings::user::State,
@@ -145,6 +146,8 @@ pub enum Message {
     SpaceChildrenFetched(OwnedRoomId, Result<Vec<matrix::RoomData>, String>),
     OpenThread(matrix_sdk::ruma::OwnedEventId),
     CloseThread,
+    StartReply(ConstellationsItem),
+    CancelReply,
     MatrixThreadDiff(
         matrix_sdk::ruma::OwnedEventId,
         eyeball_im::VectorDiff<std::sync::Arc<matrix::TimelineItem>>,
@@ -364,7 +367,7 @@ impl<C: VectorOperations<T>, T: Clone> ApplyVectorDiffExt<T> for C {
 }
 
 #[derive(Clone, Debug)]
-struct ConstellationsItem {
+pub struct ConstellationsItem {
     pub item: Arc<matrix::TimelineItem>,
     pub sender_name: String,
     pub avatar_url: Option<String>,
@@ -916,6 +919,7 @@ impl Application for Constellations {
             active_thread_root: None,
             threaded_timeline_items: Vector::new(),
             joined_room_ids: std::collections::HashSet::new(),
+            replying_to: None,
             selected_space: None,
             current_settings_panel: None,
             user_settings: Default::default(),
@@ -975,6 +979,14 @@ impl Application for Constellations {
             Message::OpenThread(root_id) => {
                 self.active_thread_root = Some(root_id);
                 self.threaded_timeline_items.clear();
+                Task::none()
+            }
+            Message::StartReply(item) => {
+                self.replying_to = Some(item);
+                Task::none()
+            }
+            Message::CancelReply => {
+                self.replying_to = None;
                 Task::none()
             }
             Message::CloseThread => {
@@ -1066,6 +1078,7 @@ impl Application for Constellations {
                         self.composer_text.clear();
                         self.composer_preview_events.clear();
                         self.composer_is_preview = false;
+                        self.replying_to = None;
                     }
                     Err(e) => {
                         self.error = Some(format!("Failed to send message: {}", e));
@@ -1543,6 +1556,7 @@ mod tests {
             active_thread_root: None,
             threaded_timeline_items: GenericVector::new(),
             is_loading_more: false,
+            replying_to: None,
         }
     }
 

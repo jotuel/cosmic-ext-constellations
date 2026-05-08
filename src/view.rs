@@ -553,6 +553,34 @@ impl Constellations {
                     .spacing(if self.app_settings.compact_mode { 0 } else { 2 })
                     .push(sender_info);
 
+                if let Some(in_reply_to) = event.content().in_reply_to() {
+                    let mut reply_snippet = String::from("Replying...");
+                    let mut reply_sender = String::new();
+
+                    if let matrix_sdk_ui::timeline::TimelineDetails::Ready(replied_ev) = &in_reply_to.event {
+                        reply_sender = replied_ev.sender.to_string();
+                        if let Some(msg) = replied_ev.content.as_message() {
+                            reply_snippet = msg.body().to_string();
+                        }
+                    }
+
+                    if reply_snippet.len() > 50 {
+                        reply_snippet.truncate(47);
+                        reply_snippet.push_str("...");
+                    }
+
+                    let reply_indicator = Row::new()
+                        .spacing(5)
+                        .push(text::body("⤴").size(10))
+                        .push(text::body(if reply_sender.is_empty() {
+                            reply_snippet
+                        } else {
+                            format!("{}: {}", reply_sender, reply_snippet)
+                        }).size(10));
+
+                    bubble_col = bubble_col.push(container(reply_indicator).padding([0, 0, 5, 10]));
+                }
+
                 match message.msgtype() {
                     MessageType::Image(image) => {
                         bubble_col = bubble_col.push(self.view_message_image(image));
@@ -567,6 +595,8 @@ impl Constellations {
                 }
 
                 if let MessageType::Text(_) = message.msgtype() {
+                    let mut action_row = Row::new().spacing(5).align_y(Alignment::Center);
+
                     // Start a thread
                     let root_id = event.identifier();
                     let start_thread_btn = button::text("Open Thread").on_press(match root_id {
@@ -575,7 +605,12 @@ impl Constellations {
                         }
                         _ => Message::NoOp,
                     });
-                    bubble_col = bubble_col.push(start_thread_btn);
+                    action_row = action_row.push(start_thread_btn);
+
+                    let reply_btn = button::text("Reply").on_press(Message::StartReply(item.clone()));
+                    action_row = action_row.push(reply_btn);
+
+                    bubble_col = bubble_col.push(action_row);
                 }
 
                 bubble_col = bubble_col.push(reaction_row);
@@ -974,6 +1009,28 @@ impl Constellations {
             } else {
                 self.view_timeline()
             });
+
+            if let Some(replying_to) = &self.replying_to {
+                let mut snippet = replying_to
+                    .item
+                    .as_event()
+                    .and_then(|ev| ev.content().as_message())
+                    .map(|msg| msg.body().to_string())
+                    .unwrap_or_default();
+                if snippet.len() > 100 {
+                    snippet.truncate(97);
+                    snippet.push_str("...");
+                }
+
+                let reply_bar = Row::new()
+                    .spacing(10)
+                    .align_y(Alignment::Center)
+                    .push(text::body(format!("Replying to {}: ", replying_to.sender_name)).size(12))
+                    .push(text::body(snippet).size(12))
+                    .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
+                    .push(button::text("Cancel").on_press(Message::CancelReply));
+                content = content.push(container(reply_bar).padding(10));
+            }
 
             let composer = if self.composer_is_preview {
                 self.view_preview()
