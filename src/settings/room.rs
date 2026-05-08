@@ -1136,27 +1136,11 @@ impl State {
 
             let filter_is_ascii = self.member_filter.is_ascii();
 
-            fn contains_ignore_ascii_case(haystack: &str, needle_lower: &str) -> bool {
-                if needle_lower.is_empty() {
-                    return true;
-                }
-                if haystack.len() < needle_lower.len() {
-                    return false;
-                }
-                haystack
-                    .as_bytes()
-                    .windows(needle_lower.len())
-                    .any(|window| window.eq_ignore_ascii_case(needle_lower.as_bytes()))
-            }
-
             for (user_id, level) in users {
                 let user_id_str = user_id.as_str();
                 if !filter.is_empty() {
-                    let matches = if filter_is_ascii && user_id_str.is_ascii() {
-                        contains_ignore_ascii_case(user_id_str, &filter)
-                    } else {
-                        user_id_str.to_lowercase().contains(&filter)
-                    };
+                    let matches =
+                        crate::contains_ignore_ascii_case(user_id_str, &filter, filter_is_ascii);
 
                     if !matches {
                         continue;

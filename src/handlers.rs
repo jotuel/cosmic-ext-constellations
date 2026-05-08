@@ -869,6 +869,7 @@ mod tests {
             room_list: Vec::new(),
             other_rooms: Vec::new(),
             filtered_room_list: Vec::new(),
+            filtered_other_rooms: Vec::new(),
             selected_room: None,
             timeline_items: eyeball_im::Vector::new(),
             composer_text: String::new(),

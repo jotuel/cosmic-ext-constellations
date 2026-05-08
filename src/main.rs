@@ -59,6 +59,28 @@ pub fn parse_markdown(text: &str) -> Vec<PreviewEvent> {
     events
 }
 
+// ⚡ Bolt Optimization: Fast path for ASCII string filtering
+// Avoids costly heap allocations from `.to_lowercase()`
+pub fn contains_ignore_ascii_case(haystack: &str, query_lower: &str, is_query_ascii: bool) -> bool {
+    if query_lower.is_empty() {
+        return true;
+    }
+    let query_bytes = query_lower.as_bytes();
+    let query_len = query_bytes.len();
+
+    if is_query_ascii && haystack.is_ascii() {
+        if haystack.len() < query_len {
+            return false;
+        }
+        haystack
+            .as_bytes()
+            .windows(query_len)
+            .any(|w| w.eq_ignore_ascii_case(query_bytes))
+    } else {
+        haystack.to_lowercase().contains(query_lower)
+    }
+}
+
 struct Constellations {
     core: Core,
     matrix: Option<matrix::MatrixEngine>,
@@ -66,6 +88,7 @@ struct Constellations {
     room_list: Vec<matrix::RoomData>,
     filtered_room_list: Vec<usize>,
     other_rooms: Vec<matrix::RoomData>,
+    filtered_other_rooms: Vec<usize>,
     selected_room: Option<std::sync::Arc<str>>,
     timeline_items: Vector<ConstellationsItem>,
     composer_text: String,
@@ -425,12 +448,8 @@ impl Constellations {
     pub fn update_filtered_rooms(&mut self) {
         let is_search_empty = self.search_query.is_empty();
 
-        // Bolt Optimization: Fast path for ASCII string filtering
-        // Avoids costly heap allocations from `.to_lowercase()`
         let is_query_ascii = self.search_query.is_ascii();
         let search_query_lower = self.search_query.to_lowercase();
-        let search_query_bytes = search_query_lower.as_bytes();
-        let search_query_len = search_query_bytes.len();
 
         let filter_by_search = |room: &matrix::RoomData| {
             if is_search_empty {
@@ -438,26 +457,9 @@ impl Constellations {
             } else {
                 room.name
                     .as_ref()
-                    .map(|n| {
-                        if is_query_ascii && n.is_ascii() {
-                            n.as_bytes()
-                                .windows(search_query_len)
-                                .any(|w| w.eq_ignore_ascii_case(search_query_bytes))
-                        } else {
-                            n.to_lowercase().contains(&search_query_lower)
-                        }
-                    })
+                    .map(|n| contains_ignore_ascii_case(n, &search_query_lower, is_query_ascii))
                     .unwrap_or(false)
-                    || {
-                        if is_query_ascii && room.id.is_ascii() {
-                            room.id
-                                .as_bytes()
-                                .windows(search_query_len)
-                                .any(|w| w.eq_ignore_ascii_case(search_query_bytes))
-                        } else {
-                            room.id.to_lowercase().contains(&search_query_lower)
-                        }
-                    }
+                    || contains_ignore_ascii_case(&room.id, &search_query_lower, is_query_ascii)
             }
         };
 
@@ -489,6 +491,14 @@ impl Constellations {
             // Re-filter other_rooms to remove any that we've now joined
             self.other_rooms
                 .retain(|r| !self.joined_room_ids.contains(r.id.as_ref()));
+
+            self.filtered_other_rooms = self
+                .other_rooms
+                .iter()
+                .enumerate()
+                .filter(|(_, r)| filter_by_search(r))
+                .map(|(i, _)| i)
+                .collect();
         } else {
             let mut rooms: Vec<_> = self
                 .room_list
@@ -500,6 +510,7 @@ impl Constellations {
             rooms.sort_by(|&a, &b| self.room_list[a].id.cmp(&self.room_list[b].id));
             self.filtered_room_list = rooms;
             self.other_rooms.clear();
+            self.filtered_other_rooms.clear();
         }
     }
 
@@ -809,11 +820,26 @@ impl Application for Constellations {
             let search_btn =
                 button::icon(Named::new("edit-find-symbolic")).on_press(Message::ToggleSearch);
             let search_tooltip = tooltip(search_btn, text::body("Close Search"), Position::Bottom);
+
+            let placeholder = if let Some(panel) = &self.current_settings_panel {
+                match panel {
+                    SettingsPanel::Room => "Search members...",
+                    SettingsPanel::Space => "Search rooms/subspaces...",
+                    _ => "Search settings...",
+                }
+            } else if self.selected_room.is_some() {
+                "Search in conversation..."
+            } else if self.selected_space.is_some() {
+                "Search in space..."
+            } else {
+                "Search rooms..."
+            };
+
             let row = Row::new()
                 .align_y(Alignment::Center)
                 .push(search_tooltip)
                 .push(
-                    text_input("Search...", &self.search_query)
+                    text_input(placeholder, &self.search_query)
                         .on_input(Message::SearchQueryChanged)
                         .width(200.0),
                 );
@@ -888,6 +914,7 @@ impl Application for Constellations {
             room_list: Vec::new(),
             filtered_room_list: Vec::new(),
             other_rooms: Vec::new(),
+            filtered_other_rooms: Vec::new(),
             selected_room: None,
             timeline_items: Vector::new(),
             composer_text: String::new(),
@@ -1262,6 +1289,19 @@ impl Application for Constellations {
             Message::OpenSettings(panel) => {
                 self.current_settings_panel = Some(panel.clone());
                 self.core.set_show_context(true);
+
+                if self.is_search_active {
+                    match panel {
+                        SettingsPanel::Room => {
+                            self.room_settings.member_filter = self.search_query.clone();
+                        }
+                        SettingsPanel::Space => {
+                            self.space_settings.child_filter = self.search_query.clone();
+                        }
+                        _ => {}
+                    }
+                }
+
                 if panel == SettingsPanel::User {
                     return self
                         .user_settings
@@ -1303,12 +1343,35 @@ impl Application for Constellations {
                 self.is_search_active = !self.is_search_active;
                 if !self.is_search_active {
                     self.search_query.clear();
-                    self.update_filtered_rooms();
+                    self.room_settings.member_filter.clear();
+                    self.space_settings.child_filter.clear();
+                } else if let Some(panel) = &self.current_settings_panel {
+                    match panel {
+                        SettingsPanel::Room => {
+                            self.search_query = self.room_settings.member_filter.clone();
+                        }
+                        SettingsPanel::Space => {
+                            self.search_query = self.space_settings.child_filter.clone();
+                        }
+                        _ => {}
+                    }
                 }
+                self.update_filtered_rooms();
                 Task::none()
             }
             Message::SearchQueryChanged(query) => {
-                self.search_query = query;
+                self.search_query = query.clone();
+                if let Some(panel) = &self.current_settings_panel {
+                    match panel {
+                        SettingsPanel::Room => {
+                            self.room_settings.member_filter = query;
+                        }
+                        SettingsPanel::Space => {
+                            self.space_settings.child_filter = query;
+                        }
+                        _ => {}
+                    }
+                }
                 self.update_filtered_rooms();
                 Task::none()
             }
@@ -1509,6 +1572,7 @@ mod tests {
             room_list: Vec::new(),
             filtered_room_list: Vec::new(),
             other_rooms: Vec::new(),
+            filtered_other_rooms: Vec::new(),
             selected_room: None,
             timeline_items: eyeball_im::Vector::new(),
             composer_text: String::new(),
