@@ -1350,6 +1350,10 @@ impl MatrixEngine {
         invite: Option<i64>,
         kick: Option<i64>,
         redact: Option<i64>,
+        events_default: Option<i64>,
+        room_name: Option<i64>,
+        room_topic: Option<i64>,
+        room_avatar: Option<i64>,
     ) -> Result<()> {
         let room_id_parsed = RoomId::parse(room_id)?;
         let client = self.client().await;
@@ -1360,6 +1364,10 @@ impl MatrixEngine {
         changes.invite = invite;
         changes.kick = kick;
         changes.redact = redact;
+        changes.events_default = events_default;
+        changes.room_name = room_name;
+        changes.room_topic = room_topic;
+        changes.room_avatar = room_avatar;
 
         room.apply_power_level_changes(changes).await?;
         Ok(())
