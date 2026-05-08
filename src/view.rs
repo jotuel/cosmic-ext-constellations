@@ -19,6 +19,12 @@ impl Constellations {
     pub fn view_thread(&self) -> Element<'_, Message> {
         let mut timeline = Column::new().spacing(10).width(cosmic::iced::Length::Fill);
 
+        let filter = self.search_query.to_lowercase();
+        let filter_is_ascii = self.search_query.is_ascii();
+        let is_filtering = self.is_search_active
+            && !filter.is_empty()
+            && self.current_settings_panel.is_none();
+
         if self.selected_room.is_some() {
             timeline = timeline.push(
                 Row::new()
@@ -30,7 +36,17 @@ impl Constellations {
         }
 
         for item in &self.threaded_timeline_items {
-            if item.item.as_event().is_some() {
+            if let Some(event) = item.item.as_event() {
+                if is_filtering {
+                    let body = event
+                        .content()
+                        .as_message()
+                        .map(|m| m.body())
+                        .unwrap_or_default();
+                    if !crate::contains_ignore_ascii_case(body, &filter, filter_is_ascii) {
+                        continue;
+                    }
+                }
                 timeline = timeline.push(self.view_item(item));
             }
         }
@@ -42,6 +58,12 @@ impl Constellations {
 
     pub fn view_timeline(&self) -> Element<'_, Message> {
         let mut timeline = Column::new().spacing(10).width(cosmic::iced::Length::Fill);
+
+        let filter = self.search_query.to_lowercase();
+        let filter_is_ascii = self.search_query.is_ascii();
+        let is_filtering = self.is_search_active
+            && !filter.is_empty()
+            && self.current_settings_panel.is_none();
 
         if self.selected_room.is_some() {
             let load_btn = if self.is_loading_more {
@@ -59,7 +81,17 @@ impl Constellations {
         }
 
         for item in &self.timeline_items {
-            if item.item.as_event().is_some() {
+            if let Some(event) = item.item.as_event() {
+                if is_filtering {
+                    let body = event
+                        .content()
+                        .as_message()
+                        .map(|m| m.body())
+                        .unwrap_or_default();
+                    if !crate::contains_ignore_ascii_case(body, &filter, filter_is_ascii) {
+                        continue;
+                    }
+                }
                 timeline = timeline.push(self.view_item(item));
             } else if let Some(matrix::VirtualTimelineItem::DateDivider(_date)) =
                 item.item.as_virtual()
@@ -320,6 +352,12 @@ impl Constellations {
     pub fn view_threaded_timeline(&self) -> Element<'_, Message> {
         let mut timeline = Column::new().spacing(10).width(cosmic::iced::Length::Fill);
 
+        let filter = self.search_query.to_lowercase();
+        let filter_is_ascii = self.search_query.is_ascii();
+        let is_filtering = self.is_search_active
+            && !filter.is_empty()
+            && self.current_settings_panel.is_none();
+
         let header = Row::new()
             .spacing(10)
             .align_y(Alignment::Center)
@@ -333,7 +371,17 @@ impl Constellations {
         // For simplicity, we assume it's part of the threaded timeline from the SDK.
 
         for item in &self.threaded_timeline_items {
-            if item.item.as_event().is_some() {
+            if let Some(event) = item.item.as_event() {
+                if is_filtering {
+                    let body = event
+                        .content()
+                        .as_message()
+                        .map(|m| m.body())
+                        .unwrap_or_default();
+                    if !crate::contains_ignore_ascii_case(body, &filter, filter_is_ascii) {
+                        continue;
+                    }
+                }
                 timeline = timeline.push(self.view_item(item));
             }
         }
@@ -900,11 +948,12 @@ impl Constellations {
             room_list = room_list.push(btn);
         }
 
-        if !self.other_rooms.is_empty() {
+        if !self.filtered_other_rooms.is_empty() {
             room_list = room_list
                 .push(container(text::title3("Other Rooms").size(14)).padding([10, 5, 5, 5]));
 
-            for room in &self.other_rooms {
+            for &idx in &self.filtered_other_rooms {
+                let room = &self.other_rooms[idx];
                 let name = room.name.as_deref().unwrap_or_else(|| {
                     let id = &room.id;
                     id.strip_prefix('!')
