@@ -1,4 +1,4 @@
-#![recursion_limit = "256"]
+#![recursion_limit = "1024"]
 
 mod handlers;
 mod ipc;
@@ -423,13 +423,12 @@ impl ConstellationsItem {
 
 impl Constellations {
     pub fn update_filtered_rooms(&mut self) {
-        let search_query = self.search_query.clone();
-        let is_search_empty = search_query.is_empty();
+        let is_search_empty = self.search_query.is_empty();
 
         // Bolt Optimization: Fast path for ASCII string filtering
         // Avoids costly heap allocations from `.to_lowercase()`
-        let is_query_ascii = search_query.is_ascii();
-        let search_query_lower = search_query.to_lowercase();
+        let is_query_ascii = self.search_query.is_ascii();
+        let search_query_lower = self.search_query.to_lowercase();
         let search_query_bytes = search_query_lower.as_bytes();
         let search_query_len = search_query_bytes.len();
 
