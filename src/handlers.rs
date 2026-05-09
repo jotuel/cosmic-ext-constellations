@@ -74,7 +74,12 @@ impl Constellations {
             let matrix_ignored = matrix.clone();
             tasks.push(Task::perform(
                 async move { matrix_ignored.ignored_users().await.unwrap_or_default() },
-                |users| Message::UserSettings(crate::settings::user::Message::IgnoredUsersLoaded(Ok(users))).into(),
+                |users| {
+                    Message::UserSettings(crate::settings::user::Message::IgnoredUsersLoaded(Ok(
+                        users,
+                    )))
+                    .into()
+                },
             ));
 
             let mut media_fetches = Vec::new();
@@ -298,7 +303,10 @@ impl Constellations {
                 self.user_settings.ignored_users = users;
                 Task::none()
             }
-            matrix::MatrixEvent::CallParticipantsChanged { room_id, participants } => {
+            matrix::MatrixEvent::CallParticipantsChanged {
+                room_id,
+                participants,
+            } => {
                 self.call_participants.insert(room_id.into(), participants);
                 Task::none()
             }
@@ -413,13 +421,7 @@ impl Constellations {
                             let sender = event.sender();
 
                             matrix_clone
-                                .send_reply(
-                                    &room_id_clone,
-                                    event_id,
-                                    sender,
-                                    body,
-                                    html_body,
-                                )
+                                .send_reply(&room_id_clone, event_id, sender, body, html_body)
                                 .await
                                 .map_err(|e| e.to_string())
                         },
@@ -972,6 +974,7 @@ mod tests {
             threaded_timeline_items: GenericVector::new(),
             is_loading_more: false,
             replying_to: None,
+            call_participants: HashMap::new(),
         }
     }
 
@@ -1006,9 +1009,7 @@ mod tests {
         app.is_initializing = true;
         assert_eq!(app.error, None);
 
-        let err_res = Err(matrix::SyncError::Anyhow(
-            "Initial sync failed".to_string(),
-        ));
+        let err_res = Err(matrix::SyncError::Anyhow("Initial sync failed".to_string()));
         let _task = app.handle_engine_ready(err_res);
 
         assert_eq!(

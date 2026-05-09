@@ -1,14 +1,13 @@
-use cosmic::Theme;
-use cosmic::widget::{Container, Text};
+use chrono::{DateTime, DurationRound, NaiveDateTime, TimeDelta};
 use cosmic::{
-    Action, Element, Task,
+    Action, Element, Task, Theme,
     iced::{
         Alignment,
         widget::{scrollable, tooltip},
     },
     widget::{
-        Column, RcElementWrapper, Row, button, container, icon::Named, menu, text, text_input,
-        tooltip::Position,
+        Column, Container, RcElementWrapper, Row, Text, button, container, divider, icon::Named,
+        menu, text, text_input, tooltip::Position,
     },
 };
 use matrix_sdk::ruma::events::room::{MediaSource, message::MessageType};
@@ -21,9 +20,8 @@ impl Constellations {
 
         let filter = self.search_query.to_lowercase();
         let filter_is_ascii = self.search_query.is_ascii();
-        let is_filtering = self.is_search_active
-            && !filter.is_empty()
-            && self.current_settings_panel.is_none();
+        let is_filtering =
+            self.is_search_active && !filter.is_empty() && self.current_settings_panel.is_none();
 
         if self.selected_room.is_some() {
             timeline = timeline.push(
@@ -61,9 +59,8 @@ impl Constellations {
 
         let filter = self.search_query.to_lowercase();
         let filter_is_ascii = self.search_query.is_ascii();
-        let is_filtering = self.is_search_active
-            && !filter.is_empty()
-            && self.current_settings_panel.is_none();
+        let is_filtering =
+            self.is_search_active && !filter.is_empty() && self.current_settings_panel.is_none();
 
         if self.selected_room.is_some() {
             let load_btn = if self.is_loading_more {
@@ -93,15 +90,22 @@ impl Constellations {
                     }
                 }
                 timeline = timeline.push(self.view_item(item));
-            } else if let Some(matrix::VirtualTimelineItem::DateDivider(_date)) =
+            } else if let Some(matrix::VirtualTimelineItem::DateDivider(date)) =
                 item.item.as_virtual()
             {
                 timeline = timeline.push(
-                    container(text::body("--- Day Divider ---").size(12))
-                        .width(cosmic::iced::Length::Fill)
-                        .align_x(Alignment::Center)
-                        .padding(10),
-                );
+                    Row::new()
+                        .push(divider::horizontal::default())
+                        .push(text::body(
+                            DateTime::from_timestamp_secs(date.as_secs().into())
+                                .unwrap()
+                                .duration_trunc(TimeDelta::try_days(1).unwrap())
+                                .unwrap()
+                                .to_rfc2822(),
+                        ))
+                        .push(divider::horizontal::default())
+                        .align_y(Alignment::Center),
+                )
             }
         }
 
@@ -164,17 +168,12 @@ impl Constellations {
                     .padding([2, 4]),
             )
             .on_press(Message::OpenReactionPicker(None));
-            let cancel_tooltip = tooltip(cancel_btn, text::body(crate::fl!("close-picker")), Position::Top);
+            let cancel_tooltip = tooltip(
+                cancel_btn,
+                text::body(crate::fl!("close-picker")),
+                Position::Top,
+            );
             reaction_row = reaction_row.push(cancel_tooltip);
-        } else {
-            // "Add reaction" button
-            let btn = button::custom(
-                container(cosmic::widget::icon::from_name("face-smile-symbolic").size(12))
-                    .padding(2),
-            )
-            .on_press(Message::OpenReactionPicker(Some(item_id.clone())));
-            let btn_tooltip = tooltip(btn, text::body(crate::fl!("add-reaction")), Position::Top);
-            reaction_row = reaction_row.push(btn_tooltip);
         }
 
         reaction_row
@@ -380,9 +379,8 @@ impl Constellations {
 
         let filter = self.search_query.to_lowercase();
         let filter_is_ascii = self.search_query.is_ascii();
-        let is_filtering = self.is_search_active
-            && !filter.is_empty()
-            && self.current_settings_panel.is_none();
+        let is_filtering =
+            self.is_search_active && !filter.is_empty() && self.current_settings_panel.is_none();
 
         let header = Row::new()
             .spacing(10)
@@ -634,7 +632,9 @@ impl Constellations {
                     let mut reply_snippet = String::from("Replying...");
                     let mut reply_sender = String::new();
 
-                    if let matrix_sdk_ui::timeline::TimelineDetails::Ready(replied_ev) = &in_reply_to.event {
+                    if let matrix_sdk_ui::timeline::TimelineDetails::Ready(replied_ev) =
+                        &in_reply_to.event
+                    {
                         reply_sender = replied_ev.sender.to_string();
                         if let Some(msg) = replied_ev.content.as_message() {
                             reply_snippet = msg.body().to_string();
@@ -646,14 +646,15 @@ impl Constellations {
                         reply_snippet.push_str("...");
                     }
 
-                    let reply_indicator = Row::new()
-                        .spacing(5)
-                        .push(text::body("⤴").size(10))
-                        .push(text::body(if reply_sender.is_empty() {
-                            reply_snippet
-                        } else {
-                            format!("{}: {}", reply_sender, reply_snippet)
-                        }).size(10));
+                    let reply_indicator =
+                        Row::new().spacing(5).push(text::body("⤴").size(10)).push(
+                            text::body(if reply_sender.is_empty() {
+                                reply_snippet
+                            } else {
+                                format!("{}: {}", reply_sender, reply_snippet)
+                            })
+                            .size(10),
+                        );
 
                     bubble_col = bubble_col.push(container(reply_indicator).padding([0, 0, 5, 10]));
                 }
@@ -674,17 +675,31 @@ impl Constellations {
                 if let MessageType::Text(_) = message.msgtype() {
                     let mut action_row = Row::new().spacing(5).align_y(Alignment::Center);
 
+                    // "Add reaction" button
+                    let btn = button::custom(
+                        container(cosmic::widget::icon::from_name("face-smile-symbolic").size(12))
+                            .padding(2),
+                    )
+                    .on_press(Message::OpenReactionPicker(Some(
+                        event.identifier().clone(),
+                    )));
+                    let btn_tooltip =
+                        tooltip(btn, text::body(crate::fl!("add-reaction")), Position::Top);
+                    action_row = action_row.push(btn_tooltip);
+
                     // Start a thread
                     let root_id = event.identifier();
-                    let start_thread_btn = button::text(crate::fl!("open-thread")).on_press(match root_id {
-                        matrix::TimelineEventItemId::EventId(id) => {
-                            Message::OpenThread(id.to_owned())
-                        }
-                        _ => Message::NoOp,
-                    });
+                    let start_thread_btn =
+                        button::text(crate::fl!("open-thread")).on_press(match root_id {
+                            matrix::TimelineEventItemId::EventId(id) => {
+                                Message::OpenThread(id.to_owned())
+                            }
+                            _ => Message::NoOp,
+                        });
                     action_row = action_row.push(start_thread_btn);
 
-                    let reply_btn = button::text(crate::fl!("reply")).on_press(Message::StartReply(item.clone()));
+                    let reply_btn = button::text(crate::fl!("reply"))
+                        .on_press(Message::StartReply(item.clone()));
                     action_row = action_row.push(reply_btn);
 
                     bubble_col = bubble_col.push(action_row);
@@ -727,7 +742,11 @@ impl Constellations {
             button::icon(Named::new("system-users")).on_press(Message::SelectSpace(None))
         };
 
-        let global_tooltip = tooltip(global_btn, text::body(crate::fl!("all-rooms")), Position::Right);
+        let global_tooltip = tooltip(
+            global_btn,
+            text::body(crate::fl!("all-rooms")),
+            Position::Right,
+        );
 
         content = content.push(global_tooltip);
 
@@ -917,8 +936,10 @@ impl Constellations {
             room_list = room_list.push(container(space_header).padding(5));
 
             if !self.other_rooms.is_empty() {
-                room_list = room_list
-                    .push(container(text::title3(crate::fl!("joined-rooms")).size(14)).padding([10, 5, 5, 5]));
+                room_list = room_list.push(
+                    container(text::title3(crate::fl!("joined-rooms")).size(14))
+                        .padding([10, 5, 5, 5]),
+                );
             }
         }
 
@@ -978,8 +999,9 @@ impl Constellations {
         }
 
         if !self.filtered_other_rooms.is_empty() {
-            room_list = room_list
-                .push(container(text::title3(crate::fl!("other-rooms")).size(14)).padding([10, 5, 5, 5]));
+            room_list = room_list.push(
+                container(text::title3(crate::fl!("other-rooms")).size(14)).padding([10, 5, 5, 5]),
+            );
 
             for &idx in &self.filtered_other_rooms {
                 let room = &self.other_rooms[idx];
@@ -1137,7 +1159,13 @@ impl Constellations {
                 let reply_bar = Row::new()
                     .spacing(10)
                     .align_y(Alignment::Center)
-                    .push(text::body(crate::fl!("replying-to", user = replying_to.sender_name.as_str())).size(12))
+                    .push(
+                        text::body(crate::fl!(
+                            "replying-to",
+                            user = replying_to.sender_name.as_str()
+                        ))
+                        .size(12),
+                    )
                     .push(text::body(snippet).size(12))
                     .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
                     .push(button::text(crate::fl!("cancel")).on_press(Message::CancelReply));
