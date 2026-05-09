@@ -1,5 +1,3 @@
-#![recursion_limit = "1024"]
-
 mod handlers;
 pub mod i18n;
 mod ipc;
@@ -874,7 +872,11 @@ impl Application for Constellations {
         if self.is_search_active {
             let search_btn =
                 button::icon(Named::new("edit-find-symbolic")).on_press(Message::ToggleSearch);
-            let search_tooltip = tooltip(search_btn, text::body(crate::fl!("close-search")), Position::Bottom);
+            let search_tooltip = tooltip(
+                search_btn,
+                text::body(crate::fl!("close-search")),
+                Position::Bottom,
+            );
             let row = Row::new()
                 .align_y(Alignment::Center)
                 .push(search_tooltip)
@@ -887,7 +889,11 @@ impl Application for Constellations {
         } else {
             let search_btn =
                 button::icon(Named::new("edit-find-symbolic")).on_press(Message::ToggleSearch);
-            let search_tooltip = tooltip(search_btn, text::body(crate::fl!("search")), Position::Bottom);
+            let search_tooltip = tooltip(
+                search_btn,
+                text::body(crate::fl!("search")),
+                Position::Bottom,
+            );
             start.push(search_tooltip.into());
         }
 
@@ -908,7 +914,11 @@ impl Application for Constellations {
                     &key_binds,
                     vec![
                         menu::Item::Button(crate::fl!("app-settings"), None, MenuAct::AppSettings),
-                        menu::Item::Button(crate::fl!("user-settings"), None, MenuAct::UserSettings),
+                        menu::Item::Button(
+                            crate::fl!("user-settings"),
+                            None,
+                            MenuAct::UserSettings,
+                        ),
                         menu::Item::Button(crate::fl!("logout"), None, MenuAct::Logout),
                     ],
                 ),
