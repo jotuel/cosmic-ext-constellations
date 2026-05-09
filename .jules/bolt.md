@@ -25,3 +25,6 @@
 ## 2026-05-08 - [Optimization] Case-insensitive child filtering in Space settings
  **Learning:** In Rust UI applications, performing case-insensitive filtering in the view loop can be expensive due to repeated heap allocations from `.to_lowercase()`.
  **Action:** Implemented a fast-path ASCII optimization using byte-level comparison (`eq_ignore_ascii_case`) when both the filter query and the target string are ASCII, significantly reducing allocation overhead in the hot view loop.
+## 2024-05-09 - [Reuse `Vec` allocations during list filtering]
+**Learning:** In hot functions like `update_filtered_rooms` that run on every keystroke during a search, recreating vectors unconditionally via `Vec::new()` and `.collect()` causes frequent O(N) heap allocations.
+**Action:** Use `std::mem::take` to retrieve the existing vectors from the application state, call `.clear()` to retain their capacity, and then populate them using `.extend(...)` instead of `.collect()`. This significantly reduces memory allocations during interactive search filtering.
