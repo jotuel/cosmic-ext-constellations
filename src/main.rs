@@ -125,6 +125,7 @@ struct Constellations {
     room_settings: settings::room::State,
     space_settings: settings::space::State,
     app_settings: settings::app::State,
+    call_participants: HashMap<std::sync::Arc<str>, Vec<matrix_sdk::ruma::OwnedUserId>>,
 }
 
 #[derive(Debug, Clone)]
@@ -194,6 +195,10 @@ pub enum Message {
     AppSettingChanged,
     ToggleSearch,
     SearchQueryChanged(String),
+    JoinCall,
+    LeaveCall,
+    CallJoined(Result<(), String>),
+    CallLeft(Result<(), String>),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -623,6 +628,31 @@ impl Constellations {
                 );
             });
 
+            let tx_calls = tx.clone();
+            let engine_calls = engine.clone();
+            tokio::spawn(async move {
+                let client = engine_calls.client().await;
+                client.add_event_handler(
+                    move |ev: matrix_sdk::ruma::events::SyncStateEvent<
+                        matrix_sdk::ruma::events::call::member::CallMemberEventContent,
+                    >,
+                          room: matrix_sdk::Room| {
+                        let tx = tx_calls.clone();
+                        let engine = engine_calls.clone();
+                        async move {
+                            let room_id = room.room_id().to_string();
+                            let participants = engine.get_call_participants(&room_id).await;
+                            let _ = tx.send(Message::Matrix(
+                                matrix::MatrixEvent::CallParticipantsChanged {
+                                    room_id,
+                                    participants,
+                                },
+                            ));
+                        }
+                    },
+                );
+            });
+
             let tx_rooms = tx.clone();
             let engine_rooms = engine.clone();
             tokio::spawn(async move {
@@ -962,6 +992,7 @@ impl Application for Constellations {
             room_settings: Default::default(),
             space_settings: Default::default(),
             app_settings: settings::app::State::from_config(&config),
+            call_participants: HashMap::new(),
         };
 
         let title_task = app.update_title();
@@ -1409,6 +1440,20 @@ impl Application for Constellations {
                 self.update_filtered_rooms();
                 Task::none()
             }
+            Message::JoinCall => self.handle_join_call(),
+            Message::LeaveCall => self.handle_leave_call(),
+            Message::CallJoined(res) => {
+                if let Err(e) = res {
+                    self.error = Some(format!("Failed to join call: {}", e));
+                }
+                Task::none()
+            }
+            Message::CallLeft(res) => {
+                if let Err(e) = res {
+                    self.error = Some(format!("Failed to leave call: {}", e));
+                }
+                Task::none()
+            }
         }
     }
 
@@ -1644,6 +1689,7 @@ mod tests {
             threaded_timeline_items: GenericVector::new(),
             is_loading_more: false,
             replying_to: None,
+            call_participants: HashMap::new(),
         }
     }
 

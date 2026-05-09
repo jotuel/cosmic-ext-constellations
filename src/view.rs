@@ -1071,10 +1071,44 @@ impl Constellations {
                 .find(|r| &r.id == room_id)
                 .and_then(|r| r.name.as_deref())
                 .unwrap_or("Room");
-            let room_header = Row::new()
+            let is_in_call = self.user_id.as_ref().map_or(false, |uid| {
+                if let Ok(user_id) = matrix_sdk::ruma::UserId::parse(uid) {
+                    self.call_participants
+                        .get(room_id)
+                        .map_or(false, |p| p.contains(&user_id))
+                } else {
+                    false
+                }
+            });
+
+            let call_participants = self.call_participants.get(room_id);
+            let participant_count = call_participants.map_or(0, |p| p.len());
+
+            let mut room_header = Row::new()
+                .spacing(10)
                 .align_y(Alignment::Center)
-                .push(text::title3(room_name))
+                .push(text::title3(room_name));
+
+            if participant_count > 0 {
+                room_header = room_header.push(
+                    container(
+                        Row::new()
+                            .spacing(5)
+                            .align_y(Alignment::Center)
+                            .push(cosmic::widget::icon::from_name("camera-video-symbolic").size(16))
+                            .push(text::body(participant_count.to_string()).size(12)),
+                    )
+                    .padding([2, 5]),
+                );
+            }
+
+            room_header = room_header
                 .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
+                .push(if is_in_call {
+                    button::text("Leave Call").on_press(Message::LeaveCall)
+                } else {
+                    button::text("Join Call").on_press(Message::JoinCall)
+                })
                 .push(
                     button::icon(Named::new("emblem-system"))
                         .tooltip("Room Settings")
