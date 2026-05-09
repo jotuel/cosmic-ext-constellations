@@ -995,7 +995,7 @@ impl Constellations {
             )
             .on_press(Message::RoomSelected(room_id));
 
-            room_list = room_list.push(btn);
+            room_list = room_list.push(btn.width(cosmic::iced::Fill));
         }
 
         if !self.filtered_other_rooms.is_empty() {
@@ -1021,8 +1021,7 @@ impl Constellations {
                 if self.user_settings.invite_avatars_display_policy {
                     if let Some(avatar_url) = &room.avatar_url {
                         if let Some(handle) = self.media_cache.get(avatar_url) {
-                            header = header
-                                .push(cosmic::widget::image(handle.clone()).width(24).height(24));
+                            header = header.push(cosmic::widget::image(handle.clone()));
                             has_avatar = true;
                         }
                     }
