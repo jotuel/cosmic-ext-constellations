@@ -472,7 +472,9 @@ impl Constellations {
         };
 
         if let Some(selected_space) = &self.selected_space {
-            let mut rooms = Vec::new();
+            // ⚡ Bolt Optimization: Reuse existing vector capacity to prevent O(N) reallocation on keystrokes
+            let mut rooms = std::mem::take(&mut self.filtered_room_list);
+            rooms.clear();
             if let Some(matrix) = &self.matrix {
                 matrix.filter_in_space_bulk_sync(
                     self.room_list
@@ -500,21 +502,26 @@ impl Constellations {
             self.other_rooms
                 .retain(|r| !self.joined_room_ids.contains(r.id.as_ref()));
 
-            self.filtered_other_rooms = self
-                .other_rooms
-                .iter()
-                .enumerate()
-                .filter(|(_, r)| filter_by_search(r))
-                .map(|(i, _)| i)
-                .collect();
+            let mut filtered_other = std::mem::take(&mut self.filtered_other_rooms);
+            filtered_other.clear();
+            filtered_other.extend(
+                self.other_rooms
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, r)| filter_by_search(r))
+                    .map(|(i, _)| i),
+            );
+            self.filtered_other_rooms = filtered_other;
         } else {
-            let mut rooms: Vec<_> = self
-                .room_list
-                .iter()
-                .enumerate()
-                .filter(|(_, r)| !r.is_space && filter_by_search(r))
-                .map(|(i, _)| i)
-                .collect();
+            let mut rooms = std::mem::take(&mut self.filtered_room_list);
+            rooms.clear();
+            rooms.extend(
+                self.room_list
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, r)| !r.is_space && filter_by_search(r))
+                    .map(|(i, _)| i),
+            );
             rooms.sort_by(|&a, &b| self.room_list[a].id.cmp(&self.room_list[b].id));
             self.filtered_room_list = rooms;
             self.other_rooms.clear();
