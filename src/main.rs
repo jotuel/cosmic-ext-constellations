@@ -1,3 +1,4 @@
+#![recursion_limit = "256"]
 mod handlers;
 pub mod i18n;
 mod ipc;
@@ -67,7 +68,7 @@ pub fn contains_ignore_ascii_case(haystack: &str, query_lower: &str, is_query_as
     let query_bytes = query_lower.as_bytes();
     let query_len = query_bytes.len();
 
-    if is_query_ascii && haystack.is_ascii() {
+    if is_query_ascii {
         if haystack.len() < query_len {
             return false;
         }
