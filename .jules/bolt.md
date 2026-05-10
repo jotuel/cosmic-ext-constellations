@@ -28,3 +28,6 @@
 ## 2024-05-09 - [Reuse `Vec` allocations during list filtering]
 **Learning:** In hot functions like `update_filtered_rooms` that run on every keystroke during a search, recreating vectors unconditionally via `Vec::new()` and `.collect()` causes frequent O(N) heap allocations.
 **Action:** Use `std::mem::take` to retrieve the existing vectors from the application state, call `.clear()` to retain their capacity, and then populate them using `.extend(...)` instead of `.collect()`. This significantly reduces memory allocations during interactive search filtering.
+## 2024-05-10 - [Optimization] Removed unnecessary haystack.is_ascii() check in string filtering
+**Learning:** When performing byte-wise windowed substring matching (`windows(len).any(|w| w.eq_ignore_ascii_case(query_bytes))`) with a pure ASCII query, checking if the haystack is also purely ASCII (`haystack.is_ascii()`) is unnecessary. UTF-8 multi-byte characters consist entirely of bytes with the high bit set (>= 128), which can never spuriously match any ASCII byte (0-127).
+**Action:** Remove `haystack.is_ascii()` preconditions when the query string is known to be pure ASCII. This allows the zero-allocation fast path to also process haystacks containing emojis or foreign characters without falling back to expensive `.to_lowercase()` heap allocations.
