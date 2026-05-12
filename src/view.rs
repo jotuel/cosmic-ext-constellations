@@ -1126,7 +1126,7 @@ impl Constellations {
             room_header = room_header
                 .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
                 .push(if is_in_call {
-                    button::text("Leave Call").on_press(Message::LeaveCall)
+                    button::destructive("Leave Call").on_press(Message::LeaveCall)
                 } else {
                     button::text("Join Call").on_press(Message::JoinCall)
                 })
