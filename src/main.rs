@@ -19,10 +19,13 @@ use eyeball_im::Vector;
 use matrix_sdk::ruma::OwnedRoomId;
 use matrix_sdk::ruma::events::room::MediaSource;
 use matrix_sdk_ui::sync_service::State as SyncServiceState;
+use mimalloc::MiMalloc;
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
 use url::Url;
 
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
 const CONSTELLATIONS_ICON: &[u8] = include_bytes!("../res/const.svg");
 
 // ⚡ Bolt Optimization:

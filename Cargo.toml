@@ -52,6 +52,7 @@ i18n-embed = { version = "0.15", features = ["fluent-system", "desktop-requester
 i18n-embed-fl = "0.9"
 rust-embed = "8"
 unic-langid = "0.9"
+mimalloc = { version = "0.1.50", features = ["secure"] }
 
 [dev-dependencies]
 matrix-sdk-test = "0.16.0"
@@ -65,4 +66,3 @@ wiremock = "0.6.5"
 
 [lints.rust]
 unused_imports = "warn"
-

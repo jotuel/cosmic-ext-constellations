@@ -6,13 +6,19 @@
 
 [x] After Logout can't Login again
 
+[ ] Sync error messages stays even after resolving issue
+
 # ***General***
 
-[ ] Fluent for localization
+[x] Fluent for localization
 
 [ ] Implement real time audio connections
 
 [ ] Video connections using MatrixRTC
+
+[ ] Way to enlarge images
+
+[ ] Implement every Setting (autoloading images, typing notifications etc...)
 
 # ***Search***
 
@@ -32,13 +38,17 @@
 
 [x] Adding Emoji reactions
 
-[ ] Threaded conversations
+[x] Threaded conversations
 
-[ ] Reply to message
+[x] Reply to message
 
-[ ] Automatic sliding sync / pagination
+[x] Automatic sliding sync / pagination
 
-[ ] Option to ignore user
+[x] Option to ignore user
+
+[ ] Always use sliding sync, remove Load more button
+
+[ ] Improve UI (emoji picker, better threading)
 
 # ***Notifications***
 
@@ -78,27 +88,27 @@
     - Kick (room.kick_user())
     - Ban / Unban (room.ban_user(), room.unban_user())
 
-[ ] Join Rules: Modify the m.room.join_rules state event to toggle whether the room is Invite Only, Public, Knock (request to join), or Restricted (requires membership in a
+[x] Join Rules: Modify the m.room.join_rules state event to toggle whether the room is Invite Only, Public, Knock (request to join), or Restricted (requires membership in a
 specific Space).
 
 ### *4. Security & Encryption*
 
-[ ] Enable E2E Encryption: If the room is unencrypted, you can add a button to call room.enable_encryption(). (Note: Make sure to warn the user this is a one-way action and
+[x] Enable E2E Encryption: If the room is unencrypted, you can add a button to call room.enable_encryption(). (Note: Make sure to warn the user this is a one-way action and
 cannot be undone).
 
-[ ] History Visibility: Change the m.room.history_visibility state event to determine if new members can see past messages (Shared, Invited, or Joined).
+[x] History Visibility: Change the m.room.history_visibility state event to determine if new members can see past messages (Shared, Invited, or Joined).
 
 ### *5. Role & Permission Management*
 
 [x] Power Levels: You can fetch the m.room.power_levels event and build a UI to promote/demote users (e.g., Default (0), Moderator (50), Admin (100)).
 
-[ ] Action Permissions: Use the power levels payload to let Admins restrict who can change the room name, invite new people, or send certain types of messages.
+[x] Action Permissions: Use the power levels payload to let Admins restrict who can change the room name, invite new people, or send certain types of messages.
 
 ### *6. Advanced / Debug*
 
-[ ] Room ID & Aliases: Display the internal Matrix !room_id:server.com and manage its canonical aliases (#alias:server.com).
+[x] Room ID & Aliases: Display the internal Matrix !room_id:server.com and manage its canonical aliases (#alias:server.com).
 
-[ ] Pinned Messages: Interface with the m.room.pinned_events state event to manage important messages.
+[x] Pinned Messages: Interface with the m.room.pinned_events state event to manage important messages.
 ## **Space**
 ### *1. Hierarchy & Children Management*
 
@@ -110,7 +120,7 @@ cannot be undone).
 
  ### *2. Space-Restricted Join Rules*
 
-[ ] Restricted Access: You can update a room's join rules to m.room.join_rules: restricted, allowing anyone who is a member of the Space to join the room without an explicit
+[x] Restricted Access: You can update a room's join rules to m.room.join_rules: restricted, allowing anyone who is a member of the Space to join the room without an explicit
  invite.
 
  ### *3. Basic Profile (Same as Rooms)*
@@ -121,9 +131,9 @@ cannot be undone).
 
  ### *4. Visibility & Discovery*
 
-[ ] Canonical Alias: Manage the #space_name:server.com alias so the Space can be easily found and shared.
+[x] Canonical Alias: Manage the #space_name:server.com alias so the Space can be easily found and shared.
 
-[ ] Public vs. Private: Toggle whether the Space is discoverable in the server's directory or requires an invitation.
+[x] Public vs. Private: Toggle whether the Space is discoverable in the server's directory or requires an invitation.
 ## **User**
 ### *1. Profile Management (client.account())*
 
@@ -137,9 +147,9 @@ cannot be undone).
 
 [x] Change Password: Allow the user to update their account password (change_password()).
 
-[ ] Emails and Phone Numbers (3PIDs): View, add, and remove linked emails or phone numbers (get_3pids(), add_3pid(), delete_3pid()).
+[x] Emails and Phone Numbers (3PIDs): View, add, and remove linked emails or phone numbers (get_3pids(), add_3pid(), delete_3pid()).
 
-[ ] Deactivate Account: Allow users to permanently delete their matrix account (deactivate()).
+[x] Deactivate Account: Allow users to permanently delete their matrix account (deactivate()).
 
 ### *3. Notifications & Push Rules (client.notification_settings())*
 
@@ -147,14 +157,14 @@ cannot be undone).
 
 ### *4. Privacy & Preferences (client.account())*
 
-[ ] Ignored Users: View and manage the list of blocked/ignored users (ignore_user(), unignore_user(), is_user_ignored()).
+[x] Ignored Users: View and manage the list of blocked/ignored users (ignore_user(), unignore_user(), is_user_ignored()).
 
-[ ] Media & URL Previews: Toggle global policies for displaying media previews and
+[x] Media & URL Previews: Toggle global policies for displaying media previews and
  invite avatars (set_media_previews_display_policy(),
  set_invite_avatars_display_policy()).
 
 ### *5. Cross-Signing & Encryption (client.encryption())*
 
-[ ] Key Verification: Check cross-signing status, bootstrap cross-signing, or display the user's master/self-signing keys.
+[x] Key Verification: Check cross-signing status, bootstrap cross-signing, or display the user's master/self-signing keys.
 
 [x] Session Verification: Trigger or accept interactive verification requests for new devices.
