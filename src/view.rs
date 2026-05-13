@@ -3,7 +3,7 @@ use cosmic::{
     Action, Element, Task, Theme,
     iced::{
         Alignment,
-        widget::{scrollable, tooltip},
+        widget::{scrollable, sensor::Key, tooltip},
     },
     widget::{
         Column, Container, RcElementWrapper, Row, Text, button, container, divider, icon::Named,
@@ -98,10 +98,12 @@ impl Constellations {
                         .push(divider::horizontal::default())
                         .push(text::body(
                             DateTime::from_timestamp_secs(date.as_secs().into())
-                                .unwrap()
-                                .duration_trunc(TimeDelta::try_days(1).unwrap())
-                                .unwrap()
-                                .to_rfc2822(),
+                                .unwrap_or_default()
+                                .duration_trunc(TimeDelta::try_days(1).unwrap_or_default())
+                                .unwrap_or_default()
+                                .to_rfc2822()
+                                .trim_end_matches(" 00:00:00 +0000")
+                                .to_owned(),
                         ))
                         .push(divider::horizontal::default())
                         .align_y(Alignment::Center),
@@ -674,15 +676,14 @@ impl Constellations {
                 let mut action_row = Row::new().spacing(5).align_y(Alignment::Center);
 
                 // "Add reaction" button
-                let btn = button::custom(
-                    container(cosmic::widget::icon::from_name("face-smile-symbolic").size(12))
-                        .padding(2),
-                )
-                .on_press(Message::OpenReactionPicker(Some(
-                    event.identifier().clone(),
-                )));
-                let btn_tooltip =
-                    tooltip(btn, text::body(crate::fl!("add-reaction")), Position::Top);
+                let btn = button::text(crate::fl!("reaction")).on_press(
+                    Message::OpenReactionPicker(Some(event.identifier().clone())),
+                );
+                let btn_tooltip = tooltip(
+                    btn,
+                    text::body(crate::fl!("add-reaction")),
+                    Position::Bottom,
+                );
                 action_row = action_row.push(btn_tooltip);
 
                 // Start a thread
@@ -694,11 +695,21 @@ impl Constellations {
                         }
                         _ => Message::NoOp,
                     });
-                action_row = action_row.push(start_thread_btn);
+                let action_tooltip = tooltip(
+                    start_thread_btn,
+                    text::body(crate::fl!("tooltip-thread")),
+                    Position::Bottom,
+                );
+                action_row = action_row.push(action_tooltip);
 
                 let reply_btn =
                     button::text(crate::fl!("reply")).on_press(Message::StartReply(item.clone()));
-                action_row = action_row.push(reply_btn);
+                let reply_tooltip = tooltip(
+                    reply_btn,
+                    text::body(crate::fl!("tooltip-reply")),
+                    Position::Bottom,
+                );
+                action_row = action_row.push(reply_tooltip);
 
                 bubble_col = bubble_col.push(action_row);
             }
@@ -1197,12 +1208,14 @@ impl Constellations {
                 self.composer_text.trim().is_empty() && self.composer_attachments.is_empty();
 
             let mut send_btn = button::text(if self.active_thread_root.is_some() {
-                "Reply to Thread"
+                crate::fl!("reply")
             } else {
-                "Send"
+                crate::fl!("send")
             });
             if !is_empty {
-                send_btn = send_btn.on_press(Message::SendMessage);
+                send_btn = send_btn
+                    .on_press(Message::SendMessage)
+                    .tooltip(crate::fl!("tooltip-send"));
             }
 
             let send_btn_widget: Element<'_, Message> = if is_empty {
@@ -1218,15 +1231,20 @@ impl Constellations {
 
             let controls = Row::new()
                 .spacing(10)
-                .push(button::text(crate::fl!("attach")).on_press(Message::AddAttachment))
                 .push(
-                    button::text(if self.composer_is_preview {
-                        "Edit"
-                    } else {
-                        "Preview"
-                    })
-                    .on_press(Message::TogglePreview),
+                    button::text(crate::fl!("attach"))
+                        .on_press(Message::AddAttachment)
+                        .tooltip(crate::fl!("tooltip-attach")),
                 )
+                .push(if self.composer_is_preview {
+                    button::text(crate::fl!("edit"))
+                        .on_press(Message::TogglePreview)
+                        .tooltip(crate::fl!("tooltip-edit"))
+                } else {
+                    button::text(crate::fl!("preview"))
+                        .on_press(Message::TogglePreview)
+                        .tooltip(crate::fl!("tooltip-preview"))
+                })
                 .push(send_btn_widget);
 
             content = content.push(
