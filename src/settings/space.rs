@@ -823,29 +823,28 @@ impl State {
                         button::text("Restricted Access")
                     };
 
-                    if !is_restricted {
-                        if let Some(space_id) = &self.space_id
-                            && let Ok(space_id_parsed) =
-                                matrix_sdk::ruma::RoomId::parse(space_id.as_str())
-                        {
-                            let mut restricted = Restricted::new(vec![AllowRule::room_membership(
-                                space_id_parsed.to_owned(),
-                            )]);
-                            // Keep other existing allowed spaces if any
-                            if let Some(JoinRule::Restricted(r)) = &child.join_rule {
-                                for allow in &r.allow {
-                                    if let AllowRule::RoomMembership(ra) = allow {
-                                        if ra.room_id != space_id_parsed {
-                                            restricted.allow.push(allow.clone());
-                                        }
-                                    }
+                    if !is_restricted
+                        && let Some(space_id) = &self.space_id
+                        && let Ok(space_id_parsed) =
+                            matrix_sdk::ruma::RoomId::parse(space_id.as_str())
+                    {
+                        let mut restricted = Restricted::new(vec![AllowRule::room_membership(
+                            space_id_parsed.to_owned(),
+                        )]);
+                        // Keep other existing allowed spaces if any
+                        if let Some(JoinRule::Restricted(r)) = &child.join_rule {
+                            for allow in &r.allow {
+                                if let AllowRule::RoomMembership(ra) = allow
+                                    && ra.room_id != space_id_parsed
+                                {
+                                    restricted.allow.push(allow.clone());
                                 }
                             }
-                            restricted_btn = restricted_btn.on_press(Message::SetChildJoinRule(
-                                child.id.to_string(),
-                                JoinRule::Restricted(restricted),
-                            ));
                         }
+                        restricted_btn = restricted_btn.on_press(Message::SetChildJoinRule(
+                            child.id.to_string(),
+                            JoinRule::Restricted(restricted),
+                        ));
                     }
 
                     row = row.push(Row::new().spacing(5).push(invite_btn).push(restricted_btn));

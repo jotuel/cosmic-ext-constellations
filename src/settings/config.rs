@@ -34,17 +34,17 @@ impl Config {
     }
 
     pub fn load_from(path: Option<PathBuf>) -> Self {
-        if let Some(path) = path {
-            if path.exists() {
-                if let Ok(file) = std::fs::File::open(path) {
-                    if let Ok(config) = serde_json::from_reader(file) {
-                        return config;
-                    } else {
-                        tracing::warn!("Failed to deserialize config, using defaults");
-                    }
+        if let Some(path) = path
+            && path.exists()
+        {
+            if let Ok(file) = std::fs::File::open(path) {
+                if let Ok(config) = serde_json::from_reader(file) {
+                    return config;
                 } else {
-                    tracing::warn!("Failed to open config file, using defaults");
+                    tracing::warn!("Failed to deserialize config, using defaults");
                 }
+            } else {
+                tracing::warn!("Failed to open config file, using defaults");
             }
         }
         Self::default()
@@ -100,7 +100,9 @@ mod tests {
             ..Default::default()
         };
 
-        config.save_to(Some(config_path.clone())).expect("Failed to save config");
+        config
+            .save_to(Some(config_path.clone()))
+            .expect("Failed to save config");
 
         let loaded = Config::load_from(Some(config_path));
         assert_eq!(config, loaded);

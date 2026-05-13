@@ -168,11 +168,11 @@ impl SpaceHierarchy {
         let mut descendants = HashSet::new();
         let mut queue = vec![space_id];
         while let Some(current) = queue.pop() {
-            if descendants.insert(current.as_str()) {
-                if let Some(children) = self.children.get(current) {
-                    for child in children.keys() {
-                        queue.push(child);
-                    }
+            if descendants.insert(current.as_str())
+                && let Some(children) = self.children.get(current)
+            {
+                for child in children.keys() {
+                    queue.push(child);
                 }
             }
         }
@@ -1262,7 +1262,6 @@ impl MatrixEngine {
             .map(|s| RoomAliasId::parse(s).map(|a| a.to_owned()))
             .transpose()?;
 
-
         Ok(())
     }
 
@@ -1270,7 +1269,7 @@ impl MatrixEngine {
         &self,
         room_id: &str,
         history_visibility: matrix_sdk::ruma::events::room::history_visibility::HistoryVisibility,
-        ) -> Result<()> {
+    ) -> Result<()> {
         let room_id_parsed = RoomId::parse(room_id)?;
         let client = self.client().await;
         let room = client.get_room(&room_id_parsed).context("Room not found")?;
@@ -1279,7 +1278,7 @@ impl MatrixEngine {
         room.send_state_event(content).await?;
         Ok(())
     }
-  
+
     pub async fn update_room_aliases(
         &self,
         room_id: &str,
@@ -1313,7 +1312,6 @@ impl MatrixEngine {
             .into_iter()
             .map(|s| RoomAliasId::parse(s).map(|a| a.to_owned()))
             .collect::<Result<Vec<_>, _>>()?;
-
 
         Ok(())
     }
@@ -1548,16 +1546,16 @@ impl MatrixEngine {
                     matrix_sdk_base::deserialized_responses::SyncOrStrippedState::Sync(
                         matrix_sdk::ruma::events::SyncStateEvent::Original(ev),
                     ) => {
-                        if !ev.content.via.is_empty() {
-                            if let Ok(cid) = RoomId::parse(ev.state_key.as_str()) {
-                                child_data.insert(
-                                    cid,
-                                    ChildData {
-                                        order: ev.content.order.as_ref().map(|o| o.to_string()),
-                                        suggested: ev.content.suggested,
-                                    },
-                                );
-                            }
+                        if !ev.content.via.is_empty()
+                            && let Ok(cid) = RoomId::parse(ev.state_key.as_str())
+                        {
+                            child_data.insert(
+                                cid,
+                                ChildData {
+                                    order: ev.content.order.as_ref().map(|o| o.to_string()),
+                                    suggested: ev.content.suggested,
+                                },
+                            );
                         }
                     }
                     matrix_sdk_base::deserialized_responses::SyncOrStrippedState::Stripped(ev) => {
@@ -1567,16 +1565,15 @@ impl MatrixEngine {
                             .as_ref()
                             .map(|v| v.is_empty())
                             .unwrap_or(true)
+                            && let Ok(cid) = RoomId::parse(ev.state_key.as_str())
                         {
-                            if let Ok(cid) = RoomId::parse(ev.state_key.as_str()) {
-                                child_data.insert(
-                                    cid,
-                                    ChildData {
-                                        order: ev.content.order.as_ref().map(|o| o.to_string()),
-                                        suggested: ev.content.suggested,
-                                    },
-                                );
-                            }
+                            child_data.insert(
+                                cid,
+                                ChildData {
+                                    order: ev.content.order.as_ref().map(|o| o.to_string()),
+                                    suggested: ev.content.suggested,
+                                },
+                            );
                         }
                     }
                     _ => {}

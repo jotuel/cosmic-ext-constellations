@@ -1483,13 +1483,10 @@ impl State {
             button::text("Restricted")
         };
 
-        if !is_restricted {
-            if let Some(space_id) = &parsed_restricted_space_id {
-                let restricted =
-                    Restricted::new(vec![AllowRule::room_membership(space_id.clone())]);
-                restricted_btn = restricted_btn
-                    .on_press(Message::JoinRuleChanged(JoinRule::Restricted(restricted)));
-            }
+        if !is_restricted && let Some(space_id) = &parsed_restricted_space_id {
+            let restricted = Restricted::new(vec![AllowRule::room_membership(space_id.clone())]);
+            restricted_btn =
+                restricted_btn.on_press(Message::JoinRuleChanged(JoinRule::Restricted(restricted)));
         }
 
         join_rule_row = join_rule_row.push(restricted_btn);
