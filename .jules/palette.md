@@ -63,3 +63,6 @@
 ## 2024-05-04 - [Empty State Visual Polish]
 **Learning:** When lists or detail views are empty (like having no room selected), purely text-based empty states feel barren. Adding a simple, relevant icon makes the empty state much more pleasant and helps anchor the layout visually without distracting from the UI.
 **Action:** When creating empty states, include a relevant icon using `cosmic::widget::icon::from_name(...)` sized appropriately (e.g., 64px) above the title to improve the visual hierarchy and overall feel.
+## 2024-05-13 - Redesigned Chat Layout for Density and Utility
+ **Learning:** When displaying high-density threads in a side-by-side layout, using pure borders/dividers rather than background colors or complex shadows (like Card styles) keeps the design functional and avoids clashing with user themes.
+ **Action:** Swapped custom hardcoded emojis for a 20-item standard layout and shifted from vertical flow to a dense three-pane structure (timeline + threads) with rounded message bubbles via `.max_width(600)`. Removed complex `Card` closures to retain maximum compatibility with raw standard styling.

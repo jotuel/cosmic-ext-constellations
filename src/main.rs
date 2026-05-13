@@ -639,7 +639,7 @@ impl Constellations {
             tokio::spawn(async move {
                 let client = engine_calls.client().await;
                 client.add_event_handler(
-                    move |ev: matrix_sdk::ruma::events::SyncStateEvent<
+                    move |_ev: matrix_sdk::ruma::events::SyncStateEvent<
                         matrix_sdk::ruma::events::call::member::CallMemberEventContent,
                     >,
                           room: matrix_sdk::Room| {

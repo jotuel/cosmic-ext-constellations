@@ -1,4 +1,4 @@
-use chrono::{DateTime, DurationRound, NaiveDateTime, TimeDelta};
+use chrono::{DateTime, DurationRound, TimeDelta};
 use cosmic::{
     Action, Element, Task, Theme,
     iced::{
@@ -209,25 +209,23 @@ impl Constellations {
 
         sender_info = sender_info.push(text::body(sender_name).size(10));
 
-        if !is_me {
-            if let Some(id) = sender_id {
-                if is_ignored {
-                    sender_info = sender_info.push(
-                        button::icon(Named::new("dialog-error-symbolic"))
-                            .on_press(Message::UserSettings(
-                                crate::settings::user::Message::UnignoreUserById(id),
-                            ))
-                            .tooltip("Unignore User"),
-                    );
-                } else {
-                    sender_info = sender_info.push(
-                        button::icon(Named::new("dialog-error-symbolic"))
-                            .on_press(Message::UserSettings(
-                                crate::settings::user::Message::IgnoreUserById(id),
-                            ))
-                            .tooltip("Ignore User"),
-                    );
-                }
+        if !is_me && let Some(id) = sender_id {
+            if is_ignored {
+                sender_info = sender_info.push(
+                    button::icon(Named::new("dialog-error-symbolic"))
+                        .on_press(Message::UserSettings(
+                            crate::settings::user::Message::UnignoreUserById(id),
+                        ))
+                        .tooltip("Unignore User"),
+                );
+            } else {
+                sender_info = sender_info.push(
+                    button::icon(Named::new("dialog-error-symbolic"))
+                        .on_press(Message::UserSettings(
+                            crate::settings::user::Message::IgnoreUserById(id),
+                        ))
+                        .tooltip("Ignore User"),
+                );
             }
         }
 
@@ -609,123 +607,122 @@ impl Constellations {
     }
 
     fn view_item<'a>(&'a self, item: &'a crate::ConstellationsItem) -> Element<'a, Message> {
-        if let Some(event) = item.item.as_event() {
-            if let Some(message) = event.content().as_message() {
-                let is_me = item.is_me;
+        if let Some(event) = item.item.as_event()
+            && let Some(message) = event.content().as_message()
+        {
+            let is_me = item.is_me;
 
-                let reaction_row = self.view_reactions(event);
-                let is_ignored = self.user_settings.ignored_users.contains(&item.sender_id);
-                let sender_info = self.view_sender_info(
-                    item.avatar_url.as_deref(),
-                    item.sender_name.as_str(),
-                    item.timestamp.as_str(),
-                    Some(item.sender_id.clone()),
-                    is_ignored,
-                    is_me,
+            let reaction_row = self.view_reactions(event);
+            let is_ignored = self.user_settings.ignored_users.contains(&item.sender_id);
+            let sender_info = self.view_sender_info(
+                item.avatar_url.as_deref(),
+                item.sender_name.as_str(),
+                item.timestamp.as_str(),
+                Some(item.sender_id.clone()),
+                is_ignored,
+                is_me,
+            );
+
+            let mut bubble_col = Column::new()
+                .spacing(if self.app_settings.compact_mode { 0 } else { 2 })
+                .push(sender_info);
+
+            if let Some(in_reply_to) = event.content().in_reply_to() {
+                let mut reply_snippet = String::from("Replying...");
+                let mut reply_sender = String::new();
+
+                if let matrix_sdk_ui::timeline::TimelineDetails::Ready(replied_ev) =
+                    &in_reply_to.event
+                {
+                    reply_sender = replied_ev.sender.to_string();
+                    if let Some(msg) = replied_ev.content.as_message() {
+                        reply_snippet = msg.body().to_string();
+                    }
+                }
+
+                if reply_snippet.len() > 50 {
+                    reply_snippet.truncate(47);
+                    reply_snippet.push_str("...");
+                }
+
+                let reply_indicator = Row::new().spacing(5).push(text::body("⤴").size(10)).push(
+                    text::body(if reply_sender.is_empty() {
+                        reply_snippet
+                    } else {
+                        format!("{}: {}", reply_sender, reply_snippet)
+                    })
+                    .size(10),
                 );
 
-                let mut bubble_col = Column::new()
-                    .spacing(if self.app_settings.compact_mode { 0 } else { 2 })
-                    .push(sender_info);
-
-                if let Some(in_reply_to) = event.content().in_reply_to() {
-                    let mut reply_snippet = String::from("Replying...");
-                    let mut reply_sender = String::new();
-
-                    if let matrix_sdk_ui::timeline::TimelineDetails::Ready(replied_ev) =
-                        &in_reply_to.event
-                    {
-                        reply_sender = replied_ev.sender.to_string();
-                        if let Some(msg) = replied_ev.content.as_message() {
-                            reply_snippet = msg.body().to_string();
-                        }
-                    }
-
-                    if reply_snippet.len() > 50 {
-                        reply_snippet.truncate(47);
-                        reply_snippet.push_str("...");
-                    }
-
-                    let reply_indicator =
-                        Row::new().spacing(5).push(text::body("⤴").size(10)).push(
-                            text::body(if reply_sender.is_empty() {
-                                reply_snippet
-                            } else {
-                                format!("{}: {}", reply_sender, reply_snippet)
-                            })
-                            .size(10),
-                        );
-
-                    bubble_col = bubble_col.push(container(reply_indicator).padding([0, 0, 5, 10]));
-                }
-
-                match message.msgtype() {
-                    MessageType::Image(image) => {
-                        bubble_col = bubble_col.push(self.view_message_image(image));
-                    }
-                    MessageType::File(file) => {
-                        bubble_col = bubble_col.push(self.view_message_file(file));
-                    }
-                    _ => {
-                        bubble_col = bubble_col
-                            .push(self.view_message_text(message.msgtype(), &item.markdown));
-                    }
-                }
-
-                if let MessageType::Text(_) = message.msgtype() {
-                    let mut action_row = Row::new().spacing(5).align_y(Alignment::Center);
-
-                    // "Add reaction" button
-                    let btn = button::custom(
-                        container(cosmic::widget::icon::from_name("face-smile-symbolic").size(12))
-                            .padding(2),
-                    )
-                    .on_press(Message::OpenReactionPicker(Some(
-                        event.identifier().clone(),
-                    )));
-                    let btn_tooltip =
-                        tooltip(btn, text::body(crate::fl!("add-reaction")), Position::Top);
-                    action_row = action_row.push(btn_tooltip);
-
-                    // Start a thread
-                    let root_id = event.identifier();
-                    let start_thread_btn =
-                        button::text(crate::fl!("open-thread")).on_press(match root_id {
-                            matrix::TimelineEventItemId::EventId(id) => {
-                                Message::OpenThread(id.to_owned())
-                            }
-                            _ => Message::NoOp,
-                        });
-                    action_row = action_row.push(start_thread_btn);
-
-                    let reply_btn = button::text(crate::fl!("reply"))
-                        .on_press(Message::StartReply(item.clone()));
-                    action_row = action_row.push(reply_btn);
-
-                    bubble_col = bubble_col.push(action_row);
-                }
-
-                bubble_col = bubble_col.push(reaction_row);
-
-                let bubble = container(bubble_col)
-                    .padding(if self.app_settings.compact_mode {
-                        5
-                    } else {
-                        10
-                    })
-                    .max_width(600);
-
-                let bubble_wrapper =
-                    container(bubble)
-                        .width(cosmic::iced::Length::Fill)
-                        .align_x(if is_me {
-                            Alignment::End
-                        } else {
-                            Alignment::Start
-                        });
-
-                return bubble_wrapper.into();
+                bubble_col = bubble_col.push(container(reply_indicator).padding([0, 0, 5, 10]));
             }
+
+            match message.msgtype() {
+                MessageType::Image(image) => {
+                    bubble_col = bubble_col.push(self.view_message_image(image));
+                }
+                MessageType::File(file) => {
+                    bubble_col = bubble_col.push(self.view_message_file(file));
+                }
+                _ => {
+                    bubble_col =
+                        bubble_col.push(self.view_message_text(message.msgtype(), &item.markdown));
+                }
+            }
+
+            if let MessageType::Text(_) = message.msgtype() {
+                let mut action_row = Row::new().spacing(5).align_y(Alignment::Center);
+
+                // "Add reaction" button
+                let btn = button::custom(
+                    container(cosmic::widget::icon::from_name("face-smile-symbolic").size(12))
+                        .padding(2),
+                )
+                .on_press(Message::OpenReactionPicker(Some(
+                    event.identifier().clone(),
+                )));
+                let btn_tooltip =
+                    tooltip(btn, text::body(crate::fl!("add-reaction")), Position::Top);
+                action_row = action_row.push(btn_tooltip);
+
+                // Start a thread
+                let root_id = event.identifier();
+                let start_thread_btn =
+                    button::text(crate::fl!("open-thread")).on_press(match root_id {
+                        matrix::TimelineEventItemId::EventId(id) => {
+                            Message::OpenThread(id.to_owned())
+                        }
+                        _ => Message::NoOp,
+                    });
+                action_row = action_row.push(start_thread_btn);
+
+                let reply_btn =
+                    button::text(crate::fl!("reply")).on_press(Message::StartReply(item.clone()));
+                action_row = action_row.push(reply_btn);
+
+                bubble_col = bubble_col.push(action_row);
+            }
+
+            bubble_col = bubble_col.push(reaction_row);
+
+            let bubble = container(bubble_col)
+                .padding(if self.app_settings.compact_mode {
+                    5
+                } else {
+                    10
+                })
+                .max_width(600);
+
+            let bubble_wrapper =
+                container(bubble)
+                    .width(cosmic::iced::Length::Fill)
+                    .align_x(if is_me {
+                        Alignment::End
+                    } else {
+                        Alignment::Start
+                    });
+
+            return bubble_wrapper.into();
         }
         cosmic::widget::space().height(0).into()
     }
@@ -1018,13 +1015,12 @@ impl Constellations {
                 let mut header = Row::new().spacing(10).align_y(Alignment::Center);
 
                 let mut has_avatar = false;
-                if self.user_settings.invite_avatars_display_policy {
-                    if let Some(avatar_url) = &room.avatar_url {
-                        if let Some(handle) = self.media_cache.get(avatar_url) {
-                            header = header.push(cosmic::widget::image(handle.clone()));
-                            has_avatar = true;
-                        }
-                    }
+                if self.user_settings.invite_avatars_display_policy
+                    && let Some(avatar_url) = &room.avatar_url
+                    && let Some(handle) = self.media_cache.get(avatar_url)
+                {
+                    header = header.push(cosmic::widget::image(handle.clone()));
+                    has_avatar = true;
                 }
 
                 if !has_avatar {
@@ -1092,11 +1088,11 @@ impl Constellations {
                 .find(|r| &r.id == room_id)
                 .and_then(|r| r.name.as_deref())
                 .unwrap_or("Room");
-            let is_in_call = self.user_id.as_ref().map_or(false, |uid| {
+            let is_in_call = self.user_id.as_ref().is_some_and(|uid| {
                 if let Ok(user_id) = matrix_sdk::ruma::UserId::parse(uid) {
                     self.call_participants
                         .get(room_id)
-                        .map_or(false, |p| p.contains(&user_id))
+                        .is_some_and(|p| p.contains(&user_id))
                 } else {
                     false
                 }

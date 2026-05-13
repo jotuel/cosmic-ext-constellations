@@ -84,20 +84,20 @@ impl Constellations {
 
             let mut media_fetches = Vec::new();
             for room in self.room_list.iter() {
-                if let Some(avatar_url) = &room.avatar_url {
-                    if !self.media_cache.contains_key(avatar_url) {
-                        let matrix_clone = matrix.clone();
-                        let url_str = avatar_url.clone();
-                        let uri = matrix_sdk::ruma::OwnedMxcUri::from(avatar_url.as_str());
-                        let source = matrix_sdk::ruma::events::room::MediaSource::Plain(uri);
-                        media_fetches.push(async move {
-                            let res = matrix_clone
-                                .fetch_media(source)
-                                .await
-                                .map_err(|e| e.to_string());
-                            (url_str, res)
-                        });
-                    }
+                if let Some(avatar_url) = &room.avatar_url
+                    && !self.media_cache.contains_key(avatar_url)
+                {
+                    let matrix_clone = matrix.clone();
+                    let url_str = avatar_url.clone();
+                    let uri = matrix_sdk::ruma::OwnedMxcUri::from(avatar_url.as_str());
+                    let source = matrix_sdk::ruma::events::room::MediaSource::Plain(uri);
+                    media_fetches.push(async move {
+                        let res = matrix_clone
+                            .fetch_media(source)
+                            .await
+                            .map_err(|e| e.to_string());
+                        (url_str, res)
+                    });
                 }
             }
             if !media_fetches.is_empty() {
@@ -125,28 +125,25 @@ impl Constellations {
         let mut tasks = Vec::new();
         let mut media_fetches = Vec::new();
         let check_item = |item: &std::sync::Arc<matrix::TimelineItem>, fetches: &mut Vec<_>| {
-            if let Some(event) = item.as_event() {
-                if let matrix_sdk_ui::timeline::TimelineDetails::Ready(profile) =
+            if let Some(event) = item.as_event()
+                && let matrix_sdk_ui::timeline::TimelineDetails::Ready(profile) =
                     event.sender_profile()
+                && let Some(avatar_url) = &profile.avatar_url
+            {
+                let url_str = avatar_url.to_string();
+                if !self.media_cache.contains_key(&url_str)
+                    && let Some(matrix) = &self.matrix
                 {
-                    if let Some(avatar_url) = &profile.avatar_url {
-                        let url_str = avatar_url.to_string();
-                        if !self.media_cache.contains_key(&url_str) {
-                            if let Some(matrix) = &self.matrix {
-                                let matrix_clone = matrix.clone();
-                                let source = matrix_sdk::ruma::events::room::MediaSource::Plain(
-                                    avatar_url.clone(),
-                                );
-                                fetches.push(async move {
-                                    let res = matrix_clone
-                                        .fetch_media(source)
-                                        .await
-                                        .map_err(|e| e.to_string());
-                                    (url_str, res)
-                                });
-                            }
-                        }
-                    }
+                    let matrix_clone = matrix.clone();
+                    let source =
+                        matrix_sdk::ruma::events::room::MediaSource::Plain(avatar_url.clone());
+                    fetches.push(async move {
+                        let res = matrix_clone
+                            .fetch_media(source)
+                            .await
+                            .map_err(|e| e.to_string());
+                        (url_str, res)
+                    });
                 }
             }
         };
@@ -214,10 +211,10 @@ impl Constellations {
         };
 
         if is_thread {
-            if let Some(root_id) = root_id {
-                if self.active_thread_root == Some(root_id) {
-                    self.threaded_timeline_items.apply_diff(mapped_diff);
-                }
+            if let Some(root_id) = root_id
+                && self.active_thread_root == Some(root_id)
+            {
+                self.threaded_timeline_items.apply_diff(mapped_diff);
             }
         } else {
             self.timeline_items.apply_diff(mapped_diff);
@@ -575,43 +572,41 @@ impl Constellations {
                 // First, update the filtered_room_list because the hierarchy in matrix engine was updated
                 self.update_filtered_rooms();
 
-                if let Some(matrix) = &self.matrix {
-                    if self.user_settings.invite_avatars_display_policy {
-                        let mut urls_to_fetch = Vec::new();
-                        for child in &children {
-                            if let Some(avatar_url) = &child.avatar_url {
-                                if !self.media_cache.contains_key(avatar_url) {
-                                    let uri =
-                                        matrix_sdk::ruma::OwnedMxcUri::from(avatar_url.as_str());
-                                    let source =
-                                        matrix_sdk::ruma::events::room::MediaSource::Plain(uri);
-                                    urls_to_fetch.push((avatar_url.clone(), source));
-                                }
-                            }
+                if let Some(matrix) = &self.matrix
+                    && self.user_settings.invite_avatars_display_policy
+                {
+                    let mut urls_to_fetch = Vec::new();
+                    for child in &children {
+                        if let Some(avatar_url) = &child.avatar_url
+                            && !self.media_cache.contains_key(avatar_url)
+                        {
+                            let uri = matrix_sdk::ruma::OwnedMxcUri::from(avatar_url.as_str());
+                            let source = matrix_sdk::ruma::events::room::MediaSource::Plain(uri);
+                            urls_to_fetch.push((avatar_url.clone(), source));
                         }
+                    }
 
-                        if !urls_to_fetch.is_empty() {
-                            let matrix_clone = matrix.clone();
-                            tasks.push(Task::perform(
-                                async move {
-                                    futures::stream::iter(urls_to_fetch)
-                                        .map(|(url_str, source)| {
-                                            let matrix = matrix_clone.clone();
-                                            async move {
-                                                let res = matrix
-                                                    .fetch_media(source)
-                                                    .await
-                                                    .map_err(|e| e.to_string());
-                                                (url_str, res)
-                                            }
-                                        })
-                                        .buffer_unordered(10)
-                                        .collect::<Vec<_>>()
-                                        .await
-                                },
-                                |batch| Message::MediaFetchedBatch(batch).into(),
-                            ));
-                        }
+                    if !urls_to_fetch.is_empty() {
+                        let matrix_clone = matrix.clone();
+                        tasks.push(Task::perform(
+                            async move {
+                                futures::stream::iter(urls_to_fetch)
+                                    .map(|(url_str, source)| {
+                                        let matrix = matrix_clone.clone();
+                                        async move {
+                                            let res = matrix
+                                                .fetch_media(source)
+                                                .await
+                                                .map_err(|e| e.to_string());
+                                            (url_str, res)
+                                        }
+                                    })
+                                    .buffer_unordered(10)
+                                    .collect::<Vec<_>>()
+                                    .await
+                            },
+                            |batch| Message::MediaFetchedBatch(batch).into(),
+                        ));
                     }
                 }
 
