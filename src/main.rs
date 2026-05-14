@@ -1445,7 +1445,7 @@ impl Application for Constellations {
                     && let Some(space_id) = &self.selected_space
                 {
                     return self.space_settings.update(
-                        settings::space::Message::LoadSpace(space_id.to_string()),
+                        settings::space::Message::LoadSpace(Arc::from(space_id.as_str())),
                         &self.matrix,
                     );
                 }

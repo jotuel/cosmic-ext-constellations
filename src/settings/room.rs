@@ -1,6 +1,6 @@
 use crate::matrix::MatrixEngine;
 use cosmic::iced::Alignment;
-use cosmic::widget::{Column, Row, button, text, text_input, tooltip, tooltip::Position};
+use cosmic::widget::{Column, Row, button, settings, text, text_input, tooltip, tooltip::Position};
 use cosmic::{Action, Element, Task};
 use matrix_sdk::ruma::RoomId;
 use matrix_sdk::ruma::events::room::MediaSource;
@@ -1259,10 +1259,7 @@ impl State {
 
     fn view_notifications(&self) -> Element<'_, Message> {
         use matrix_sdk::notification_settings::RoomNotificationMode;
-        let mut col = Column::new().spacing(10);
-        col = col.push(text::title3("Notifications"));
-
-        let mut row = Row::new().spacing(10);
+        let mut r = Row::new().spacing(10);
 
         for mode in [
             RoomNotificationMode::AllMessages,
@@ -1270,9 +1267,11 @@ impl State {
             RoomNotificationMode::Mute,
         ] {
             let label = match mode {
-                RoomNotificationMode::AllMessages => "All Messages",
-                RoomNotificationMode::MentionsAndKeywordsOnly => "Mentions Only",
-                RoomNotificationMode::Mute => "Muted",
+                RoomNotificationMode::AllMessages => crate::fl!("notification-mode-all"),
+                RoomNotificationMode::MentionsAndKeywordsOnly => {
+                    crate::fl!("notification-mode-mentions")
+                }
+                RoomNotificationMode::Mute => crate::fl!("notification-mode-mute"),
             };
 
             let mut btn = if self.notification_mode == Some(mode) {
@@ -1285,47 +1284,49 @@ impl State {
                 btn = btn.on_press(Message::NotificationModeChanged(mode));
             }
 
-            row = row.push(btn);
+            r = r.push(btn);
         }
 
-        col.push(row).into()
+        settings::section()
+            .title(crate::fl!("notifications"))
+            .add(settings::item_row(vec![r.wrap().into()]))
+            .into()
     }
 
     fn view_error(&self) -> Option<Element<'_, Message>> {
         self.error.as_ref().map(|error| {
-            Row::new()
-                .spacing(10)
-                .align_y(Alignment::Center)
-                .push(text::body(error))
-                .push(button::text("Dismiss").on_press(Message::DismissError))
+            settings::section()
+                .add(settings::item(
+                    error,
+                    button::text(crate::fl!("dismiss")).on_press(Message::DismissError),
+                ))
                 .into()
         })
     }
 
     fn view_security(&self) -> Element<'_, Message> {
-        let mut col = Column::new().spacing(10);
-        col = col.push(text::title3("Security"));
+        let mut section = settings::section().title(crate::fl!("security"));
 
-        let mut row = Row::new().spacing(10).align_y(Alignment::Center);
-        row = row.push(text::body("End-to-End Encryption").width(200));
+        let mut r = Row::new().spacing(10).align_y(Alignment::Center);
 
         if self.is_encrypted {
-            row = row.push(button::suggested("Enabled"));
-            col = col.push(row);
+            r = r.push(button::suggested(crate::fl!("enabled")));
+            section = section.add(settings::item(crate::fl!("e2e-encryption"), r));
         } else {
-            row = row
-                .push(button::destructive("Enable Encryption").on_press(Message::EnableEncryption));
-            col = col.push(row);
-            col =
-                col.push(text::body("⚠️ This is a one-way action and cannot be undone.").size(12));
+            r = r.push(
+                button::destructive(crate::fl!("enable-encryption"))
+                    .on_press(Message::EnableEncryption),
+            );
+            section = section
+                .add(settings::item(crate::fl!("e2e-encryption"), r))
+                .add(text::body(crate::fl!("encryption-warning")).size(12));
         }
 
-        col.into()
+        section.into()
     }
 
     fn view_profile(&self) -> Element<'_, Message> {
-        let mut col = Column::new().spacing(20);
-        col = col.push(text::title3("Room Profile"));
+        let mut section = settings::section().title(crate::fl!("room-profile"));
 
         // Avatar Section
         let mut avatar_row = Row::new().spacing(20).align_y(Alignment::Center);
@@ -1336,127 +1337,117 @@ impl State {
                     .height(cosmic::iced::Length::Fixed(64.0)),
             );
         } else if self.is_loading_avatar {
-            avatar_row = avatar_row.push(text::body("Loading avatar..."));
+            avatar_row = avatar_row.push(text::body(crate::fl!("loading")));
         } else {
             avatar_row = avatar_row.push(
-                cosmic::widget::container(text::body("No Avatar"))
-                    .width(cosmic::iced::Length::Fixed(64.0))
-                    .height(cosmic::iced::Length::Fixed(64.0))
+                cosmic::widget::container(text::body(crate::fl!("no-avatar")))
+                    .width(64)
+                    .height(64)
                     .align_x(Alignment::Center)
                     .align_y(Alignment::Center),
             );
         }
 
         let mut upload_btn = button::text(if self.is_uploading_avatar {
-            "Uploading..."
+            crate::fl!("uploading")
         } else {
-            "Change Avatar"
+            crate::fl!("change-avatar")
         });
         if !self.is_uploading_avatar {
             upload_btn = upload_btn.on_press(Message::SelectAvatar);
         }
         avatar_row = avatar_row.push(upload_btn);
-        col = col.push(avatar_row);
+        section = section.add(avatar_row);
 
-        // Room Name
-        col = col.push(
-            Column::new()
-                .spacing(5)
-                .push(text::body("Room Name").size(12))
-                .push(text_input::text_input("Name", &self.name).on_input(Message::NameChanged)),
-        );
+        section = section
+            .add(settings::item(
+                crate::fl!("room-name-label"),
+                text_input(crate::fl!("room-name-label"), &self.name)
+                    .on_input(Message::NameChanged),
+            ))
+            .add(settings::item(
+                crate::fl!("room-topic-label"),
+                text_input(crate::fl!("room-topic-label"), &self.topic)
+                    .on_input(Message::TopicChanged),
+            ));
 
-        // Room Topic
-        col = col.push(
-            Column::new()
-                .spacing(5)
-                .push(text::body("Room Topic").size(12))
-                .push(text_input::text_input("Topic", &self.topic).on_input(Message::TopicChanged)),
-        );
-
-        // Room ID
         if let Some(id) = &self.room_id {
-            col = col.push(
-                Column::new()
-                    .spacing(5)
-                    .push(text::body("Room ID").size(12))
-                    .push(
-                        text_input::text_input("", id.as_ref()), // Read-only by not providing on_input
-                    ),
-            );
+            section = section.add(settings::item(
+                crate::fl!("room-id-label"),
+                text_input("", id.as_ref()),
+            ));
         }
 
-        col.into()
+        section.into()
     }
 
     fn view_aliases(&self) -> Element<'_, Message> {
-        let mut col = Column::new().spacing(10);
-        col = col.push(text::title3("Room Aliases"));
+        let mut section = settings::section().title(crate::fl!("room-aliases"));
 
         // Canonical Alias
-        col = col.push(
-            Column::new()
-                .spacing(5)
-                .push(text::body("Canonical Alias").size(12))
-                .push(
-                    text_input::text_input("#alias:example.com", &self.canonical_alias)
-                        .on_input(Message::CanonicalAliasChanged),
-                ),
-        );
+        section = section.add(settings::item(
+            crate::fl!("canonical-alias-label"),
+            text_input("#alias:example.com", &self.canonical_alias)
+                .on_input(Message::CanonicalAliasChanged),
+        ));
 
         // Alternative Aliases
-        col = col.push(text::body("Alternative Aliases").size(12));
+        section = section.add(text::body(crate::fl!("alternative-aliases")).size(12));
         for alias in &self.alt_aliases {
-            let row = Row::new()
-                .spacing(10)
-                .align_y(Alignment::Center)
-                .push(text::body(alias).size(14))
-                .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
-                .push(
-                    button::destructive("Remove").on_press(Message::AltAliasRemoved(alias.clone())),
-                );
-            col = col.push(row);
+            section = section.add(settings::item(
+                alias.as_str(),
+                button::destructive(crate::fl!("remove"))
+                    .on_press(Message::AltAliasRemoved(alias.clone())),
+            ));
         }
 
         // Add Alternative Alias
-        let mut add_alias_input = Row::new().spacing(10).align_y(Alignment::Center).push(
-            text_input::text_input("#new-alias:example.com", &self.new_alt_alias_input)
-                .on_input(Message::NewAltAliasInputChanged)
-                .on_submit(|_| Message::AltAliasAdded),
-        );
-
         let is_empty = self.new_alt_alias_input.trim().is_empty();
-        let mut add_btn = button::text("Add");
+        let mut add_btn = button::text(crate::fl!("add"));
         if !is_empty {
             add_btn = add_btn.on_press(Message::AltAliasAdded);
         }
 
         let add_widget: Element<'_, Message> = if is_empty {
-            tooltip(add_btn, text::body("Enter an alias to add"), Position::Top).into()
+            tooltip(
+                add_btn,
+                text::body(crate::fl!("enter-alias-to-add")),
+                Position::Top,
+            )
+            .into()
         } else {
             add_btn.into()
         };
 
-        add_alias_input = add_alias_input.push(add_widget);
-        col = col.push(add_alias_input);
+        section = section.add(settings::item(
+            crate::fl!("add-alternative-alias"),
+            Row::new()
+                .spacing(10)
+                .push(
+                    text_input("#new-alias:example.com", &self.new_alt_alias_input)
+                        .on_input(Message::NewAltAliasInputChanged)
+                        .on_submit(|_| Message::AltAliasAdded),
+                )
+                .push(add_widget),
+        ));
 
-        col.into()
+        section.into()
     }
 
     fn view_permissions(&self) -> Element<'_, Message> {
         use matrix_sdk::ruma::events::room::join_rules::{AllowRule, JoinRule, Restricted};
 
         let mut perm_col = Column::new().spacing(10);
-        perm_col = perm_col.push(text::title3("Permissions"));
+        perm_col = perm_col.push(text::title3(crate::fl!("permissions")));
 
         let mut join_rule_row = Row::new().spacing(10).align_y(Alignment::Center);
-        join_rule_row = join_rule_row.push(text::body("Join Rule").width(100));
+        join_rule_row = join_rule_row.push(text::body(crate::fl!("join-rule")).width(100));
 
         for rule in [JoinRule::Public, JoinRule::Invite, JoinRule::Knock] {
             let label = match rule {
-                JoinRule::Public => "Public",
-                JoinRule::Invite => "Invite Only",
-                JoinRule::Knock => "Knock",
+                JoinRule::Public => crate::fl!("join-rule-public"),
+                JoinRule::Invite => crate::fl!("join-rule-invite"),
+                JoinRule::Knock => crate::fl!("join-rule-knock"),
                 _ => unreachable!(),
             };
 
@@ -1478,9 +1469,9 @@ impl State {
         let parsed_restricted_space_id = RoomId::parse(&self.restricted_space_id).ok();
 
         let mut restricted_btn = if is_restricted {
-            button::suggested("Restricted")
+            button::suggested(crate::fl!("join-rule-restricted"))
         } else {
-            button::text("Restricted")
+            button::text(crate::fl!("join-rule-restricted"))
         };
 
         if !is_restricted && let Some(space_id) = &parsed_restricted_space_id {
@@ -1491,11 +1482,11 @@ impl State {
 
         join_rule_row = join_rule_row.push(restricted_btn);
 
-        perm_col = perm_col.push(join_rule_row);
+        perm_col = perm_col.push(join_rule_row.wrap());
 
         let mut history_visibility_row = Row::new().spacing(10).align_y(Alignment::Center);
         history_visibility_row =
-            history_visibility_row.push(text::body("History Visibility").width(100));
+            history_visibility_row.push(text::body(crate::fl!("history-visibility")).width(100));
 
         for visibility in [
             HistoryVisibility::Shared,
@@ -1503,9 +1494,9 @@ impl State {
             HistoryVisibility::Joined,
         ] {
             let label = match visibility {
-                HistoryVisibility::Shared => "Shared",
-                HistoryVisibility::Invited => "Invited",
-                HistoryVisibility::Joined => "Joined",
+                HistoryVisibility::Shared => crate::fl!("history-visibility-shared"),
+                HistoryVisibility::Invited => crate::fl!("history-visibility-invited"),
+                HistoryVisibility::Joined => crate::fl!("history-visibility-joined"),
                 _ => unreachable!(),
             };
 
@@ -1522,10 +1513,10 @@ impl State {
             history_visibility_row = history_visibility_row.push(btn);
         }
 
-        perm_col = perm_col.push(history_visibility_row);
+        perm_col = perm_col.push(history_visibility_row.wrap());
         if is_restricted || !self.restricted_space_id.is_empty() {
             let mut restricted_row = Row::new().spacing(10).align_y(Alignment::Center);
-            restricted_row = restricted_row.push(text::body("Space ID").width(100));
+            restricted_row = restricted_row.push(text::body(crate::fl!("space-id")).width(100));
             restricted_row = restricted_row.push(
                 text_input::text_input("!space_id:example.com", &self.restricted_space_id)
                     .on_input(Message::RestrictedSpaceIdChanged),
@@ -1543,105 +1534,112 @@ impl State {
                     };
 
                 if !current_restricted_match {
-                    let restricted = Restricted::new(vec![AllowRule::room_membership(space_id)]);
-                    restricted_row = restricted_row.push(
-                        button::text("Apply")
-                            .on_press(Message::JoinRuleChanged(JoinRule::Restricted(restricted))),
-                    );
+                    restricted_row =
+                        restricted_row.push(button::text(crate::fl!("apply")).on_press(
+                            Message::JoinRuleChanged(JoinRule::Restricted(Restricted::default())),
+                        ));
                 }
             }
 
-            perm_col = perm_col.push(restricted_row);
+            perm_col = perm_col.push(restricted_row.wrap());
         }
 
         perm_col = perm_col.push(
             Row::new()
                 .spacing(10)
                 .align_y(Alignment::Center)
-                .push(text::body("Invite level").width(100))
+                .push(text::body(crate::fl!("invite-level")).width(100))
                 .push(
                     text_input::text_input("50", &self.invite_level_str)
                         .on_input(Message::InviteLevelChanged),
-                ),
+                )
+                .wrap(),
         );
         perm_col = perm_col.push(
             Row::new()
                 .spacing(10)
                 .align_y(Alignment::Center)
-                .push(text::body("Kick level").width(100))
+                .push(text::body(crate::fl!("kick-level")).width(100))
                 .push(
                     text_input::text_input("50", &self.kick_level_str)
                         .on_input(Message::KickLevelChanged),
-                ),
+                )
+                .wrap(),
         );
         perm_col = perm_col.push(
             Row::new()
                 .spacing(10)
                 .align_y(Alignment::Center)
-                .push(text::body("Ban level").width(100))
+                .push(text::body(crate::fl!("ban-level")).width(100))
                 .push(
                     text_input::text_input("50", &self.ban_level_str)
                         .on_input(Message::BanLevelChanged),
-                ),
+                )
+                .wrap(),
         );
         perm_col = perm_col.push(
             Row::new()
                 .spacing(10)
                 .align_y(Alignment::Center)
-                .push(text::body("Redact level").width(100))
+                .push(text::body(crate::fl!("redact-level")).width(100))
                 .push(
                     text_input::text_input("50", &self.redact_level_str)
                         .on_input(Message::RedactLevelChanged),
-                ),
+                )
+                .wrap(),
         );
         perm_col = perm_col.push(
             Row::new()
                 .spacing(10)
                 .align_y(Alignment::Center)
-                .push(text::body("Send messages").width(100))
+                .push(text::body(crate::fl!("send-messages-level")).width(100))
                 .push(
                     text_input::text_input("0", &self.events_default_level_str)
                         .on_input(Message::EventsDefaultLevelChanged),
-                ),
+                )
+                .wrap(),
         );
         perm_col = perm_col.push(
             Row::new()
                 .spacing(10)
                 .align_y(Alignment::Center)
-                .push(text::body("Change name").width(100))
+                .push(text::body(crate::fl!("change-name-level")).width(100))
                 .push(
                     text_input::text_input("50", &self.room_name_level_str)
                         .on_input(Message::RoomNameLevelChanged),
-                ),
+                )
+                .wrap(),
         );
         perm_col = perm_col.push(
             Row::new()
                 .spacing(10)
                 .align_y(Alignment::Center)
-                .push(text::body("Change topic").width(100))
+                .push(text::body(crate::fl!("change-topic-level")).width(100))
                 .push(
                     text_input::text_input("50", &self.room_topic_level_str)
                         .on_input(Message::RoomTopicLevelChanged),
-                ),
+                )
+                .wrap(),
         );
         perm_col = perm_col.push(
             Row::new()
                 .spacing(10)
                 .align_y(Alignment::Center)
-                .push(text::body("Change avatar").width(100))
+                .push(text::body(crate::fl!("change-avatar-level")).width(100))
                 .push(
                     text_input::text_input("50", &self.room_avatar_level_str)
                         .on_input(Message::RoomAvatarLevelChanged),
-                ),
+                )
+                .wrap(),
         );
         perm_col.into()
     }
 
     fn view_save_button(&self) -> Option<Element<'_, Message>> {
         let mut save_btn = button::text(if self.is_saving {
-            "Saving..."
+            crate::fl!("saving")
         } else {
-            "Save Changes"
+            crate::fl!("save-changes")
         });
 
         let has_changes = self.name != self.original_name
@@ -1662,40 +1660,46 @@ impl State {
         }
 
         let widget: Element<'_, Message> = if !has_changes {
-            tooltip(save_btn, text::body("Make changes to save"), Position::Top).into()
+            tooltip(
+                save_btn,
+                text::body(crate::fl!("make-changes-to-save")),
+                Position::Top,
+            )
+            .into()
         } else {
             save_btn.into()
         };
 
-        Some(widget)
+        Some(
+            settings::section()
+                .add(settings::item_row(vec![widget]))
+                .into(),
+        )
     }
 
     fn view_manage_members(&self) -> Option<Element<'_, Message>> {
         if let Some((default_level, users)) = &self.power_levels {
-            let mut pl_col = Column::new().spacing(10);
-            pl_col = pl_col.push(text::title3("Manage Members"));
+            let mut section = settings::section().title(crate::fl!("manage-members"));
 
-            // Member Filter
-            pl_col = pl_col.push(
-                text_input::text_input("Filter members...", &self.member_filter)
-                    .on_input(Message::MemberFilterChanged),
-            );
+            section = section.add(settings::item(
+                crate::fl!("filter-members"),
+                text_input(
+                    crate::fl!("filter-members-placeholder"),
+                    &self.member_filter,
+                )
+                .on_input(Message::MemberFilterChanged),
+            ));
 
-            pl_col = pl_col.push(text::body(format!("Default level: {}", default_level)).size(12));
+            section = section
+                .add(text::body(crate::fl!("default-level", level = default_level)).size(12));
 
-            // Reason for actions (Kick/Ban)
-            pl_col = pl_col.push(
-                Column::new()
-                    .spacing(5)
-                    .push(text::body("Reason for action").size(12))
-                    .push(
-                        text_input::text_input("Reason...", &self.action_reason)
-                            .on_input(Message::ActionReasonChanged),
-                    ),
-            );
+            section = section.add(settings::item(
+                crate::fl!("reason-for-action"),
+                text_input(crate::fl!("reason-placeholder"), &self.action_reason)
+                    .on_input(Message::ActionReasonChanged),
+            ));
 
             let filter = self.member_filter.to_lowercase();
-
             let filter_is_ascii = self.member_filter.is_ascii();
 
             for (user_id, level) in users {
@@ -1712,20 +1716,22 @@ impl State {
                 let is_updating = self.updating_power_level_for.as_deref() == Some(user_id_str);
                 let is_me = self.current_user_id.as_deref() == Some(user_id_str);
 
+                let mut user_col = Column::new().spacing(5);
+
                 let user_row = Row::new()
                     .spacing(10)
                     .align_y(Alignment::Center)
                     .push(text::body(user_id_str).size(14))
                     .push(text::body(level.to_string()).size(14))
-                    .push(cosmic::widget::space().width(cosmic::iced::Length::Fill));
+                    .wrap();
 
                 let mut level_row = Row::new().spacing(5);
                 for l in [0, 50, 100] {
                     let mut btn = button::text(match l {
-                        0 => "Default",
-                        50 => "Mod",
-                        100 => "Admin",
-                        _ => "??",
+                        0 => crate::fl!("default"),
+                        50 => crate::fl!("mod"),
+                        100 => crate::fl!("admin"),
+                        _ => "??".to_string(),
                     });
                     if !is_updating && *level != l {
                         btn = btn.on_press(Message::UpdatePowerLevel(user_id_str.to_string(), l));
@@ -1733,19 +1739,19 @@ impl State {
                     level_row = level_row.push(btn);
                 }
 
-                pl_col = pl_col.push(user_row).push(level_row);
+                user_col = user_col.push(user_row).push(level_row.wrap());
 
                 if !is_me {
                     let mut action_row = Row::new().spacing(5);
                     if self.my_power_level >= self.kick_level {
                         action_row = action_row.push(
-                            button::destructive("Kick")
+                            button::destructive(crate::fl!("kick"))
                                 .on_press(Message::KickUser(user_id_str.to_string())),
                         );
                     }
                     if self.my_power_level >= self.ban_level {
                         action_row = action_row.push(
-                            button::destructive("Ban")
+                            button::destructive(crate::fl!("ban"))
                                 .on_press(Message::BanUser(user_id_str.to_string())),
                         );
                     }
@@ -1753,40 +1759,42 @@ impl State {
                     let is_ignored = self.ignored_users.contains(user_id);
                     if is_ignored {
                         action_row = action_row.push(
-                            button::text("Unignore")
+                            button::text(crate::fl!("unignore"))
                                 .on_press(Message::UnignoreUser(user_id.clone())),
                         );
                     } else {
                         action_row = action_row.push(
-                            button::destructive("Ignore")
+                            button::destructive(crate::fl!("ignore"))
                                 .on_press(Message::IgnoreUser(user_id.clone())),
                         );
                     }
 
-                    pl_col = pl_col.push(action_row);
+                    user_col = user_col.push(action_row.wrap());
                 }
+
+                section = section.add(user_col);
             }
-            Some(pl_col.into())
+            Some(section.into())
         } else {
             None
         }
     }
 
     fn view_invite_promote(&self) -> Element<'_, Message> {
-        let mut add_pl_col = Column::new().spacing(5);
-        add_pl_col = add_pl_col.push(text::title3("Invite & Promote"));
-        add_pl_col = add_pl_col.push(text::body("User ID").size(12));
-        add_pl_col = add_pl_col.push(
-            text_input::text_input("@user:example.com", &self.invite_user_id)
+        let mut section = settings::section().title(crate::fl!("invite-promote"));
+
+        section = section.add(settings::item(
+            crate::fl!("user-id"),
+            text_input("@user:example.com", &self.invite_user_id)
                 .on_input(Message::InviteUserIdChanged),
-        );
+        ));
 
         let is_empty = self.invite_user_id.trim().is_empty();
 
         let mut promote_row = Row::new().spacing(10);
 
         if self.my_power_level >= self.invite_level {
-            let mut invite_btn = button::text("Invite");
+            let mut invite_btn = button::text(crate::fl!("invite"));
             if !is_empty {
                 invite_btn = invite_btn.on_press(Message::InviteUser);
             }
@@ -1794,7 +1802,7 @@ impl State {
             let invite_widget: Element<'_, Message> = if is_empty {
                 tooltip(
                     invite_btn,
-                    text::body("Enter a User ID to invite/promote"),
+                    text::body(crate::fl!("enter-user-id-to-invite")),
                     Position::Top,
                 )
                 .into()
@@ -1804,8 +1812,8 @@ impl State {
             promote_row = promote_row.push(invite_widget);
         }
 
-        let mut mod_btn = button::text("Mod");
-        let mut admin_btn = button::text("Admin");
+        let mut mod_btn = button::text(crate::fl!("mod"));
+        let mut admin_btn = button::text(crate::fl!("admin"));
 
         if !is_empty {
             mod_btn = mod_btn.on_press(Message::UpdatePowerLevel(self.invite_user_id.clone(), 50));
@@ -1816,7 +1824,7 @@ impl State {
         let mod_widget: Element<'_, Message> = if is_empty {
             tooltip(
                 mod_btn,
-                text::body("Enter a User ID to invite/promote"),
+                text::body(crate::fl!("enter-user-id-to-invite")),
                 Position::Top,
             )
             .into()
@@ -1827,7 +1835,7 @@ impl State {
         let admin_widget: Element<'_, Message> = if is_empty {
             tooltip(
                 admin_btn,
-                text::body("Enter a User ID to invite/promote"),
+                text::body(crate::fl!("enter-user-id-to-invite")),
                 Position::Top,
             )
             .into()
@@ -1837,31 +1845,24 @@ impl State {
 
         promote_row = promote_row.push(mod_widget).push(admin_widget);
 
-        add_pl_col = add_pl_col.push(promote_row);
-        add_pl_col.into()
+        section
+            .add(settings::item_row(vec![promote_row.wrap().into()]))
+            .into()
     }
 
     fn view_pinned_events(&self) -> Element<'_, Message> {
-        let mut col = Column::new().spacing(10);
-        col = col.push(text::title3("Pinned Messages"));
+        let mut section = settings::section().title(crate::fl!("pinned-messages"));
 
         for event_id in &self.pinned_events {
-            let row = Row::new()
-                .spacing(10)
-                .align_y(Alignment::Center)
-                .push(text::body(event_id.as_str()).size(14))
-                .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
-                .push(button::destructive("Unpin").on_press(Message::UnpinEvent(event_id.clone())));
-            col = col.push(row);
+            section = section.add(settings::item(
+                event_id.as_str(),
+                button::destructive(crate::fl!("unpin"))
+                    .on_press(Message::UnpinEvent(event_id.clone())),
+            ));
         }
 
-        let mut pin_input = Row::new().spacing(10).align_y(Alignment::Center).push(
-            text_input::text_input("Event ID ($...)", &self.pinned_event_id_input)
-                .on_input(Message::PinnedEventIdChanged),
-        );
-
         let is_empty = self.pinned_event_id_input.trim().is_empty();
-        let mut pin_btn = button::text("Pin");
+        let mut pin_btn = button::text(crate::fl!("pin"));
         if !is_empty {
             pin_btn = pin_btn.on_press(Message::PinEvent);
         }
@@ -1869,7 +1870,7 @@ impl State {
         let pin_widget: Element<'_, Message> = if is_empty {
             tooltip(
                 pin_btn,
-                text::body("Enter an Event ID to pin"),
+                text::body(crate::fl!("enter-event-id-to-pin")),
                 Position::Top,
             )
             .into()
@@ -1877,30 +1878,41 @@ impl State {
             pin_btn.into()
         };
 
-        pin_input = pin_input.push(pin_widget);
+        section = section.add(settings::item(
+            crate::fl!("pin-event-by-id"),
+            Row::new()
+                .spacing(10)
+                .push(
+                    text_input("Event ID ($...)", &self.pinned_event_id_input)
+                        .on_input(Message::PinnedEventIdChanged),
+                )
+                .push(pin_widget),
+        ));
 
-        col = col.push(pin_input);
-        col.into()
+        section.into()
     }
 
     fn view_membership_actions(&self) -> Option<Element<'_, Message>> {
         if let Some(membership) = &self.membership {
             use matrix_sdk::RoomState;
-            let mut actions_col = Column::new().spacing(10);
-            actions_col = actions_col.push(text::title3("Actions"));
+            let mut section = settings::section().title(crate::fl!("actions"));
 
             match membership {
                 RoomState::Joined => {
-                    actions_col = actions_col
-                        .push(button::destructive("Leave Room").on_press(Message::LeaveRoom));
+                    section = section.add(settings::item(
+                        crate::fl!("leave-room"),
+                        button::destructive(crate::fl!("leave")).on_press(Message::LeaveRoom),
+                    ));
                 }
                 RoomState::Left | RoomState::Invited => {
-                    actions_col = actions_col
-                        .push(button::destructive("Forget Room").on_press(Message::ForgetRoom));
+                    section = section.add(settings::item(
+                        crate::fl!("forget-room"),
+                        button::destructive(crate::fl!("forget")).on_press(Message::ForgetRoom),
+                    ));
                 }
                 _ => {}
             }
-            Some(actions_col.into())
+            Some(section.into())
         } else {
             None
         }
@@ -1908,24 +1920,22 @@ impl State {
 
     pub fn view(&self) -> Element<'_, Message> {
         if self.is_loading {
-            return Column::new()
-                .spacing(20)
-                .push(text::body("Loading room data..."))
+            return settings::view_column(vec![text::body(crate::fl!("loading-room-data")).into()])
                 .into();
         }
 
-        let mut col = Column::new().spacing(20);
+        let mut col = settings::view_column(vec![
+            self.view_profile(),
+            self.view_security(),
+            self.view_aliases(),
+            self.view_notifications(),
+            self.view_permissions(),
+            self.view_pinned_events(),
+        ]);
 
         if let Some(error_view) = self.view_error() {
             col = col.push(error_view);
         }
-
-        col = col.push(self.view_profile());
-        col = col.push(self.view_security());
-        col = col.push(self.view_aliases());
-        col = col.push(self.view_notifications());
-        col = col.push(self.view_permissions());
-        col = col.push(self.view_pinned_events());
 
         if let Some(save_btn) = self.view_save_button() {
             col = col.push(save_btn);
@@ -1934,7 +1944,7 @@ impl State {
         if let Some(members_view) = self.view_manage_members() {
             col = col.push(members_view);
         } else if self.is_loading_power_levels {
-            col = col.push(text::body("Loading members..."));
+            col = col.push(text::body(crate::fl!("loading-members")));
         }
 
         col = col.push(self.view_invite_promote());

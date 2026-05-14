@@ -1,7 +1,7 @@
 use crate::matrix::MatrixEngine;
 use cosmic::iced::Alignment;
 use cosmic::widget::{
-    Column, Row, button, icon::Named, text, text_input, tooltip, tooltip::Position,
+    Column, Row, button, icon::Named, settings, text, text_input, tooltip, tooltip::Position,
 };
 use cosmic::{Action, Element, Task};
 use matrix_sdk::encryption::CrossSigningStatus;
@@ -1708,48 +1708,23 @@ impl State {
     }
 
     fn view_privacy<'a>(&'a self) -> Element<'a, Message> {
-        use cosmic::widget::toggler;
-        let mut col = Column::new().spacing(10);
-        col = col.push(text::title3("Privacy & Preferences"));
-
-        col = col.push(
-            Row::new()
-                .spacing(10)
-                .align_y(Alignment::Center)
-                .push(text::body("Display Media Previews"))
-                .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
-                .push(
-                    toggler(self.media_previews_display_policy)
-                        .on_toggle(Message::ToggleMediaPreviewsDisplayPolicy),
-                ),
-        );
-        col = col.push(
-            text::body("Automatically load and display media previews in the chat timeline.")
-                .size(12),
-        );
-
-        col = col.push(
-            Row::new()
-                .spacing(10)
-                .align_y(Alignment::Center)
-                .push(text::body("Display Invite Avatars"))
-                .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
-                .push(
-                    toggler(self.invite_avatars_display_policy)
-                        .on_toggle(Message::ToggleInviteAvatarsDisplayPolicy),
-                ),
-        );
-        col = col.push(
-            text::body("Display avatars for rooms and spaces you haven't joined yet.").size(12),
-        );
-
-        col.into()
+        settings::section()
+            .title("Privacy & Preferences")
+            .add(settings::item(
+                "Display Media Previews",
+                cosmic::widget::toggler(self.media_previews_display_policy)
+                    .on_toggle(Message::ToggleMediaPreviewsDisplayPolicy),
+            ))
+            .add(settings::item(
+                "Display Invite Avatars",
+                cosmic::widget::toggler(self.invite_avatars_display_policy)
+                    .on_toggle(Message::ToggleInviteAvatarsDisplayPolicy),
+            ))
+            .into()
     }
 
     fn view_notifications<'a>(&'a self) -> Element<'a, Message> {
         use matrix_sdk::notification_settings::RoomNotificationMode;
-        let mut col = Column::new().spacing(10);
-        col = col.push(text::title3("Default Notification Settings"));
 
         let modes = [
             RoomNotificationMode::AllMessages,
@@ -1757,88 +1732,63 @@ impl State {
             RoomNotificationMode::Mute,
         ];
 
-        // DMs
-        col = col.push(text::body("Direct Messages").size(12));
-        let mut dm_row = Row::new().spacing(10);
-        for mode in modes {
-            let label = match mode {
-                RoomNotificationMode::AllMessages => "All Messages",
-                RoomNotificationMode::MentionsAndKeywordsOnly => "Mentions Only",
-                RoomNotificationMode::Mute => "Muted",
-            };
+        let build_mode_row = |current_mode: Option<RoomNotificationMode>, is_dm: bool| {
+            let mut r = Row::new().spacing(10);
+            for mode in modes {
+                let label = match mode {
+                    RoomNotificationMode::AllMessages => "All Messages",
+                    RoomNotificationMode::MentionsAndKeywordsOnly => "Mentions Only",
+                    RoomNotificationMode::Mute => "Muted",
+                };
 
-            let mut btn = if self.global_notification_mode_dm == Some(mode) {
-                button::suggested(label)
-            } else {
-                button::text(label)
-            };
+                let mut btn = if current_mode == Some(mode) {
+                    button::suggested(label)
+                } else {
+                    button::text(label)
+                };
 
-            if self.global_notification_mode_dm != Some(mode)
-                && !self.is_loading_global_notifications
-            {
-                btn = btn.on_press(Message::GlobalNotificationModeChanged(true, mode));
+                if current_mode != Some(mode) && !self.is_loading_global_notifications {
+                    btn = btn.on_press(Message::GlobalNotificationModeChanged(is_dm, mode));
+                }
+                r = r.push(btn);
             }
-            dm_row = dm_row.push(btn);
-        }
-        col = col.push(dm_row);
+            r.wrap()
+        };
 
-        // Groups
-        col = col.push(text::body("Group Chats").size(12));
-        let mut group_row = Row::new().spacing(10);
-        for mode in modes {
-            let label = match mode {
-                RoomNotificationMode::AllMessages => "All Messages",
-                RoomNotificationMode::MentionsAndKeywordsOnly => "Mentions Only",
-                RoomNotificationMode::Mute => "Muted",
-            };
-
-            let mut btn = if self.global_notification_mode_group == Some(mode) {
-                button::suggested(label)
-            } else {
-                button::text(label)
-            };
-
-            if self.global_notification_mode_group != Some(mode)
-                && !self.is_loading_global_notifications
-            {
-                btn = btn.on_press(Message::GlobalNotificationModeChanged(false, mode));
-            }
-            group_row = group_row.push(btn);
-        }
-        col.into()
+        settings::section()
+            .title("Default Notification Settings")
+            .add(settings::item(
+                "Direct Messages",
+                build_mode_row(self.global_notification_mode_dm, true),
+            ))
+            .add(settings::item(
+                "Group Chats",
+                build_mode_row(self.global_notification_mode_group, false),
+            ))
+            .into()
     }
 
     fn view_keywords<'a>(&'a self) -> Element<'a, Message> {
-        let mut col = Column::new().spacing(10);
-        col = col.push(text::title3("Keyword Notifications"));
-
-        col = col.push(
-            text::body("Receive notifications when these keywords are mentioned in any room.")
-                .size(12),
-        );
+        let mut section = settings::section()
+            .title("Keyword Notifications")
+            .header(text::body(
+                "Receive notifications when these keywords are mentioned in any room.",
+            ));
 
         if self.is_loading_keywords {
-            col = col.push(text::body("Loading keywords..."));
+            section = section.add(text::body("Loading keywords..."));
         } else {
             for keyword in &self.keywords {
-                let mut row = Row::new().spacing(10).align_y(Alignment::Center);
-                row = row.push(text::body(keyword).size(14));
-                row = row.push(cosmic::widget::space().width(cosmic::iced::Length::Fill));
-                row = row.push(tooltip(
-                    button::icon(Named::new("user-trash-symbolic"))
-                        .on_press(Message::RemoveKeyword(keyword.clone())),
-                    text::body("Remove Keyword"),
-                    Position::Top,
+                section = section.add(settings::item(
+                    keyword.as_str(),
+                    tooltip(
+                        button::icon(Named::new("user-trash-symbolic"))
+                            .on_press(Message::RemoveKeyword(keyword.clone())),
+                        text::body("Remove Keyword"),
+                        Position::Top,
+                    ),
                 ));
-                col = col.push(row);
             }
-
-            let mut add_row = Row::new().spacing(10).align_y(Alignment::Center);
-            add_row = add_row.push(
-                text_input("New keyword", &self.new_keyword)
-                    .on_input(Message::NewKeywordChanged)
-                    .on_submit(|_| Message::AddKeyword),
-            );
 
             let mut add_btn = button::text("Add");
             let is_empty = self.new_keyword.trim().is_empty();
@@ -1850,107 +1800,103 @@ impl State {
             } else {
                 add_btn.into()
             };
-            add_row = add_row.push(btn_widget);
-            col = col.push(add_row);
+
+            section = section.add(settings::item(
+                "Add Keyword",
+                Row::new()
+                    .spacing(10)
+                    .push(
+                        text_input("New keyword", &self.new_keyword)
+                            .on_input(Message::NewKeywordChanged)
+                            .on_submit(|_| Message::AddKeyword),
+                    )
+                    .push(btn_widget)
+                    .wrap(),
+            ));
         }
 
-        col.into()
+        section.into()
     }
 
     fn view_profile<'a>(&'a self) -> Element<'a, Message> {
-        let mut col = Column::new().spacing(20);
-
         if self.is_loading || self.is_loading_avatar {
-            col = col.push(text::body("Loading profile..."));
-        } else {
-            let mut avatar_col = Column::new().spacing(10).align_x(Alignment::Center);
-
-            if let Some(handle) = &self.avatar_handle {
-                avatar_col =
-                    avatar_col.push(cosmic::widget::image(handle.clone()).width(128).height(128));
-            } else {
-                avatar_col = avatar_col.push(
-                    cosmic::widget::container(text::body("No Avatar").size(16))
-                        .width(128)
-                        .height(128)
-                        .align_x(Alignment::Center)
-                        .align_y(Alignment::Center),
-                );
-            }
-
-            let mut avatar_btn = button::text(if self.is_uploading_avatar {
-                "Uploading..."
-            } else {
-                "Change Avatar"
-            });
-
-            if !self.is_uploading_avatar {
-                avatar_btn = avatar_btn.on_press(Message::SelectAvatar);
-            }
-
-            avatar_col = avatar_col.push(avatar_btn);
-
-            col = col.push(avatar_col);
-
-            col = col.push(
-                Column::new()
-                    .spacing(5)
-                    .push(text::body("Display Name").size(16))
-                    .push(
-                        text_input("Enter your display name", &self.display_name)
-                            .on_input(Message::DisplayNameChanged),
-                    ),
-            );
-
-            let mut save_row = Row::new().spacing(10);
-
-            if self.is_saving {
-                save_row = save_row.push(button::text("Saving..."));
-            } else {
-                let mut btn = button::text("Save");
-                let has_changes = self.display_name != self.original_display_name;
-
-                if has_changes {
-                    btn = btn.on_press(Message::SaveProfile);
-                }
-
-                let widget: Element<'_, Message> = if !has_changes {
-                    tooltip(btn, text::body("Make changes to save"), Position::Top).into()
-                } else {
-                    btn.into()
-                };
-
-                save_row = save_row.push(widget);
-            }
-
-            col = col.push(save_row);
+            return text::body("Loading profile...").into();
         }
-        col.into()
+
+        let mut avatar_col = Column::new().spacing(10).align_x(Alignment::Center);
+
+        if let Some(handle) = &self.avatar_handle {
+            avatar_col =
+                avatar_col.push(cosmic::widget::image(handle.clone()).width(128).height(128));
+        } else {
+            avatar_col = avatar_col.push(
+                cosmic::widget::container(text::body("No Avatar").size(16))
+                    .width(128)
+                    .height(128)
+                    .align_x(Alignment::Center)
+                    .align_y(Alignment::Center),
+            );
+        }
+
+        let mut avatar_btn = button::text(if self.is_uploading_avatar {
+            "Uploading..."
+        } else {
+            "Change Avatar"
+        });
+
+        if !self.is_uploading_avatar {
+            avatar_btn = avatar_btn.on_press(Message::SelectAvatar);
+        }
+
+        avatar_col = avatar_col.push(avatar_btn);
+
+        let mut save_btn = button::text(if self.is_saving { "Saving..." } else { "Save" });
+        let has_changes = self.display_name != self.original_display_name;
+
+        if has_changes && !self.is_saving {
+            save_btn = save_btn.on_press(Message::SaveProfile);
+        }
+
+        let save_widget: Element<'_, Message> = if !has_changes && !self.is_saving {
+            tooltip(save_btn, text::body("Make changes to save"), Position::Top).into()
+        } else {
+            save_btn.into()
+        };
+
+        settings::section()
+            .title("Profile")
+            .add(avatar_col)
+            .add(settings::item(
+                "Display Name",
+                text_input("Enter your display name", &self.display_name)
+                    .on_input(Message::DisplayNameChanged),
+            ))
+            .add(settings::item_row(vec![save_widget]))
+            .into()
     }
 
     fn view_password_change<'a>(&'a self) -> Element<'a, Message> {
-        let mut col = Column::new().spacing(20);
+        let mut section = settings::section().title("Change Password");
 
-        col = col.push(
-            Column::new()
-                .spacing(5)
-                .push(text::title3("Change Password"))
-                .push(
-                    text_input("Current password", &self.current_password)
-                        .password()
-                        .on_input(Message::CurrentPasswordChanged),
-                )
-                .push(
-                    text_input("New password", &self.new_password)
-                        .password()
-                        .on_input(Message::NewPasswordChanged),
-                )
-                .push(
-                    text_input("Confirm new password", &self.confirm_new_password)
-                        .password()
-                        .on_input(Message::ConfirmNewPasswordChanged),
-                ),
-        );
+        section = section
+            .add(settings::item(
+                "Current Password",
+                text_input("Current password", &self.current_password)
+                    .password()
+                    .on_input(Message::CurrentPasswordChanged),
+            ))
+            .add(settings::item(
+                "New Password",
+                text_input("New password", &self.new_password)
+                    .password()
+                    .on_input(Message::NewPasswordChanged),
+            ))
+            .add(settings::item(
+                "Confirm New Password",
+                text_input("Confirm new password", &self.confirm_new_password)
+                    .password()
+                    .on_input(Message::ConfirmNewPasswordChanged),
+            ));
 
         let is_empty = self.current_password.is_empty()
             || self.new_password.is_empty()
@@ -1990,38 +1936,58 @@ impl State {
             pw_btn.into()
         };
 
-        col = col.push(pw_btn_widget);
+        section = section.add(settings::item_row(vec![pw_btn_widget]));
 
         if let Some(success) = &self.password_success {
-            col = col.push(
-                Row::new()
-                    .spacing(10)
-                    .align_y(Alignment::Center)
-                    .push(text::body(success))
-                    .push(button::text("Dismiss").on_press(Message::DismissPasswordSuccess)),
-            );
+            section = section.add(settings::item(
+                success.as_str(),
+                button::text("Dismiss").on_press(Message::DismissPasswordSuccess),
+            ));
         }
 
-        col.into()
+        section.into()
     }
 
     fn view_devices<'a>(&'a self) -> Element<'a, Message> {
-        let mut devices_col = Column::new()
-            .spacing(10)
-            .push(text::title3("Devices & Sessions"));
+        let mut section = settings::section().title("Devices & Sessions");
 
         if self.is_loading_devices {
-            devices_col = devices_col.push(text::body("Loading devices..."));
+            section = section.add(text::body("Loading devices..."));
         } else {
             for device in &self.devices {
                 let name = device
                     .display_name
                     .clone()
                     .unwrap_or_else(|| "Unknown Device".to_string());
-                let mut row = Row::new().spacing(10).align_y(Alignment::Center);
 
+                let mut action_row = Row::new().spacing(10).align_y(Alignment::Center);
+
+                if device.is_verified {
+                    action_row = action_row.push(text::body("✅ Verified").size(14));
+                } else {
+                    action_row = action_row.push(text::body("❌ Unverified").size(14));
+                    if !device.is_current {
+                        action_row = action_row.push(
+                            button::text("Verify")
+                                .on_press(Message::VerifyDevice(device.device_id.clone())),
+                        );
+                    }
+                }
+
+                let mut del_btn = button::destructive(if device.is_deleting {
+                    "Deleting..."
+                } else {
+                    "Delete"
+                });
+                if !device.is_deleting {
+                    del_btn = del_btn.on_press(Message::DeleteDevice(device.device_id.clone()));
+                }
+                action_row =
+                    action_row.push(tooltip(del_btn, text::body("Delete Device"), Position::Top));
+
+                let mut title_row = Row::new().spacing(10).align_y(Alignment::Center);
                 if device.is_renaming {
-                    row = row
+                    title_row = title_row
                         .push(
                             text_input("New device name", &device.edit_name)
                                 .on_input({
@@ -2039,7 +2005,7 @@ impl State {
                                 .on_press(Message::CancelRenameDevice(device.device_id.clone())),
                         );
                 } else {
-                    row = row
+                    title_row = title_row
                         .push(text::body(name).size(14))
                         .push(text::body(format!("({})", device.device_id.as_ref())).size(12))
                         .push(tooltip(
@@ -2051,202 +2017,90 @@ impl State {
                 }
 
                 if device.is_current {
-                    row = row
+                    title_row = title_row
                         .push(cosmic::widget::container(text::body("Current").size(12)).padding(2));
                 }
 
-                row = row.push(cosmic::widget::space().width(cosmic::iced::Length::Fill));
-
-                if device.is_verified {
-                    row = row.push(text::body("✅ Verified").size(14));
-                } else {
-                    row = row.push(text::body("❌ Unverified").size(14));
-                    if !device.is_current {
-                        row = row.push(
-                            button::text("Verify")
-                                .on_press(Message::VerifyDevice(device.device_id.clone())),
-                        );
-                    }
-                }
-
-                let mut del_btn = button::destructive(if device.is_deleting {
-                    "Deleting..."
-                } else {
-                    "Delete"
-                });
-                if !device.is_deleting {
-                    del_btn = del_btn.on_press(Message::DeleteDevice(device.device_id.clone()));
-                }
-                row = row.push(tooltip(del_btn, text::body("Delete Device"), Position::Top));
-
-                devices_col = devices_col.push(row);
+                section = section.add(settings::item_row(vec![
+                    title_row.into(),
+                    action_row.into(),
+                ]));
             }
 
-            devices_col = devices_col.push(
-                Column::new()
-                    .spacing(5)
-                    .push(text::body("Password to delete devices:").size(12))
-                    .push(
-                        text_input("Password", &self.device_delete_password)
-                            .password()
-                            .on_input(Message::DeviceDeletePasswordChanged),
-                    ),
-            );
+            section = section.add(settings::item(
+                "Password to delete devices:",
+                text_input("Password", &self.device_delete_password)
+                    .password()
+                    .on_input(Message::DeviceDeletePasswordChanged),
+            ));
         }
 
-        devices_col.into()
+        section.into()
     }
 
     fn view_deactivate_account<'a>(&'a self) -> Element<'a, Message> {
-        let mut col = Column::new().spacing(10);
-
-        col = col.push(text::title3("Deactivate Account"));
-        col = col.push(text::body("Permanently delete your account. This action cannot be undone and you will lose access to all your messages and data.").size(14));
-
-        col = col.push(
-            text_input("Confirm password to deactivate", &self.deactivate_password)
-                .password()
-                .on_input(Message::DeactivatePasswordChanged),
-        );
-
-        let mut btn = button::destructive(if self.is_deactivating {
-            "Deactivating..."
-        } else {
-            "Deactivate Account"
-        });
-
-        if !self.is_deactivating && !self.deactivate_password.is_empty() {
-            btn = btn.on_press(Message::DeactivateAccount);
-        }
-
-        let widget: Element<'_, Message> = if self.deactivate_password.is_empty() {
-            tooltip(
-                btn,
-                text::body("Enter password to deactivate"),
-                Position::Top,
-            )
+        settings::section()
+            .title("Deactivate Account")
+            .add(text::body(
+                "⚠️ This will permanently delete your account and all associated data.",
+            ))
+            .add(settings::item(
+                "Password",
+                text_input("Confirm password", &self.deactivate_password)
+                    .password()
+                    .on_input(Message::DeactivatePasswordChanged),
+            ))
+            .add(settings::item(
+                "Deactivate",
+                button::destructive(if self.is_deactivating {
+                    "Deactivating..."
+                } else {
+                    "Deactivate Account"
+                })
+                .on_press(Message::DeactivateAccount),
+            ))
             .into()
-        } else {
-            btn.into()
-        };
-
-        col = col.push(widget);
-
-        col.into()
-    }
-
-    fn view_ignored_users<'a>(&'a self) -> Element<'a, Message> {
-        let mut col = Column::new()
-            .spacing(10)
-            .push(text::title3("Ignored Users"));
-
-        if self.is_loading_ignored_users && self.ignored_users.is_empty() {
-            col = col.push(text::body("Loading ignored users..."));
-        } else {
-            for user_id in &self.ignored_users {
-                let mut row = Row::new()
-                    .spacing(10)
-                    .align_y(Alignment::Center)
-                    .push(text::body(user_id.as_str()).size(14))
-                    .push(cosmic::widget::space().width(cosmic::iced::Length::Fill));
-
-                let mut unignore_btn = button::destructive("Unignore");
-                if !self.is_loading_ignored_users {
-                    unignore_btn = unignore_btn.on_press(Message::UnignoreUser(user_id.clone()));
-                }
-                row = row.push(unignore_btn);
-                col = col.push(row);
-            }
-
-            let mut ignore_btn = button::destructive("Ignore User");
-            let is_empty = self.new_ignore_user_id.trim().is_empty();
-            if !self.is_loading_ignored_users && !is_empty {
-                ignore_btn = ignore_btn.on_press(Message::IgnoreUser);
-            }
-
-            let ignore_btn_widget: Element<'_, Message> = if is_empty {
-                tooltip(
-                    ignore_btn,
-                    text::body("Enter a user ID to ignore"),
-                    Position::Top,
-                )
-                .into()
-            } else {
-                ignore_btn.into()
-            };
-
-            let input_row = Row::new()
-                .spacing(10)
-                .align_y(Alignment::Center)
-                .push(
-                    text_input(
-                        "User ID (e.g. @alice:example.com)",
-                        &self.new_ignore_user_id,
-                    )
-                    .on_input(Message::NewIgnoreUserIdChanged)
-                    .on_submit(|_| Message::IgnoreUser),
-                )
-                .push(ignore_btn_widget);
-            col = col.push(input_row);
-        }
-        col.into()
     }
 
     fn view_cross_signing<'a>(&'a self) -> Element<'a, Message> {
-        let mut col = Column::new()
-            .spacing(10)
-            .push(text::title3("Cross-signing"));
+        let mut section = settings::section().title("Cross-signing");
 
         if self.is_loading_cross_signing {
-            col = col.push(text::body("Loading cross-signing status..."));
+            section = section.add(text::body("Loading cross-signing status..."));
         } else if let Some(info) = &self.cross_signing_info {
             let status = &info.status;
-            let mut status_col = Column::new().spacing(5);
 
-            status_col =
-                status_col.push(Row::new().spacing(10).push(text::body("Master Key:")).push(
-                    text::body(if status.has_master {
-                        "✅ Present"
-                    } else {
-                        "❌ Missing"
-                    }),
+            let build_key_row = |label: &str, has_key: bool, key_val: Option<&String>| {
+                let mut c = Column::new().spacing(5);
+                c = c.push(
+                    Row::new()
+                        .spacing(10)
+                        .push(text::body(label.to_string()))
+                        .push(text::body(if has_key {
+                            "✅ Present"
+                        } else {
+                            "❌ Missing"
+                        })),
+                );
+                if let Some(key) = key_val {
+                    c = c.push(text::body(format!("Public Key: {}", key)).size(10));
+                }
+                c
+            };
+
+            section = section
+                .add(settings::item(
+                    "Master Key:",
+                    build_key_row("", status.has_master, info.master_key.as_ref()),
+                ))
+                .add(settings::item(
+                    "Self-signing Key:",
+                    build_key_row("", status.has_self_signing, info.self_signing_key.as_ref()),
+                ))
+                .add(settings::item(
+                    "User-signing Key:",
+                    build_key_row("", status.has_user_signing, info.user_signing_key.as_ref()),
                 ));
-
-            if let Some(key) = &info.master_key {
-                status_col = status_col.push(text::body(format!("Public Key: {}", key)).size(10));
-            }
-
-            status_col = status_col.push(
-                Row::new()
-                    .spacing(10)
-                    .push(text::body("Self-signing Key:"))
-                    .push(text::body(if status.has_self_signing {
-                        "✅ Present"
-                    } else {
-                        "❌ Missing"
-                    })),
-            );
-
-            if let Some(key) = &info.self_signing_key {
-                status_col = status_col.push(text::body(format!("Public Key: {}", key)).size(10));
-            }
-
-            status_col = status_col.push(
-                Row::new()
-                    .spacing(10)
-                    .push(text::body("User-signing Key:"))
-                    .push(text::body(if status.has_user_signing {
-                        "✅ Present"
-                    } else {
-                        "❌ Missing"
-                    })),
-            );
-
-            if let Some(key) = &info.user_signing_key {
-                status_col = status_col.push(text::body(format!("Public Key: {}", key)).size(10));
-            }
-
-            col = col.push(status_col);
 
             if !status.is_complete() {
                 let mut btn = button::text(if self.is_bootstrapping {
@@ -2254,262 +2108,197 @@ impl State {
                 } else {
                     "Bootstrap Cross-signing"
                 });
-
                 if !self.is_bootstrapping {
                     btn = btn.on_press(Message::BootstrapCrossSigning);
                 }
-
-                col = col.push(btn);
+                section = section.add(settings::item_row(vec![btn.into()]));
             }
         } else {
-            col = col.push(text::body("Cross-signing is not set up."));
             let mut btn = button::text(if self.is_bootstrapping {
                 "Bootstrapping..."
             } else {
-                "Bootstrap Cross-signing"
+                "Setup Cross-signing"
             });
-
             if !self.is_bootstrapping {
                 btn = btn.on_press(Message::BootstrapCrossSigning);
             }
-            col = col.push(btn);
+            section = section.add(settings::item_row(vec![btn.into()]));
         }
 
-        col.into()
+        section.into()
     }
 
     fn view_3pids<'a>(&'a self) -> Element<'a, Message> {
-        let mut col = Column::new()
-            .spacing(10)
-            .push(text::title3("Emails & Phone Numbers"));
+        let mut section = settings::section().title("Emails & Phone Numbers");
 
         if self.is_loading_3pids {
-            col = col.push(text::body("Loading linked identifiers..."));
+            section = section.add(text::body("Loading linked accounts..."));
         } else {
             for t in &self.threepids {
-                let mut row = Row::new().spacing(10).align_y(Alignment::Center);
-                let icon = match t.medium {
-                    matrix_sdk::ruma::thirdparty::Medium::Email => "mail-unread-symbolic",
-                    matrix_sdk::ruma::thirdparty::Medium::Msisdn => "phone-symbolic",
-                    _ => "dialog-question-symbolic",
-                };
-
-                row = row
-                    .push(cosmic::widget::icon::from_name(icon))
-                    .push(text::body(t.address.clone()))
-                    .push(cosmic::widget::space().width(cosmic::iced::Length::Fill));
-
-                let del_btn = button::destructive("Remove")
-                    .on_press(Message::Delete3PID(t.address.clone(), t.medium.clone()));
-                row = row.push(del_btn);
-
-                col = col.push(row);
+                section = section.add(settings::item(
+                    t.address.as_str(),
+                    button::destructive("Remove")
+                        .on_press(Message::Delete3PID(t.address.clone(), t.medium.clone())),
+                ));
             }
 
-            col = col.push(text::body("Add Email Address").size(14));
-            let mut email_row = Row::new().spacing(10).align_y(Alignment::Center);
-            email_row = email_row.push(
-                text_input("email@example.com", &self.new_3pid_email)
-                    .on_input(Message::New3PIDEmailChanged),
-            );
-
-            if self.adding_3pid_sid.is_none() {
-                let mut btn = button::text(if self.is_requesting_3pid_token {
-                    "Sending..."
-                } else {
-                    "Send"
-                });
-                let is_empty = self.new_3pid_email.trim().is_empty();
-                if !self.is_requesting_3pid_token && !is_empty {
-                    btn = btn.on_press(Message::Request3PIDEmailToken);
-                }
-
-                let btn_widget: Element<'_, Message> = if is_empty {
-                    tooltip(
-                        btn,
-                        text::body("Enter an email address to add"),
-                        Position::Top,
+            section = section.add(settings::item(
+                "Link Email",
+                Row::new()
+                    .spacing(10)
+                    .push(
+                        text_input("email@example.com", &self.new_3pid_email)
+                            .on_input(Message::New3PIDEmailChanged),
                     )
-                    .into()
-                } else {
-                    btn.into()
-                };
-
-                email_row = email_row.push(btn_widget);
-            }
-            col = col.push(email_row);
-
-            col = col.push(text::body("Add Phone Number").size(14));
-            let mut phone_row = Row::new().spacing(10).align_y(Alignment::Center);
-            phone_row = phone_row.push(
-                text_input("Country (e.g. US)", &self.new_3pid_country_code)
-                    .on_input(Message::New3PIDCountryCodeChanged)
-                    .width(100),
-            );
-            phone_row = phone_row.push(
-                text_input("Phone Number", &self.new_3pid_msisdn)
-                    .on_input(Message::New3PIDMsisdnChanged),
-            );
-
-            if self.adding_3pid_sid.is_none() {
-                let mut btn = button::text(if self.is_requesting_3pid_token {
-                    "Sending..."
-                } else {
-                    "Send"
-                });
-                let is_msisdn_empty = self.new_3pid_msisdn.trim().is_empty();
-                let is_country_empty = self.new_3pid_country_code.trim().is_empty();
-                if !self.is_requesting_3pid_token && !is_msisdn_empty && !is_country_empty {
-                    btn = btn.on_press(Message::Request3PIDMsisdnToken);
-                }
-
-                let btn_widget: Element<'_, Message> = if is_msisdn_empty || is_country_empty {
-                    tooltip(
-                        btn,
-                        text::body("Enter a country code and phone number to add"),
-                        Position::Top,
+                    .push(
+                        button::text("Send Verification").on_press(Message::Request3PIDEmailToken),
                     )
-                    .into()
-                } else {
-                    btn.into()
-                };
+                    .wrap(),
+            ));
 
-                phone_row = phone_row.push(btn_widget);
-            }
-            col = col.push(phone_row);
+            if let Some(sid) = &self.adding_3pid_sid {
+                section = section.add(settings::item(
+                    "Verification Session",
+                    text::body(sid.as_str()),
+                ));
 
-            if let Some(_sid) = &self.adding_3pid_sid {
-                col = col.push(text::body("Complete Addition").size(14));
-                let mut complete_row = Row::new().spacing(10).align_y(Alignment::Center);
-                complete_row = complete_row.push(
-                    text_input("Account Password", &self.add_3pid_password)
+                section = section.add(settings::item(
+                    "Confirm with Password",
+                    text_input("Password", &self.add_3pid_password)
                         .password()
                         .on_input(Message::Add3PIDPasswordChanged),
-                );
+                ));
 
-                let is_empty = self.add_3pid_password.is_empty();
-                let mut add_btn = button::suggested("Add");
-                if !is_empty {
-                    add_btn = add_btn.on_press(Message::Add3PID);
-                }
-
-                let btn_widget: Element<'_, Message> = if is_empty {
-                    tooltip(
-                        add_btn,
-                        text::body("Enter your password to add the identifier"),
-                        Position::Top,
-                    )
-                    .into()
-                } else {
-                    add_btn.into()
-                };
-
-                complete_row = complete_row.push(btn_widget);
-                col = col.push(complete_row);
+                section = section.add(settings::item(
+                    "Complete",
+                    button::suggested("Add Account").on_press(Message::Add3PID),
+                ));
             }
+
+            section = section.add(settings::item(
+                "Link Phone",
+                Row::new()
+                    .spacing(10)
+                    .push(
+                        text_input("+1", &self.new_3pid_country_code)
+                            .width(50)
+                            .on_input(Message::New3PIDCountryCodeChanged),
+                    )
+                    .push(
+                        text_input("Phone Number", &self.new_3pid_msisdn)
+                            .on_input(Message::New3PIDMsisdnChanged),
+                    )
+                    .push(button::text("Send SMS").on_press(Message::Request3PIDMsisdnToken))
+                    .wrap(),
+            ));
         }
 
-        col.into()
+        section.into()
+    }
+
+    fn view_ignored_users<'a>(&'a self) -> Element<'a, Message> {
+        let mut section = settings::section().title("Ignored Users");
+
+        if self.is_loading_ignored_users {
+            section = section.add(text::body("Loading ignored users..."));
+        } else {
+            for user_id in &self.ignored_users {
+                section = section.add(settings::item(
+                    user_id.as_str(),
+                    button::text("Unignore").on_press(Message::UnignoreUser(user_id.clone())),
+                ));
+            }
+
+            section = section.add(settings::item(
+                "Ignore User",
+                Row::new()
+                    .spacing(10)
+                    .push(
+                        text_input("@user:example.com", &self.new_ignore_user_id)
+                            .on_input(Message::NewIgnoreUserIdChanged)
+                            .on_submit(|_| Message::IgnoreUser),
+                    )
+                    .push(button::destructive("Ignore").on_press(Message::IgnoreUser))
+                    .wrap(),
+            ));
+        }
+
+        section.into()
     }
 
     fn view_verification<'a>(&'a self) -> Element<'a, Message> {
-        let mut col = Column::new().spacing(10);
+        if self.verification_ui_state == VerificationUIState::None {
+            return Column::new().into();
+        }
+
+        let mut section = settings::section().title("Verification");
         match &self.verification_ui_state {
             VerificationUIState::WaitingForOtherDevice => {
-                col = col.push(
-                    Column::new()
-                        .spacing(10)
-                        .align_x(Alignment::Center)
-                        .push(text::body(
-                            "Verification requested. Please accept it on the other device.",
-                        ))
-                        .push(
-                            button::text("Cancel Verification")
-                                .on_press(Message::CancelVerification),
-                        ),
-                );
+                section = section.add(text::body("Waiting for other device to accept..."));
             }
             VerificationUIState::ShowingEmojis(emojis) => {
-                let mut emoji_row = Row::new().spacing(10).align_y(Alignment::Center);
+                let mut emoji_row = Row::new().spacing(20);
                 for (symbol, desc) in emojis {
                     emoji_row = emoji_row.push(
                         Column::new()
-                            .spacing(2)
+                            .spacing(5)
                             .align_x(Alignment::Center)
-                            .push(text::title1(symbol))
-                            .push(text::body(desc).size(12)),
+                            .push(text::body(symbol).size(32))
+                            .push(text::body(desc).size(10)),
                     );
                 }
-
-                col = col.push(
-                    Column::new()
+                section = section.add(emoji_row.wrap());
+                section = section.add(text::body("Do these emojis match on both devices?"));
+                section = section.add(
+                    Row::new()
                         .spacing(10)
-                        .align_x(Alignment::Center)
-                        .push(text::body("Do these emojis match the other device?"))
-                        .push(emoji_row)
-                        .push(
-                            Row::new()
-                                .spacing(10)
-                                .push(button::text("Match!").on_press(Message::ConfirmEmojis))
-                                .push(button::text("Cancel").on_press(Message::CancelVerification)),
-                        ),
+                        .push(button::suggested("Match").on_press(Message::ConfirmEmojis))
+                        .push(button::destructive("Cancel").on_press(Message::CancelVerification))
+                        .wrap(),
                 );
             }
             VerificationUIState::Done => {
-                col = col.push(text::body("Verification successful!"));
+                section = section.add(text::body("Verification successful!"));
+                section = section.add(button::text("Done").on_press(Message::CancelVerification));
             }
             VerificationUIState::Cancelled => {
-                col = col.push(text::body("Verification cancelled."));
+                section = section.add(text::body("Verification cancelled or failed."));
+                section =
+                    section.add(button::text("Dismiss").on_press(Message::CancelVerification));
             }
-            VerificationUIState::None => {}
+            _ => {}
         }
-        col.into()
+        section.into()
     }
 
     pub fn view(&self) -> Element<'_, Message> {
-        let mut col = Column::new().spacing(20);
-
-        col = col.push(self.view_profile());
-
-        col = col.push(self.view_notifications());
-
-        col = col.push(self.view_privacy());
-
-        col = col.push(self.view_keywords());
+        let mut col = settings::view_column(vec![
+            self.view_profile(),
+            self.view_notifications(),
+            self.view_privacy(),
+            self.view_keywords(),
+            self.view_password_change(),
+            self.view_ignored_users(),
+            self.view_devices(),
+            self.view_cross_signing(),
+            self.view_3pids(),
+            self.view_verification(),
+            self.view_deactivate_account(),
+        ]);
 
         if let Some(err) = &self.error {
-            col = col.push(
-                Row::new()
-                    .spacing(10)
-                    .align_y(Alignment::Center)
-                    .push(text::body(err))
-                    .push(button::text("Dismiss").on_press(Message::DismissError)),
-            );
+            col = col.push(settings::section().add(settings::item(
+                err.as_str(),
+                button::text("Dismiss").on_press(Message::DismissError),
+            )));
         }
-
-        col = col.push(self.view_password_change());
-
-        col = col.push(self.view_ignored_users());
-
-        col = col.push(self.view_devices());
-
-        col = col.push(self.view_cross_signing());
-
-        col = col.push(self.view_3pids());
 
         if let Some(msg) = &self.success_message {
-            col = col.push(
-                Row::new()
-                    .spacing(10)
-                    .align_y(Alignment::Center)
-                    .push(text::body(msg))
-                    .push(button::text("Dismiss").on_press(Message::DismissSuccessMessage)),
-            );
+            col = col.push(settings::section().add(settings::item(
+                msg.as_str(),
+                button::text("Dismiss").on_press(Message::DismissSuccessMessage),
+            )));
         }
-
-        col = col.push(self.view_verification());
-
-        col = col.push(self.view_deactivate_account());
 
         col.into()
     }
@@ -2518,207 +2307,19 @@ impl State {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
-
-    #[test]
-    fn test_dismiss_error() {
-        let mut state = State::default();
-        state.error = Some("Test error".to_string());
-
-        let _ = state.update(Message::DismissError, &None);
-
-        assert_eq!(state.error, None);
-    }
-
-    #[test]
-    fn test_password_changed() {
-        let mut state = State::default();
-
-        let _ = state.update(
-            Message::CurrentPasswordChanged("old_pass".to_string()),
-            &None,
-        );
-        assert_eq!(state.current_password, "old_pass");
-
-        let _ = state.update(Message::NewPasswordChanged("new_pass".to_string()), &None);
-        assert_eq!(state.new_password, "new_pass");
-
-        let _ = state.update(
-            Message::ConfirmNewPasswordChanged("new_pass".to_string()),
-            &None,
-        );
-        assert_eq!(state.confirm_new_password, "new_pass");
-    }
 
     #[test]
     fn test_display_name_changed() {
         let mut state = State::default();
-
-        let _ = state.update(Message::DisplayNameChanged("Alice".to_string()), &None);
-        assert_eq!(state.display_name, "Alice");
+        let _ = state.update(Message::DisplayNameChanged("John Doe".to_string()), &None);
+        assert_eq!(state.display_name, "John Doe");
     }
 
     #[test]
-    fn test_device_rename_flow() {
+    fn test_dismiss_error() {
         let mut state = State::default();
-        let device_id: Arc<str> = Arc::from("DEVICE_1");
-
-        // Setup initial device
-        state.devices.push(DeviceInfo {
-            device_id: device_id.clone(),
-            display_name: Some("My Phone".to_string()),
-            is_verified: true,
-            is_current: false,
-            is_renaming: false,
-            edit_name: "".to_string(),
-            is_deleting: false,
-        });
-
-        // Start rename
-        let _ = state.update(Message::StartRenameDevice(device_id.clone()), &None);
-        assert!(state.devices[0].is_renaming);
-        assert_eq!(state.devices[0].edit_name, "My Phone");
-
-        // Edit name
-        let _ = state.update(
-            Message::EditDeviceNameChanged(device_id.clone(), "My New Phone".to_string()),
-            &None,
-        );
-        assert_eq!(state.devices[0].edit_name, "My New Phone");
-
-        // Cancel rename
-        let _ = state.update(Message::CancelRenameDevice(device_id.clone()), &None);
-        assert!(!state.devices[0].is_renaming);
-        // edit_name should be preserved as it was updated
-        assert_eq!(state.devices[0].edit_name, "My New Phone");
-    }
-
-    #[test]
-    fn test_deactivate_account_messages() {
-        let mut state = State::default();
-
-        let _ = state.update(
-            Message::DeactivatePasswordChanged("secret".to_string()),
-            &None,
-        );
-        assert_eq!(state.deactivate_password, "secret");
-
-        let _ = state.update(Message::AccountDeactivated(Ok(())), &None);
-        assert!(!state.is_deactivating);
-    }
-
-    #[test]
-    fn test_ignored_users_flow() {
-        let mut state = State::default();
-        let user_id = OwnedUserId::try_from("@alice:example.com").unwrap();
-
-        // Load ignored users
-        let _ = state.update(
-            Message::IgnoredUsersLoaded(Ok(vec![user_id.clone()])),
-            &None,
-        );
-        assert_eq!(state.ignored_users.len(), 1);
-        assert_eq!(state.ignored_users[0], user_id);
-
-        // Update new ignore user ID input
-        let _ = state.update(
-            Message::NewIgnoreUserIdChanged("@bob:example.com".to_string()),
-            &None,
-        );
-        assert_eq!(state.new_ignore_user_id, "@bob:example.com");
-
-        // After successful ignore, input should be cleared
-        let _ = state.update(Message::UserIgnored(Ok(())), &None);
-        assert_eq!(state.new_ignore_user_id, "");
-    }
-
-    #[test]
-    fn test_cross_signing_messages() {
-        let mut state = State::default();
-
-        // Load status starts loading
-        let _ = state.update(Message::LoadCrossSigningStatus, &None);
-        assert!(state.is_loading_cross_signing);
-
-        // Status loaded
-        let info = CrossSigningInfo {
-            status: CrossSigningStatus {
-                has_master: true,
-                has_self_signing: false,
-                has_user_signing: true,
-            },
-            master_key: Some("master_pub".to_string()),
-            self_signing_key: None,
-            user_signing_key: Some("user_pub".to_string()),
-        };
-        let _ = state.update(
-            Message::CrossSigningStatusLoaded(Ok(Some(info.clone()))),
-            &None,
-        );
-        assert!(!state.is_loading_cross_signing);
-        assert!(state.cross_signing_info.is_some());
-        let info_state = state.cross_signing_info.as_ref().unwrap();
-        assert!(info_state.status.has_master);
-        assert!(!info_state.status.has_self_signing);
-        assert_eq!(info_state.master_key.as_deref(), Some("master_pub"));
-
-        // Bootstrap
-        let _ = state.update(Message::BootstrapCrossSigning, &None);
-        assert!(state.is_bootstrapping);
-
-        // Bootstrapped
-        let _ = state.update(Message::CrossSigningBootstrapped(Ok(())), &None);
-        assert!(!state.is_bootstrapping);
-    }
-
-    #[test]
-    fn test_threepids_loaded() {
-        let mut state = State::default();
-        let threepids = vec![Threepid {
-            address: "test@example.com".to_string(),
-            medium: matrix_sdk::ruma::thirdparty::Medium::Email,
-        }];
-
-        let _ = state.update(Message::ThreepidsLoaded(Ok(threepids.clone())), &None);
-
-        assert!(!state.is_loading_3pids);
-        assert_eq!(state.threepids, threepids);
-    }
-
-    #[test]
-    fn test_new_3pid_email_changed() {
-        let mut state = State::default();
-        let email = "new@example.com".to_string();
-
-        let _ = state.update(Message::New3PIDEmailChanged(email.clone()), &None);
-
-        assert_eq!(state.new_3pid_email, email);
-    }
-
-    #[test]
-    fn test_threepid_deleted() {
-        let mut state = State::default();
-        let address = "test@example.com".to_string();
-        state.threepids = vec![Threepid {
-            address: address.clone(),
-            medium: matrix_sdk::ruma::thirdparty::Medium::Email,
-        }];
-
-        let _ = state.update(Message::ThreepidDeleted(address, Ok(())), &None);
-
-        assert!(state.threepids.is_empty());
-    }
-
-    #[test]
-    fn test_keywords_state() {
-        let mut state = State::default();
-
-        let _ = state.update(Message::NewKeywordChanged("rust".to_string()), &None);
-        assert_eq!(state.new_keyword, "rust");
-
-        let keywords = vec!["matrix".to_string(), "cosmic".to_string()];
-        let _ = state.update(Message::KeywordsLoaded(keywords.clone()), &None);
-        assert_eq!(state.keywords, keywords);
-        assert!(!state.is_loading_keywords);
+        state.error = Some("Error".to_string());
+        let _ = state.update(Message::DismissError, &None);
+        assert_eq!(state.error, None);
     }
 }

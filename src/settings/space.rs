@@ -1,12 +1,13 @@
 use crate::matrix::{MatrixEngine, RoomData};
 use cosmic::iced::Alignment;
-use cosmic::widget::{Column, Row, button, text, text_input, tooltip, tooltip::Position};
+use cosmic::widget::{Column, Row, button, settings, text, text_input, tooltip, tooltip::Position};
 use cosmic::{Action, Element, Task};
 use matrix_sdk::ruma::RoomId;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Default)]
 pub struct State {
-    pub space_id: Option<String>,
+    pub space_id: Option<Arc<str>>,
     pub name: String,
     pub original_name: String,
     pub canonical_alias: String,
@@ -35,7 +36,7 @@ pub struct State {
 
 #[derive(Debug, Clone)]
 pub enum Message {
-    LoadSpace(String),
+    LoadSpace(Arc<str>),
     SpaceLoaded(Result<SpaceInfo, String>),
     IsPublicChanged(bool),
     IsInviteOnlyChanged(bool),
@@ -93,18 +94,24 @@ impl State {
                     Task::perform(
                         async move {
                             let room_id_parsed =
-                                RoomId::parse(&space_id).map_err(|e| e.to_string())?;
+                                RoomId::parse(space_id.as_ref()).map_err(|e| e.to_string())?;
                             let client = engine.client().await;
                             let room = client
                                 .get_room(&room_id_parsed)
                                 .ok_or_else(|| "Space not found".to_string())?;
 
-                            let visibility = engine.get_room_visibility(&space_id).await.unwrap_or(
-                                matrix_sdk::ruma::api::client::room::Visibility::Private,
-                            );
-                            let join_rule = engine.get_room_join_rule(&space_id).await.unwrap_or(
-                                matrix_sdk::ruma::events::room::join_rules::JoinRule::Invite,
-                            );
+                            let visibility = engine
+                                .get_room_visibility(space_id.as_ref())
+                                .await
+                                .unwrap_or(
+                                    matrix_sdk::ruma::api::client::room::Visibility::Private,
+                                );
+                            let join_rule = engine
+                                .get_room_join_rule(space_id.as_ref())
+                                .await
+                                .unwrap_or(
+                                    matrix_sdk::ruma::events::room::join_rules::JoinRule::Invite,
+                                );
 
                             Ok(SpaceInfo {
                                 name: room.name().unwrap_or_default(),
@@ -193,7 +200,12 @@ impl State {
                     return Task::perform(
                         async move {
                             engine
-                                .add_space_child(&space_id_clone, &child_id_clone, order, suggested)
+                                .add_space_child(
+                                    space_id_clone.as_ref(),
+                                    &child_id_clone,
+                                    order,
+                                    suggested,
+                                )
                                 .await
                                 .map_err(|e| e.to_string())
                         },
@@ -253,7 +265,7 @@ impl State {
                 {
                     self.is_uploading_avatar = true;
                     let engine = matrix.clone();
-                    let room_id = self.space_id.clone().unwrap_or_default();
+                    let room_id = self.space_id.clone().unwrap_or_else(|| Arc::from(""));
 
                     return Task::perform(
                         async move {
@@ -262,7 +274,7 @@ impl State {
                                 .first_raw()
                                 .unwrap_or("image/jpeg");
                             engine
-                                .upload_room_avatar(&room_id, data, mime)
+                                .upload_room_avatar(room_id.as_ref(), data, mime)
                                 .await
                                 .map_err(|e| e.to_string())
                         },
@@ -299,7 +311,7 @@ impl State {
                     return Task::perform(
                         async move {
                             engine
-                                .get_space_children(&space_id_clone)
+                                .get_space_children(space_id_clone.as_ref())
                                 .await
                                 .map_err(|e| e.to_string())
                         },
@@ -367,20 +379,20 @@ impl State {
                             async move {
                                 if new_name != original_name {
                                     engine
-                                        .set_room_name(&space_id_clone, new_name)
+                                        .set_room_name(space_id_clone.as_ref(), new_name)
                                         .await
                                         .map_err(|e| e.to_string())?;
                                 }
                                 if new_topic != original_topic {
                                     engine
-                                        .set_room_topic(&space_id_clone, new_topic)
+                                        .set_room_topic(space_id_clone.as_ref(), new_topic)
                                         .await
                                         .map_err(|e| e.to_string())?;
                                 }
                                 if new_alias != original_alias {
                                     engine
                                         .set_canonical_alias(
-                                            &space_id_clone,
+                                            space_id_clone.as_ref(),
                                             if new_alias.is_empty() {
                                                 None
                                             } else {
@@ -397,7 +409,7 @@ impl State {
                                         matrix_sdk::ruma::api::client::room::Visibility::Private
                                     };
                                     engine
-                                        .set_room_visibility(&space_id_clone, visibility)
+                                        .set_room_visibility(space_id_clone.as_ref(), visibility)
                                         .await
                                         .map_err(|e| e.to_string())?;
                                 }
@@ -408,7 +420,7 @@ impl State {
                                         matrix_sdk::ruma::events::room::join_rules::JoinRule::Public
                                     };
                                     engine
-                                        .set_room_join_rule(&space_id_clone, join_rule)
+                                        .set_room_join_rule(space_id_clone.as_ref(), join_rule)
                                         .await
                                         .map_err(|e| e.to_string())?;
                                 }
@@ -460,7 +472,12 @@ impl State {
                     return Task::perform(
                         async move {
                             engine
-                                .add_space_child(&space_id_clone, &child_id_clone, order, false)
+                                .add_space_child(
+                                    space_id_clone.as_ref(),
+                                    &child_id_clone,
+                                    order,
+                                    false,
+                                )
                                 .await
                                 .map_err(|e| e.to_string())
                         },
@@ -488,7 +505,7 @@ impl State {
                     return Task::perform(
                         async move {
                             engine
-                                .add_space_child(&space_id_clone, &child_id, order, false)
+                                .add_space_child(space_id_clone.as_ref(), &child_id, order, false)
                                 .await
                                 .map_err(|e| e.to_string())
                         },
@@ -541,7 +558,7 @@ impl State {
                     return Task::perform(
                         async move {
                             engine
-                                .remove_space_child(&space_id_clone, &child_id_for_task)
+                                .remove_space_child(space_id_clone.as_ref(), &child_id_for_task)
                                 .await
                                 .map_err(|e| e.to_string())
                         },
@@ -610,25 +627,43 @@ impl State {
 
     pub fn view(&self) -> Element<'_, Message> {
         if self.is_loading {
-            return Column::new()
-                .spacing(20)
-                .push(text::body("Loading space data..."))
-                .into();
+            return settings::view_column(vec![
+                text::body(crate::fl!("loading-space-data")).into(),
+            ])
+            .into();
         }
 
-        let mut col = Column::new().spacing(20);
+        let mut col = settings::view_column(vec![
+            self.view_profile(),
+            self.view_discovery(),
+            self.view_hierarchy(),
+            self.view_add_child(),
+        ]);
 
-        if let Some(error) = &self.error {
-            col = col.push(
-                Row::new()
-                    .spacing(10)
-                    .align_y(Alignment::Center)
-                    .push(text::body(error))
-                    .push(button::text("Dismiss").on_press(Message::DismissError)),
-            );
+        if let Some(error_view) = self.view_error() {
+            col = col.push(error_view);
         }
 
-        col = col.push(text::title3("Space Profile"));
+        if let Some(save_btn) = self.view_save_button() {
+            col = col.push(save_btn);
+        }
+
+        col.into()
+    }
+
+    fn view_error(&self) -> Option<Element<'_, Message>> {
+        self.error.as_ref().map(|error| {
+            settings::section()
+                .add(settings::item(
+                    error,
+                    button::text(crate::fl!("dismiss")).on_press(Message::DismissError),
+                ))
+                .into()
+        })
+    }
+
+    fn view_profile(&self) -> Element<'_, Message> {
+        let mut section = settings::section().title(crate::fl!("space-profile"));
 
         // Avatar Section
         let mut avatar_row = Row::new().spacing(20).align_y(Alignment::Center);
@@ -639,10 +674,10 @@ impl State {
                     .height(cosmic::iced::Length::Fixed(64.0)),
             );
         } else if self.is_loading_avatar {
-            avatar_row = avatar_row.push(text::body("Loading avatar..."));
+            avatar_row = avatar_row.push(text::body(crate::fl!("loading")));
         } else {
             avatar_row = avatar_row.push(
-                cosmic::widget::container(text::body("No Avatar"))
+                cosmic::widget::container(text::body(crate::fl!("no-avatar")))
                     .width(cosmic::iced::Length::Fixed(64.0))
                     .height(cosmic::iced::Length::Fixed(64.0))
                     .align_x(Alignment::Center)
@@ -651,107 +686,61 @@ impl State {
         }
 
         let mut upload_btn = button::text(if self.is_uploading_avatar {
-            "Uploading..."
+            crate::fl!("uploading")
         } else {
-            "Change Avatar"
+            crate::fl!("change-avatar")
         });
         if !self.is_uploading_avatar {
             upload_btn = upload_btn.on_press(Message::SelectAvatar);
         }
         avatar_row = avatar_row.push(upload_btn);
-        col = col.push(avatar_row);
+        section = section.add(avatar_row);
 
-        col = col.push(
-            Column::new()
-                .spacing(5)
-                .push(text::body("Space Name").size(12))
-                .push(text_input::text_input("Name", &self.name).on_input(Message::NameChanged)),
-        );
+        section = section
+            .add(settings::item(
+                crate::fl!("space-name-label"),
+                text_input::text_input(crate::fl!("space-name-label"), &self.name)
+                    .on_input(Message::NameChanged),
+            ))
+            .add(settings::item(
+                crate::fl!("space-topic-label"),
+                text_input::text_input(crate::fl!("space-topic-label"), &self.topic)
+                    .on_input(Message::TopicChanged),
+            ))
+            .add(settings::item(
+                crate::fl!("canonical-alias-label"),
+                text_input::text_input("#space_name:server.com", &self.canonical_alias)
+                    .on_input(Message::CanonicalAliasChanged),
+            ));
 
-        col = col.push(
-            Column::new()
-                .spacing(5)
-                .push(text::body("Space Topic").size(12))
-                .push(text_input::text_input("Topic", &self.topic).on_input(Message::TopicChanged)),
-        );
+        section.into()
+    }
 
-        col = col.push(
-            Column::new()
-                .spacing(5)
-                .push(text::body("Canonical Alias").size(12))
-                .push(
-                    text_input::text_input("#space_name:server.com", &self.canonical_alias)
-                        .on_input(Message::CanonicalAliasChanged),
-                ),
-        );
+    fn view_discovery(&self) -> Element<'_, Message> {
+        settings::section()
+            .title(crate::fl!("discovery-access"))
+            .add(settings::item(
+                crate::fl!("public-discoverable"),
+                cosmic::widget::toggler(self.is_public).on_toggle(Message::IsPublicChanged),
+            ))
+            .add(settings::item(
+                crate::fl!("invite-only"),
+                cosmic::widget::toggler(self.is_invite_only)
+                    .on_toggle(Message::IsInviteOnlyChanged),
+            ))
+            .into()
+    }
 
-        col = col.push(text::title3("Discovery & Access"));
+    fn view_hierarchy(&self) -> Element<'_, Message> {
+        let mut section = settings::section().title(crate::fl!("space-hierarchy"));
 
-        col = col.push(
-            Row::new()
-                .spacing(10)
-                .align_y(Alignment::Center)
-                .push(
-                    Column::new()
-                        .push(text::body("Publicly discoverable"))
-                        .push(text::body("Show this space in the server's directory").size(12)),
-                )
-                .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
-                .push(cosmic::widget::toggler(self.is_public).on_toggle(Message::IsPublicChanged)),
-        );
-
-        col = col.push(
-            Row::new()
-                .spacing(10)
-                .align_y(Alignment::Center)
-                .push(
-                    Column::new()
-                        .push(text::body("Invite only"))
-                        .push(text::body("New members must be invited to join").size(12)),
-                )
-                .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
-                .push(
-                    cosmic::widget::toggler(self.is_invite_only)
-                        .on_toggle(Message::IsInviteOnlyChanged),
-                ),
-        );
-
-        let mut save_btn = button::text(if self.is_saving {
-            "Saving..."
-        } else {
-            "Save Changes"
-        });
-
-        let has_changes = self.name != self.original_name
-            || self.topic != self.original_topic
-            || self.canonical_alias != self.original_canonical_alias
-            || self.is_public != self.original_is_public
-            || self.is_invite_only != self.original_is_invite_only;
-
-        if has_changes && !self.is_saving {
-            save_btn = save_btn.on_press(Message::SaveSpace);
-        }
-
-        let save_btn_widget: Element<'_, Message> = if !self.is_saving && !has_changes {
-            tooltip(save_btn, text::body("Make changes to save"), Position::Top).into()
-        } else {
-            save_btn.into()
-        };
-
-        col = col.push(save_btn_widget);
-
-        col = col.push(text::title3("Space Hierarchy"));
-
-        // Manage Children
-        let mut children_col = Column::new().spacing(10);
-
-        children_col = children_col.push(
-            text_input::text_input("Filter rooms/subspaces...", &self.child_filter)
+        section = section.add(
+            text_input::text_input(crate::fl!("filter-rooms-subspaces"), &self.child_filter)
                 .on_input(Message::ChildFilterChanged),
         );
 
         if self.is_loading_children {
-            children_col = children_col.push(text::body("Loading children..."));
+            section = section.add(text::body(crate::fl!("loading-children")));
         } else {
             let filter = self.child_filter.to_lowercase();
             let filter_is_ascii = self.child_filter.is_ascii();
@@ -805,9 +794,9 @@ impl State {
                     };
 
                     let mut invite_btn = if !is_restricted {
-                        button::suggested("Invite Only")
+                        button::suggested(crate::fl!("invite-only-btn"))
                     } else {
-                        button::text("Invite Only")
+                        button::text(crate::fl!("invite-only-btn"))
                     };
 
                     if is_restricted {
@@ -818,15 +807,15 @@ impl State {
                     }
 
                     let mut restricted_btn = if is_restricted {
-                        button::suggested("Restricted Access")
+                        button::suggested(crate::fl!("restricted-access"))
                     } else {
-                        button::text("Restricted Access")
+                        button::text(crate::fl!("restricted-access"))
                     };
 
                     if !is_restricted
                         && let Some(space_id) = &self.space_id
                         && let Ok(space_id_parsed) =
-                            matrix_sdk::ruma::RoomId::parse(space_id.as_str())
+                            matrix_sdk::ruma::RoomId::parse(space_id.as_ref())
                     {
                         let mut restricted = Restricted::new(vec![AllowRule::room_membership(
                             space_id_parsed.to_owned(),
@@ -855,7 +844,7 @@ impl State {
                     Row::new()
                         .spacing(5)
                         .align_y(Alignment::Center)
-                        .push(text::body("Suggested").size(12))
+                        .push(text::body(crate::fl!("suggested")).size(12))
                         .push(cosmic::widget::toggler(child.suggested).on_toggle(
                             move |suggested| {
                                 Message::ToggleChildSuggested(
@@ -868,7 +857,7 @@ impl State {
 
                 let child_id_clone = child.id.to_string();
                 row = row.push(
-                    text_input::text_input("Order", order_to_show)
+                    text_input::text_input(crate::fl!("order"), order_to_show)
                         .on_input(move |new_order| {
                             Message::ChildOrderInputChanged(child_id_clone.clone(), new_order)
                         })
@@ -877,24 +866,27 @@ impl State {
 
                 if order_to_show != current_order {
                     row = row.push(
-                        button::text("Apply")
+                        button::text(crate::fl!("apply"))
                             .on_press(Message::SaveChildOrder(child.id.to_string())),
                     );
                 }
 
                 row = row.push(
-                    button::destructive("Remove")
+                    button::destructive(crate::fl!("remove"))
                         .on_press(Message::RemoveChild(child.id.to_string())),
                 );
-                children_col = children_col.push(row);
+                section = section.add(settings::item_row(vec![row.into()]));
             }
         }
-        col = col.push(children_col);
+        section.into()
+    }
 
-        // Add Child
-        col = col.push(text::body("Add room or subspace by ID").size(12));
+    fn view_add_child(&self) -> Element<'_, Message> {
+        let mut section = settings::section()
+            .title(crate::fl!("add-child"))
+            .header(text::body(crate::fl!("add-child-by-id")).size(12));
 
-        let mut add_btn = button::text("Add Child");
+        let mut add_btn = button::text(crate::fl!("add-child"));
         let is_empty = self.new_child_id.trim().is_empty();
         if !is_empty {
             add_btn = add_btn.on_press(Message::AddChild);
@@ -902,7 +894,7 @@ impl State {
         let btn_widget: Element<'_, Message> = if is_empty {
             tooltip(
                 add_btn,
-                text::body("Enter a room or space ID to add"),
+                text::body(crate::fl!("enter-id-to-add")),
                 Position::Top,
             )
             .into()
@@ -910,7 +902,7 @@ impl State {
             add_btn.into()
         };
 
-        col = col.push(
+        section = section.add(settings::item_row(vec![
             Row::new()
                 .spacing(10)
                 .push(
@@ -918,14 +910,46 @@ impl State {
                         .on_input(Message::NewChildIdChanged),
                 )
                 .push(
-                    text_input::text_input("Order (optional)", &self.new_child_order)
+                    text_input::text_input(crate::fl!("order-optional"), &self.new_child_order)
                         .on_input(Message::NewChildOrderChanged)
                         .width(150),
                 )
-                .push(btn_widget),
-        );
+                .push(btn_widget)
+                .into(),
+        ]));
 
-        col.into()
+        section.into()
+    }
+
+    fn view_save_button(&self) -> Option<Element<'_, Message>> {
+        let mut save_btn = button::text(if self.is_saving {
+            crate::fl!("saving")
+        } else {
+            crate::fl!("save-changes")
+        });
+
+        let has_changes = self.name != self.original_name
+            || self.topic != self.original_topic
+            || self.canonical_alias != self.original_canonical_alias
+            || self.is_public != self.original_is_public
+            || self.is_invite_only != self.original_is_invite_only;
+
+        if has_changes && !self.is_saving {
+            save_btn = save_btn.on_press(Message::SaveSpace);
+        }
+
+        if !self.is_saving && !has_changes {
+            Some(
+                tooltip(
+                    save_btn,
+                    text::body(crate::fl!("make-changes-to-save")),
+                    Position::Top,
+                )
+                .into(),
+            )
+        } else {
+            Some(save_btn.into())
+        }
     }
 }
 

@@ -1,5 +1,5 @@
-use cosmic::iced::Alignment;
-use cosmic::widget::{Column, Row, button, text, toggler};
+use cosmic::widget::button;
+use cosmic::widget::settings;
 use cosmic::{Action, Element, Task};
 
 #[derive(Debug, Clone, Default)]
@@ -54,61 +54,39 @@ impl State {
     }
 
     pub fn view(&self) -> Element<'_, Message> {
-        let mut col = Column::new().spacing(20);
-
-        col = col.push(text::title3("General Settings"));
-
-        col = col.push(
-            Row::new()
-                .spacing(10)
-                .align_y(Alignment::Center)
-                .push(text::body("Show Sync Indicator"))
-                .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
-                .push(toggler(self.show_sync_indicator).on_toggle(Message::ToggleSyncIndicator)),
-        );
-        col = col.push(text::body("Display a small indicator in the header when the app is actively syncing with Matrix servers.").size(12));
-
-        col = col.push(
-            Row::new()
-                .spacing(10)
-                .align_y(Alignment::Center)
-                .push(text::body("Send Typing Notifications"))
-                .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
-                .push(
-                    toggler(self.send_typing_notifications)
+        settings::view_column(vec![
+            settings::section()
+                .title(crate::fl!("general-settings"))
+                .add(settings::item(
+                    crate::fl!("show-sync-indicator"),
+                    cosmic::widget::toggler(self.show_sync_indicator)
+                        .on_toggle(Message::ToggleSyncIndicator),
+                ))
+                .add(settings::item(
+                    crate::fl!("send-typing-notifications"),
+                    cosmic::widget::toggler(self.send_typing_notifications)
                         .on_toggle(Message::ToggleTypingNotifications),
-                ),
-        );
-
-        col = col.push(
-            Row::new()
-                .spacing(10)
-                .align_y(Alignment::Center)
-                .push(text::body("Render Markdown"))
-                .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
-                .push(toggler(self.render_markdown).on_toggle(Message::ToggleMarkdown)),
-        );
-
-        col = col.push(
-            Row::new()
-                .spacing(10)
-                .align_y(Alignment::Center)
-                .push(text::body("Compact Mode"))
-                .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
-                .push(toggler(self.compact_mode).on_toggle(Message::ToggleCompactMode)),
-        );
-
-        col = col.push(text::title3("Maintenance"));
-        col = col.push(
-            Row::new()
-                .spacing(10)
-                .align_y(Alignment::Center)
-                .push(text::body("Media Cache"))
-                .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
-                .push(button::text("Clear Cache").on_press(Message::ClearCache)),
-        );
-
-        col.into()
+                ))
+                .add(settings::item(
+                    crate::fl!("render-markdown"),
+                    cosmic::widget::toggler(self.render_markdown)
+                        .on_toggle(Message::ToggleMarkdown),
+                ))
+                .add(settings::item(
+                    crate::fl!("compact-mode"),
+                    cosmic::widget::toggler(self.compact_mode)
+                        .on_toggle(Message::ToggleCompactMode),
+                ))
+                .into(),
+            settings::section()
+                .title(crate::fl!("maintenance"))
+                .add(settings::item(
+                    crate::fl!("media-cache"),
+                    button::text(crate::fl!("clear-cache")).on_press(Message::ClearCache),
+                ))
+                .into(),
+        ])
+        .into()
     }
 }
 
