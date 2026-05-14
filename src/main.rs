@@ -964,20 +964,34 @@ impl Application for Constellations {
                 menu::items(
                     &key_binds,
                     vec![
-                        menu::Item::Button(crate::fl!("app-settings"), None, MenuAct::AppSettings),
+                        menu::Item::Button(
+                            crate::fl!("app-settings"),
+                            Some(cosmic::widget::icon::Handle::from(
+                                cosmic::widget::icon::Named::new("applications-system"),
+                            )),
+                            MenuAct::AppSettings,
+                        ),
                         menu::Item::Button(
                             crate::fl!("user-settings"),
-                            None,
+                            Some(cosmic::widget::icon::Handle::from(
+                                cosmic::widget::icon::Named::new("preferences-system-and-accounts"),
+                            )),
                             MenuAct::UserSettings,
                         ),
-                        menu::Item::Button(crate::fl!("logout"), None, MenuAct::Logout),
+                        menu::Item::Button(
+                            crate::fl!("logout"),
+                            Some(cosmic::widget::icon::Handle::from(
+                                cosmic::widget::icon::Named::new("system-log-out"),
+                            )),
+                            MenuAct::Logout,
+                        ),
                     ],
                 ),
             );
 
             let user_menu = menu::bar(vec![menu_tree])
                 .item_height(menu::ItemHeight::Dynamic(40))
-                .item_width(menu::ItemWidth::Uniform(120))
+                .item_width(menu::ItemWidth::Uniform(160))
                 .spacing(4.0);
 
             end.push(user_menu.into());

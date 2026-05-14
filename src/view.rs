@@ -6,8 +6,8 @@ use cosmic::{
         widget::{scrollable, tooltip},
     },
     widget::{
-        Column, Container, RcElementWrapper, Row, button, container, divider, icon::Named, menu,
-        text, text_input, tooltip::Position,
+        Column, RcElementWrapper, Row, button, container, divider, icon::Named, menu, text,
+        text_input, tooltip::Position,
     },
 };
 use matrix_sdk::ruma::events::room::{MediaSource, message::MessageType};
@@ -761,15 +761,27 @@ impl Constellations {
             menu::items(
                 &key_binds,
                 vec![
-                    menu::Item::Button("Create Room", None, MenuAct::CreateRoom),
-                    menu::Item::Button("Create Space", None, MenuAct::CreateSpace),
+                    menu::Item::Button(
+                        crate::fl!("create-room"),
+                        Some(cosmic::widget::icon::Handle::from(Named::new(
+                            "chat-symbolic",
+                        ))),
+                        MenuAct::CreateRoom,
+                    ),
+                    menu::Item::Button(
+                        crate::fl!("create-space"),
+                        Some(cosmic::widget::icon::Handle::from(Named::new(
+                            "network-workgroup-symbolic",
+                        ))),
+                        MenuAct::CreateSpace,
+                    ),
                 ],
             ),
         );
 
         let create_menu = menu::bar(vec![menu_tree])
             .item_height(menu::ItemHeight::Dynamic(40))
-            .item_width(menu::ItemWidth::Uniform(120))
+            .item_width(menu::ItemWidth::Uniform(160))
             .spacing(4.0);
 
         bottom_content = bottom_content.push(create_menu);

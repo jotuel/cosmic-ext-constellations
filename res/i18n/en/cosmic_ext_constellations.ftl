@@ -30,6 +30,8 @@ cancel = Cancel
 create = Create
 enter-room-name = Enter a room name to create
 enter-space-name = Enter a space name to create
+create-room = Create Room
+create-space = Create Space
 
 # Main Content
 no-room-selected = No room selected
