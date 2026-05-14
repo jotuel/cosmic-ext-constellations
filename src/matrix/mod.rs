@@ -29,6 +29,27 @@ use tokio::sync::RwLock;
 use tracing::{error, info};
 use url::Url;
 
+use livekit::prelude::*;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct LiveKitWellKnown {
+    #[serde(rename = "org.matrix.msc4143.rtc")]
+    rtc: Option<LiveKitRtcInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct LiveKitRtcInfo {
+    #[serde(default)]
+    livekit_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct LiveKitAuthResponse {
+    #[serde(default)]
+    livekit_url: Option<String>,
+    token: String,
+}
+
 const OIDC_CALLBACK_URL: &str = "fi.joonastuomi.CosmicExtConstellations://callback";
 const OIDC_CLIENT_ID: &str = "fi.joonastuomi.CosmicExtConstellations";
 
@@ -254,6 +275,7 @@ struct MatrixEngineInner {
     oidc_client: Option<Client>,
     session_change_handle: Option<tokio::task::JoinHandle<()>>,
     call_participants: HashMap<OwnedRoomId, HashSet<matrix_sdk::ruma::OwnedUserId>>,
+    active_call: Option<Arc<livekit::Room>>,
 }
 
 impl std::fmt::Debug for MatrixEngineInner {
@@ -314,6 +336,7 @@ impl MatrixEngine {
             oidc_client: None,
             session_change_handle: None,
             call_participants: HashMap::new(),
+            active_call: None,
         };
 
         let engine = Self {
@@ -2110,6 +2133,51 @@ impl MatrixEngine {
         }
     }
 
+    pub async fn get_livekit_token(&self, room_id: &RoomId) -> Result<(String, String)> {
+        let client = self.client().await;
+
+        // 1. Get OpenID token
+        use matrix_sdk::ruma::api::client::account::request_openid_token;
+        let user_id = client.user_id().context("No user ID")?.to_owned();
+        let request = request_openid_token::v3::Request::new(user_id);
+        let openid_token = client.send(request).await?;
+
+        // 2. Discover LiveKit service
+        let homeserver = client.homeserver();
+        let well_known_url = homeserver.join("/.well-known/matrix/client")?;
+
+        let wk: LiveKitWellKnown = reqwest::get(well_known_url).await?.json().await?;
+
+        let rtc = wk.rtc.context("No MatrixRTC configuration found")?;
+
+        // 3. Exchange OpenID for LiveKit JWT
+        // We use the unstable endpoint for now as it's the current standard for MatrixRTC
+        let auth_url = homeserver.join("/_matrix/client/unstable/org.matrix.msc4143/rtc/auth")?;
+
+        let response: LiveKitAuthResponse = reqwest::Client::new()
+            .post(auth_url)
+            .json(&serde_json::json!({
+                "room_id": room_id,
+                "openid_token": {
+                    "access_token": openid_token.access_token,
+                    "expires_in": openid_token.expires_in,
+                    "matrix_server_name": openid_token.matrix_server_name,
+                    "token_type": openid_token.token_type,
+                },
+            }))
+            .send()
+            .await?
+            .json()
+            .await?;
+
+        let livekit_url = response
+            .livekit_url
+            .or(rtc.livekit_url)
+            .context("No LiveKit URL found")?;
+
+        Ok((livekit_url, response.token))
+    }
+
     pub async fn join_call(&self, room_id: &str) -> Result<()> {
         let room_id_parsed = RoomId::parse(room_id)?;
         let client = self.client().await;
@@ -2139,6 +2207,33 @@ impl MatrixEngine {
         let state_key = CallMemberStateKey::new(user_id, None, false);
         room.send_state_event_for_key(&state_key, content).await?;
 
+        // Connect to LiveKit
+        let (sfu_url, token) = self.get_livekit_token(&room_id_parsed).await?;
+
+        let (lk_room, mut room_events) =
+            livekit::Room::connect(&sfu_url, &token, RoomOptions::default()).await?;
+
+        let lk_room = Arc::new(lk_room);
+
+        let mut inner = self.inner.write().await;
+        inner.active_call = Some(lk_room.clone());
+        drop(inner);
+
+        tokio::spawn(async move {
+            while let Some(event) = room_events.recv().await {
+                match event {
+                    RoomEvent::TrackSubscribed {
+                        track,
+                        publication: _,
+                        participant: _,
+                    } => {
+                        info!("Track subscribed: {:?}", track.sid());
+                    }
+                    _ => {}
+                }
+            }
+        });
+
         Ok(())
     }
 
@@ -2152,6 +2247,11 @@ impl MatrixEngine {
         let content = CallMemberEventContent::new_empty(None);
         let state_key = CallMemberStateKey::new(user_id, None, false);
         room.send_state_event_for_key(&state_key, content).await?;
+
+        let mut inner = self.inner.write().await;
+        if let Some(lk_room) = inner.active_call.take() {
+            lk_room.close().await?;
+        }
 
         Ok(())
     }
