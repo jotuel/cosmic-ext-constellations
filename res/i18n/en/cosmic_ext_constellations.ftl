@@ -55,6 +55,8 @@ type-message-or-attach = Type a message or attach a file
 search = Search
 close-search = Close Search
 search-placeholder = Search...
+call-join = Join a call
+call-leave = Leave call
 
 # Settings
 app-settings = App Settings

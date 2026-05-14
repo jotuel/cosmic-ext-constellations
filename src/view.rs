@@ -7,7 +7,7 @@ use cosmic::{
     },
     widget::{
         Column, Container, RcElementWrapper, Row, Text, button, container, divider, icon::Named,
-        menu, text, text_input, tooltip::Position,
+        menu, svg::Handle, text, text_input, tooltip::Position,
     },
 };
 use matrix_sdk::ruma::events::room::{MediaSource, message::MessageType};
@@ -1133,9 +1133,13 @@ impl Constellations {
             room_header = room_header
                 .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
                 .push(if is_in_call {
-                    button::destructive("Leave Call").on_press(Message::LeaveCall)
+                    button::icon(Named::new("call-stop"))
+                        .on_press(Message::LeaveCall)
+                        .tooltip(crate::fl!("call-leave"))
                 } else {
-                    button::text("Join Call").on_press(Message::JoinCall)
+                    button::icon(Named::new("camera-web"))
+                        .on_press(Message::JoinCall)
+                        .tooltip(crate::fl!("call-join"))
                 })
                 .push(
                     button::icon(Named::new("emblem-system"))
