@@ -3,11 +3,11 @@ use cosmic::{
     Action, Element, Task, Theme,
     iced::{
         Alignment,
-        widget::{scrollable, sensor::Key, tooltip},
+        widget::{scrollable, tooltip},
     },
     widget::{
         Column, Container, RcElementWrapper, Row, Text, button, container, divider, icon::Named,
-        menu, svg::Handle, text, text_input, tooltip::Position,
+        menu, text, text_input, tooltip::Position,
     },
 };
 use matrix_sdk::ruma::events::room::{MediaSource, message::MessageType};
