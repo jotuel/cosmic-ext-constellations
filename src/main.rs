@@ -3,6 +3,7 @@ mod handlers;
 pub mod i18n;
 mod ipc;
 mod matrix;
+pub mod rich_text;
 pub mod settings;
 mod view;
 
@@ -38,25 +39,62 @@ pub enum PreviewEvent {
     Text(String),
     Code(String),
     Break,
+    StartLink(String),
+    EndLink,
 }
 
-pub fn parse_markdown(text: &str) -> Vec<PreviewEvent> {
+pub fn parse_markdown(text: &str, skip_first_blockquote: bool) -> Vec<PreviewEvent> {
     let mut events = Vec::new();
-    let parser = pulldown_cmark::Parser::new(text);
+    let mut options = pulldown_cmark::Options::empty();
+    options.insert(pulldown_cmark::Options::ENABLE_STRIKETHROUGH);
+    options.insert(pulldown_cmark::Options::ENABLE_TASKLISTS);
+
+    let parser = pulldown_cmark::Parser::new_ext(text, options);
+    let mut in_blockquote = 0;
+    let mut is_first_blockquote = true;
+
     for event in parser {
         match event {
-            pulldown_cmark::Event::Start(pulldown_cmark::Tag::Heading { .. }) => {
-                events.push(PreviewEvent::StartHeading)
+            pulldown_cmark::Event::Start(pulldown_cmark::Tag::BlockQuote) => {
+                in_blockquote += 1;
             }
-            pulldown_cmark::Event::End(
-                pulldown_cmark::TagEnd::Paragraph | pulldown_cmark::TagEnd::Heading(_),
-            ) => events.push(PreviewEvent::EndBlock),
-            pulldown_cmark::Event::Text(t) => events.push(PreviewEvent::Text(t.to_string())),
-            pulldown_cmark::Event::Code(c) => events.push(PreviewEvent::Code(c.to_string())),
-            pulldown_cmark::Event::SoftBreak | pulldown_cmark::Event::HardBreak => {
-                events.push(PreviewEvent::Break)
+            pulldown_cmark::Event::End(pulldown_cmark::TagEnd::BlockQuote) => {
+                if in_blockquote > 0 {
+                    in_blockquote -= 1;
+                    if in_blockquote == 0 {
+                        is_first_blockquote = false;
+                    }
+                }
             }
-            _ => {}
+            _ => {
+                if in_blockquote > 0 && skip_first_blockquote && is_first_blockquote {
+                    continue;
+                }
+                match event {
+                    pulldown_cmark::Event::Start(pulldown_cmark::Tag::Heading { .. }) => {
+                        events.push(PreviewEvent::StartHeading)
+                    }
+                    pulldown_cmark::Event::Start(pulldown_cmark::Tag::Link {
+                        dest_url, ..
+                    }) => events.push(PreviewEvent::StartLink(dest_url.to_string())),
+                    pulldown_cmark::Event::End(pulldown_cmark::TagEnd::Link) => {
+                        events.push(PreviewEvent::EndLink)
+                    }
+                    pulldown_cmark::Event::End(
+                        pulldown_cmark::TagEnd::Paragraph | pulldown_cmark::TagEnd::Heading(_),
+                    ) => events.push(PreviewEvent::EndBlock),
+                    pulldown_cmark::Event::Text(t) => {
+                        events.push(PreviewEvent::Text(t.to_string()))
+                    }
+                    pulldown_cmark::Event::Code(c) => {
+                        events.push(PreviewEvent::Code(c.to_string()))
+                    }
+                    pulldown_cmark::Event::SoftBreak | pulldown_cmark::Event::HardBreak => {
+                        events.push(PreviewEvent::Break)
+                    }
+                    _ => {}
+                }
+            }
         }
     }
     events
@@ -201,6 +239,7 @@ pub enum Message {
     LeaveCall,
     CallJoined(Result<(), String>),
     CallLeft(Result<(), String>),
+    OpenUrl(String),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -420,7 +459,8 @@ impl ConstellationsItem {
         if let Some(event) = item.as_event() {
             sender_id = event.sender().to_owned();
             if let Some(msg) = event.content().as_message() {
-                markdown = crate::parse_markdown(msg.body());
+                let is_reply = event.content().in_reply_to().is_some();
+                markdown = crate::parse_markdown(msg.body(), is_reply);
             }
             let (name, url) = match event.sender_profile() {
                 matrix_sdk_ui::timeline::TimelineDetails::Ready(profile) => (
@@ -1103,7 +1143,7 @@ impl Application for Constellations {
                 self.update_title()
             }
             Message::ComposerChanged(text) => {
-                self.composer_preview_events = parse_markdown(&text);
+                self.composer_preview_events = parse_markdown(&text, false);
                 self.composer_text = text;
 
                 if self.app_settings.send_typing_notifications
@@ -1475,6 +1515,12 @@ impl Application for Constellations {
                 }
                 Task::none()
             }
+            Message::OpenUrl(url) => Task::perform(
+                async move {
+                    let _ = open::that(url);
+                },
+                |_| Action::from(Message::NoOp),
+            ),
         }
     }
 
@@ -1907,7 +1953,7 @@ mod tests {
     #[test]
     fn test_parse_markdown_paragraph() {
         let text = "This is a simple paragraph.";
-        let events = parse_markdown(text);
+        let events = parse_markdown(text, false);
         assert_eq!(
             events,
             vec![
@@ -1920,7 +1966,7 @@ mod tests {
     #[test]
     fn test_parse_markdown_heading() {
         let text = "# Heading 1\nSome text.";
-        let events = parse_markdown(text);
+        let events = parse_markdown(text, false);
         assert_eq!(
             events,
             vec![
@@ -1936,7 +1982,7 @@ mod tests {
     #[test]
     fn test_parse_markdown_code() {
         let text = "Here is `some code` inline.";
-        let events = parse_markdown(text);
+        let events = parse_markdown(text, false);
         assert_eq!(
             events,
             vec![
@@ -1951,7 +1997,7 @@ mod tests {
     #[test]
     fn test_parse_markdown_breaks() {
         let text = "Line 1\nLine 2  \nLine 3";
-        let events = parse_markdown(text);
+        let events = parse_markdown(text, false);
         assert_eq!(
             events,
             vec![
@@ -1969,7 +2015,7 @@ mod tests {
     fn test_parse_markdown_ignored_formatting() {
         // Italics and bold should just emit Text events without wrapping them in special formatting events.
         let text = "Some **bold** and *italic* text.";
-        let events = parse_markdown(text);
+        let events = parse_markdown(text, false);
         assert_eq!(
             events,
             vec![
@@ -1978,6 +2024,38 @@ mod tests {
                 PreviewEvent::Text(" and ".to_string()),
                 PreviewEvent::Text("italic".to_string()),
                 PreviewEvent::Text(" text.".to_string()),
+                PreviewEvent::EndBlock,
+            ]
+        );
+    }
+
+    #[test]
+    fn test_parse_markdown_skip_fallback() {
+        let text = "> <@alice:example.com> Hello\n\nHi!";
+        let events = parse_markdown(text, true);
+        assert_eq!(
+            events,
+            vec![
+                PreviewEvent::Text("Hi!".to_string()),
+                PreviewEvent::EndBlock
+            ]
+        );
+    }
+
+    #[test]
+    fn test_parse_markdown_no_skip_normal_blockquote() {
+        let text = "> This is a quote\n\nAnd this is text.";
+        let events = parse_markdown(text, false);
+        // Currently we don't have a BlockQuote event, so it just returns the text inside it if not skipped.
+        // Wait, I should check what it actually returns.
+        // Based on my logic: in_blockquote > 0 but skip_first_blockquote is false.
+        // Match event -> pulldown_cmark::Event::Text -> events.push(...)
+        assert_eq!(
+            events,
+            vec![
+                PreviewEvent::Text("This is a quote".to_string()),
+                PreviewEvent::EndBlock,
+                PreviewEvent::Text("And this is text.".to_string()),
                 PreviewEvent::EndBlock,
             ]
         );

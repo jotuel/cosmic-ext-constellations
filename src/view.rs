@@ -6,8 +6,8 @@ use cosmic::{
         widget::{scrollable, tooltip},
     },
     widget::{
-        Column, Container, RcElementWrapper, Row, Text, button, container, divider, icon::Named,
-        menu, text, text_input, tooltip::Position,
+        Column, Container, RcElementWrapper, Row, button, container, divider, icon::Named, menu,
+        text, text_input, tooltip::Position,
     },
 };
 use matrix_sdk::ruma::events::room::{MediaSource, message::MessageType};
@@ -298,68 +298,6 @@ impl Constellations {
         bubble_col
     }
 
-    fn view_markdown_text<'a>(&self, t: &'a str) -> Text<'a, Theme> {
-        Text::new(t).size(if self.app_settings.compact_mode {
-            12
-        } else {
-            14
-        })
-    }
-
-    fn view_markdown_code<'a>(&self, c: &'a str) -> Container<'a, Message, Theme> {
-        Container::new(text::body(c).size(if self.app_settings.compact_mode {
-            10
-        } else {
-            12
-        }))
-        .padding(2)
-    }
-
-    fn view_markdown<'a>(&'a self, markdown: &'a [PreviewEvent]) -> Column<'a, Message, Theme> {
-        let mut md_col: Column<'a, Message, Theme> =
-            Column::new().spacing(if self.app_settings.compact_mode { 2 } else { 5 });
-        let mut current_row = Row::new().spacing(0).align_y(Alignment::Center);
-        let mut row_has_content = false;
-
-        for event in markdown {
-            match event {
-                PreviewEvent::StartHeading => {
-                    if row_has_content {
-                        md_col = md_col.push(current_row);
-                        current_row = Row::new().spacing(0).align_y(Alignment::Center);
-                        row_has_content = false;
-                    }
-                }
-                PreviewEvent::EndBlock => {
-                    if row_has_content {
-                        md_col = md_col.push(current_row);
-                        current_row = Row::new().spacing(0).align_y(Alignment::Center);
-                        row_has_content = false;
-                    }
-                }
-                PreviewEvent::Text(t) => {
-                    current_row = current_row.push(self.view_markdown_text(t.as_str()));
-                    row_has_content = true;
-                }
-                PreviewEvent::Code(c) => {
-                    current_row = current_row.push(self.view_markdown_code(c.as_str()));
-                    row_has_content = true;
-                }
-                PreviewEvent::Break => {
-                    if row_has_content {
-                        md_col = md_col.push(current_row);
-                        current_row = Row::new().spacing(0).align_y(Alignment::Center);
-                        row_has_content = false;
-                    }
-                }
-            }
-        }
-        if row_has_content {
-            md_col = md_col.push(current_row);
-        }
-        md_col
-    }
-
     fn view_message_text<'a>(
         &'a self,
         message: &'a matrix_sdk::ruma::events::room::message::MessageType,
@@ -367,9 +305,20 @@ impl Constellations {
     ) -> Column<'a, Message, Theme> {
         let mut bubble_col: Column<'a, Message, Theme> = Column::new();
         if self.app_settings.render_markdown {
-            bubble_col = bubble_col.push(self.view_markdown(markdown));
+            bubble_col = bubble_col.push(
+                crate::rich_text::RichSelectableText::new(markdown.to_vec(), |url| {
+                    Message::OpenUrl(url)
+                })
+                .into_element(),
+            );
         } else {
-            bubble_col = bubble_col.push(self.view_markdown_text(message.body()));
+            bubble_col = bubble_col.push(
+                crate::rich_text::RichSelectableText::new(
+                    vec![crate::PreviewEvent::Text(message.body().to_string())],
+                    |url| Message::OpenUrl(url),
+                )
+                .into_element(),
+            );
         }
         bubble_col
     }
@@ -416,50 +365,18 @@ impl Constellations {
     }
 
     pub fn view_preview(&self) -> Element<'_, Message> {
-        let mut preview_col = Column::new().spacing(10);
-
-        let mut current_row = Row::new().spacing(0).align_y(Alignment::Center);
-        let mut row_has_content = false;
-
-        for event in &self.composer_preview_events {
-            match event {
-                PreviewEvent::StartHeading => {
-                    if row_has_content {
-                        preview_col = preview_col.push(current_row);
-                        current_row = Row::new().spacing(0).align_y(Alignment::Center);
-                        row_has_content = false;
-                    }
-                }
-                PreviewEvent::EndBlock => {
-                    if row_has_content {
-                        preview_col = preview_col.push(current_row);
-                        current_row = Row::new().spacing(0).align_y(Alignment::Center);
-                        row_has_content = false;
-                    }
-                }
-                PreviewEvent::Text(t) => {
-                    let txt = text::body(t.as_str());
-                    current_row = current_row.push(txt);
-                    row_has_content = true;
-                }
-                PreviewEvent::Code(c) => {
-                    current_row = current_row.push(container(text::body(c.as_str())).padding(2));
-                    row_has_content = true;
-                }
-                PreviewEvent::Break => {
-                    current_row = current_row.push(text::body(" "));
-                    row_has_content = true;
-                }
-            }
-        }
-
-        if row_has_content {
-            preview_col = preview_col.push(current_row);
-        }
-
-        container(scrollable(preview_col).height(100))
-            .padding(10)
-            .into()
+        container(
+            scrollable(
+                crate::rich_text::RichSelectableText::new(
+                    self.composer_preview_events.clone(),
+                    |url| Message::OpenUrl(url),
+                )
+                .into_element(),
+            )
+            .height(100),
+        )
+        .padding(10)
+        .into()
     }
 
     pub fn view_login(&self) -> Element<'_, Message> {
