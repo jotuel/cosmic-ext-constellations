@@ -1,0 +1,364 @@
+use crate::{Constellations, MenuAct, Message};
+use cosmic::{
+    Element,
+    iced::Alignment,
+    widget::{
+        Column, RcElementWrapper, Row, button, container, icon::Named, menu, scrollable, text,
+        text_input, tooltip, tooltip::Position,
+    },
+};
+
+impl Constellations {
+    pub fn view_space_switcher(&self) -> Element<'_, Message> {
+        let mut content = Column::new().spacing(10).align_x(Alignment::Center);
+
+        // Global icon (All Rooms)
+        let is_global_selected = self.selected_space.is_none();
+
+        let global_btn = if is_global_selected {
+            button::icon(Named::new("system-users"))
+        } else {
+            button::icon(Named::new("system-users")).on_press(Message::SelectSpace(None))
+        };
+
+        let global_tooltip = tooltip(
+            global_btn,
+            text::body(crate::fl!("all-rooms")),
+            Position::Right,
+        );
+
+        content = content.push(global_tooltip);
+
+        for space in self.room_list.iter().filter(|r| r.is_space) {
+            let space_id_str = space.id.clone();
+            // Try to parse just for validity
+            if matrix_sdk::ruma::RoomId::parse(&*space_id_str).is_err() {
+                continue;
+            }
+            let is_selected =
+                self.selected_space.as_ref().map(|s| s.as_str()) == Some(&*space_id_str);
+
+            let avatar_element: Element<'_, Message> = if let Some(url) = &space.avatar_url {
+                if let Some(handle) = self.media_cache.get(url) {
+                    cosmic::widget::image(handle.clone())
+                        .width(32)
+                        .height(32)
+                        .into()
+                } else {
+                    container(
+                        text::body(
+                            space
+                                .name
+                                .as_deref()
+                                .unwrap_or("S")
+                                .chars()
+                                .next()
+                                .unwrap_or('S')
+                                .to_string(),
+                        )
+                        .size(24),
+                    )
+                    .width(32)
+                    .height(32)
+                    .align_x(Alignment::Center)
+                    .align_y(Alignment::Center)
+                    .into()
+                }
+            } else {
+                container(
+                    text::body(
+                        space
+                            .name
+                            .as_deref()
+                            .unwrap_or("S")
+                            .chars()
+                            .next()
+                            .unwrap_or('S')
+                            .to_string(),
+                    )
+                    .size(24),
+                )
+                .width(32)
+                .height(32)
+                .align_x(Alignment::Center)
+                .align_y(Alignment::Center)
+                .into()
+            };
+
+            let space_container = container(avatar_element)
+                .padding(8)
+                .align_x(Alignment::Center)
+                .align_y(Alignment::Center);
+
+            let btn = if is_selected {
+                button::custom(space_container)
+            } else {
+                button::custom(space_container).on_press(Message::SelectSpace(Some(space_id_str)))
+            };
+
+            let space_name = space.name.as_deref().unwrap_or("Unknown Space");
+            let space_tooltip = tooltip(btn, text::body(space_name), Position::Right);
+
+            content = content.push(space_tooltip);
+        }
+
+        let scrollable_spaces = scrollable(content).height(cosmic::iced::Length::Fill);
+
+        let mut bottom_content = Column::new().spacing(10).align_x(Alignment::Center);
+
+        let plus_btn = button::icon(Named::new("list-add-symbolic"));
+        let plus_tooltip = tooltip(plus_btn, text::body("Create"), Position::Right);
+        let key_binds = std::collections::HashMap::new();
+
+        let menu_tree = menu::Tree::with_children(
+            RcElementWrapper::new(Element::from(plus_tooltip)),
+            menu::items(
+                &key_binds,
+                vec![
+                    menu::Item::Button(
+                        crate::fl!("create-room"),
+                        Some(cosmic::widget::icon::Handle::from(Named::new(
+                            "chat-symbolic",
+                        ))),
+                        MenuAct::CreateRoom,
+                    ),
+                    menu::Item::Button(
+                        crate::fl!("create-space"),
+                        Some(cosmic::widget::icon::Handle::from(Named::new(
+                            "network-workgroup-symbolic",
+                        ))),
+                        MenuAct::CreateSpace,
+                    ),
+                ],
+            ),
+        );
+
+        let create_menu = menu::bar(vec![menu_tree])
+            .item_height(menu::ItemHeight::Dynamic(40))
+            .item_width(menu::ItemWidth::Uniform(160))
+            .spacing(4.0);
+
+        bottom_content = bottom_content.push(create_menu);
+
+        let layout = Column::new()
+            .push(scrollable_spaces)
+            .push(bottom_content)
+            .align_x(Alignment::Center);
+
+        container(layout).width(60).padding(5).into()
+    }
+
+    pub fn view_sidebar(&self) -> Element<'_, Message> {
+        let mut room_list = Column::new().spacing(5);
+
+        if self.creating_room || self.creating_space {
+            let label = if self.creating_room {
+                "Room Name"
+            } else {
+                "Space Name"
+            };
+
+            let mut name_input =
+                text_input(label, &self.new_room_name).on_input(Message::NewRoomNameChanged);
+
+            let is_empty = self.new_room_name.trim().is_empty();
+
+            let mut create_btn = button::text(crate::fl!("create"));
+            if !is_empty {
+                if self.creating_room {
+                    name_input =
+                        name_input.on_submit(|_| Message::CreateRoom(self.new_room_name.clone()));
+                    create_btn =
+                        create_btn.on_press(Message::CreateRoom(self.new_room_name.clone()));
+                } else {
+                    name_input =
+                        name_input.on_submit(|_| Message::CreateSpace(self.new_room_name.clone()));
+                    create_btn =
+                        create_btn.on_press(Message::CreateSpace(self.new_room_name.clone()));
+                }
+            }
+
+            let create_btn_widget: Element<'_, Message> = if is_empty {
+                tooltip(
+                    create_btn,
+                    text::body(format!(
+                        "Enter a {} name to create",
+                        if self.creating_room { "room" } else { "space" }
+                    )),
+                    Position::Top,
+                )
+                .into()
+            } else {
+                create_btn.into()
+            };
+
+            let cancel_msg = if self.creating_room {
+                Message::ToggleCreateRoom
+            } else {
+                Message::ToggleCreateSpace
+            };
+
+            let create_ui = Column::new().spacing(5).push(name_input).push(
+                Row::new()
+                    .spacing(5)
+                    .push(create_btn_widget)
+                    .push(button::text(crate::fl!("cancel")).on_press(cancel_msg)),
+            );
+
+            room_list = room_list.push(container(create_ui).padding(5));
+        }
+
+        if let Some(selected_space) = &self.selected_space {
+            let space_name = self
+                .room_list
+                .iter()
+                .find(|r| r.id.as_ref() == selected_space.as_str())
+                .and_then(|r| r.name.as_deref())
+                .unwrap_or("Space");
+            let space_header = Row::new()
+                .align_y(Alignment::Center)
+                .push(text::title3(space_name))
+                .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
+                .push(
+                    button::icon(Named::new("emblem-system"))
+                        .tooltip("Space Settings")
+                        .on_press(Message::OpenSettings(crate::SettingsPanel::Space)),
+                );
+            room_list = room_list.push(container(space_header).padding(5));
+
+            if !self.other_rooms.is_empty() {
+                room_list = room_list.push(
+                    container(text::title3(crate::fl!("joined-rooms")).size(14))
+                        .padding([10, 5, 5, 5]),
+                );
+            }
+        }
+
+        for &room_idx in &self.filtered_room_list {
+            let room = &self.room_list[room_idx];
+            let name = room.name.as_deref().unwrap_or("Unknown Room");
+            let room_id = room.id.clone();
+
+            let mut room_content = Column::new().spacing(2);
+
+            let mut header = Row::new().spacing(10).align_y(Alignment::Center);
+
+            if let Some(avatar_url) = &room.avatar_url {
+                if let Some(handle) = self.media_cache.get(avatar_url) {
+                    header =
+                        header.push(cosmic::widget::image(handle.clone()).width(24).height(24));
+                } else {
+                    header = header.push(
+                        container(text::body("#"))
+                            .width(24)
+                            .height(24)
+                            .align_x(Alignment::Center)
+                            .align_y(Alignment::Center),
+                    );
+                }
+            } else {
+                header = header.push(
+                    container(text::body("#"))
+                        .width(24)
+                        .height(24)
+                        .align_x(Alignment::Center)
+                        .align_y(Alignment::Center),
+                );
+            }
+
+            header = header.push(text::body(name));
+
+            if let Some(unread_str) = &room.unread_count_str {
+                header = header.push(text::body(unread_str.as_str()).size(12));
+            }
+
+            room_content = room_content.push(header);
+
+            if let Some(last_msg) = &room.last_message {
+                // Optimization: Avoid allocating a new String on every render frame
+                room_content = room_content.push(text::body(last_msg.as_str()).size(12));
+            }
+
+            let btn = button::custom(
+                container(room_content)
+                    .padding(5)
+                    .width(cosmic::iced::Length::Fill),
+            )
+            .on_press(Message::RoomSelected(room_id));
+
+            room_list = room_list.push(btn.width(cosmic::iced::Fill));
+        }
+
+        if !self.filtered_other_rooms.is_empty() {
+            room_list = room_list.push(
+                container(text::title3(crate::fl!("other-rooms")).size(14)).padding([10, 5, 5, 5]),
+            );
+
+            for &idx in &self.filtered_other_rooms {
+                let room = &self.other_rooms[idx];
+                let name = room.name.as_deref().unwrap_or_else(|| {
+                    let id = &room.id;
+                    id.strip_prefix('!')
+                        .and_then(|s| s.split(':').next())
+                        .unwrap_or(id)
+                });
+                let room_id = room.id.clone();
+
+                let mut room_content = Column::new().spacing(2);
+
+                let mut header = Row::new().spacing(10).align_y(Alignment::Center);
+
+                let mut has_avatar = false;
+                if self.user_settings.invite_avatars_display_policy
+                    && let Some(avatar_url) = &room.avatar_url
+                    && let Some(handle) = self.media_cache.get(avatar_url)
+                {
+                    header = header.push(cosmic::widget::image(handle.clone()));
+                    has_avatar = true;
+                }
+
+                if !has_avatar {
+                    header = header.push(
+                        container(text::body("#"))
+                            .width(24)
+                            .height(24)
+                            .align_x(Alignment::Center)
+                            .align_y(Alignment::Center),
+                    );
+                }
+
+                header = header.push(text::body(name));
+
+                if let Some(unread_str) = &room.unread_count_str {
+                    header = header.push(text::body(unread_str.as_str()).size(12));
+                }
+
+                room_content = room_content.push(header);
+
+                if let Some(last_msg) = &room.last_message {
+                    room_content = room_content.push(text::body(last_msg.as_str()).size(12));
+                }
+
+                let btn = button::custom(
+                    container(room_content)
+                        .padding(5)
+                        .width(cosmic::iced::Length::Fill),
+                );
+
+                let join_btn = button::text("Join").on_press(Message::JoinRoom(room_id.clone()));
+
+                room_list = room_list.push(
+                    Row::new()
+                        .align_y(Alignment::Center)
+                        .push(btn)
+                        .push(container(join_btn).padding([0, 5])),
+                );
+            }
+        }
+
+        container(scrollable(room_list))
+            .width(250)
+            .padding(10)
+            .into()
+    }
+}
