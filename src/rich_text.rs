@@ -208,8 +208,8 @@ where
         match event {
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
                 if let Some(cursor_pos) = cursor.position_in(bounds) {
-                    let buf_x = cursor_pos.x - bounds.x;
-                    let buf_y = cursor_pos.y - bounds.y - y_offset;
+                    let buf_x = cursor_pos.x;
+                    let buf_y = cursor_pos.y - y_offset;
                     state.is_dragging = true;
 
                     // Check for link click
@@ -275,8 +275,8 @@ where
                 .with_buffer(|b| b.layout_runs().map(|r| r.line_height).sum::<f32>());
             let y_offset = (bounds.height - text_height).max(0.0) / 2.0;
 
-            let buf_x = cursor_pos.x - bounds.x;
-            let buf_y = cursor_pos.y - bounds.y - y_offset;
+            let buf_x = cursor_pos.x;
+            let buf_y = cursor_pos.y - y_offset;
 
             if let Some(hit) = state.editor.with_buffer(|b| b.hit(buf_x, buf_y)) {
                 for (range, _) in &state.links {
