@@ -217,7 +217,7 @@ impl Constellations {
                         .on_press(Message::UserSettings(
                             crate::settings::user::Message::UnignoreUserById(id),
                         ))
-                        .tooltip("Unignore User"),
+                        .tooltip(crate::fl!("unignore-user")),
                 );
             } else {
                 sender_info = sender_info.push(
@@ -225,7 +225,7 @@ impl Constellations {
                         .on_press(Message::UserSettings(
                             crate::settings::user::Message::IgnoreUserById(id),
                         ))
-                        .tooltip("Ignore User"),
+                        .tooltip(crate::fl!("ignore")),
                 );
             }
         }
@@ -693,9 +693,9 @@ impl Constellations {
                     .spacing(10)
                     .align_x(Alignment::Center)
                     .push(cosmic::widget::icon::from_name("chat-bubble-symbolic").size(64))
-                    .push(text::title1("No room selected"))
+                    .push(text::title1(crate::fl!("no-room-selected")))
                     .push(text::body(
-                        "Select a room from the sidebar to start chatting.",
+                        crate::fl!("select-room-to-start"),
                     )),
             )
             .width(cosmic::iced::Length::Fill)

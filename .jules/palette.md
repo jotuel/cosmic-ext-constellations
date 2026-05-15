@@ -66,3 +66,6 @@
 ## 2024-05-13 - Redesigned Chat Layout for Density and Utility
  **Learning:** When displaying high-density threads in a side-by-side layout, using pure borders/dividers rather than background colors or complex shadows (like Card styles) keeps the design functional and avoids clashing with user themes.
  **Action:** Swapped custom hardcoded emojis for a 20-item standard layout and shifted from vertical flow to a dense three-pane structure (timeline + threads) with rounded message bubbles via `.max_width(600)`. Removed complex `Card` closures to retain maximum compatibility with raw standard styling.
+## 2026-05-15 - Adding Helpful Empty States
+**Learning:** Hardcoded empty states (like 'No room selected') can be visually barren and not fully accessible to international users since they are not localized. It's important to use `crate::fl!()` for translating text.
+**Action:** Replaced hardcoded empty state strings and disabled action tooltips with localized strings using `crate::fl!()` to ensure users of all languages receive clear, actionable feedback.
