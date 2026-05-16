@@ -313,10 +313,20 @@ impl Constellations {
     pub fn handle_join_call(&mut self) -> Task<Action<Message>> {
         if let (Some(matrix), Some(room_id)) = (&self.matrix, &self.selected_room) {
             let matrix = matrix.clone();
-            let room_id = room_id.to_string();
+            let room_id = room_id.clone();
             Task::perform(
-                async move { matrix.join_call(&room_id).await.map_err(|e| e.to_string()) },
-                |res| Action::from(Message::CallJoined(res)),
+                async move {
+                    let rid =
+                        matrix_sdk::ruma::RoomId::parse(&*room_id).map_err(|e| e.to_string())?;
+                    matrix
+                        .get_element_call_url(&rid)
+                        .await
+                        .map_err(|e| e.to_string())
+                },
+                |res| match res {
+                    Ok(url) => Action::from(Message::OpenUrl(url.to_string())),
+                    Err(e) => Action::from(Message::CallJoined(Err(e))),
+                },
             )
         } else {
             Task::none()

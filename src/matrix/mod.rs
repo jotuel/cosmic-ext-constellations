@@ -12,6 +12,10 @@ use matrix_sdk::ruma::events::{AnySyncMessageLikeEvent, AnySyncTimelineEvent, Sy
 use matrix_sdk::{
     Client, Room, SessionChange, SessionTokens,
     ruma::{OwnedDeviceId, OwnedRoomId, RoomId, UserId, room::RoomType},
+    widget::{
+        ClientProperties, VirtualElementCallWidgetConfig, VirtualElementCallWidgetProperties,
+        WidgetSettings,
+    },
 };
 pub use matrix_sdk_ui::room_list_service::{RoomListDynamicEntriesController, RoomListService};
 use matrix_sdk_ui::sync_service::SyncService;
@@ -33,14 +37,16 @@ use livekit::prelude::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct LiveKitWellKnown {
-    #[serde(rename = "org.matrix.msc4143.rtc")]
-    rtc: Option<LiveKitRtcInfo>,
+    #[serde(rename = "org.matrix.msc4143.rtc_foci")]
+    #[serde(default)]
+    rtc_foci: Vec<LiveKitRtcFocus>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct LiveKitRtcInfo {
-    #[serde(default)]
-    livekit_url: Option<String>,
+struct LiveKitRtcFocus {
+    #[serde(rename = "type")]
+    focus_type: String,
+    livekit_service_url: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2133,6 +2139,24 @@ impl MatrixEngine {
         }
     }
 
+    pub async fn get_element_call_url(&self, room_id: &RoomId) -> Result<Url> {
+        let client = self.client().await;
+        let room = client.get_room(room_id).context("Room not found")?;
+
+        let props = VirtualElementCallWidgetProperties {
+            element_call_url: "https://call.element.io".to_owned(),
+            widget_id: "element-call".to_owned(),
+            ..Default::default()
+        };
+        let config = VirtualElementCallWidgetConfig::default();
+
+        let settings = WidgetSettings::new_virtual_element_call_widget(props, config)?;
+        let client_props = ClientProperties::new("fi.joonastuomi.Constellations", None, None);
+
+        let url = settings.generate_webview_url(&room, client_props).await?;
+        Ok(url)
+    }
+
     pub async fn get_livekit_token(&self, room_id: &RoomId) -> Result<(String, String)> {
         let client = self.client().await;
 
@@ -2148,13 +2172,20 @@ impl MatrixEngine {
 
         let wk: LiveKitWellKnown = reqwest::get(well_known_url).await?.json().await?;
 
-        let rtc = wk.rtc.context("No MatrixRTC configuration found")?;
+        let focus = wk
+            .rtc_foci
+            .iter()
+            .find(|f| f.focus_type == "livekit")
+            .context("No MatrixRTC configuration found")?;
 
         // 3. Exchange OpenID for LiveKit JWT
-        // We use the unstable endpoint for now as it's the current standard for MatrixRTC
-        let auth_url = homeserver.join("/_matrix/client/unstable/org.matrix.msc4143/rtc/auth")?;
+        let mut auth_url = Url::parse(&focus.livekit_service_url)?;
+        if auth_url.path().is_empty() || auth_url.path() == "/" {
+            auth_url = auth_url.join("get")?;
+        }
+        info!("Sending auth request to: {}", auth_url);
 
-        let response: LiveKitAuthResponse = reqwest::Client::new()
+        let response = reqwest::Client::new()
             .post(auth_url)
             .json(&serde_json::json!({
                 "room_id": room_id,
@@ -2166,14 +2197,25 @@ impl MatrixEngine {
                 },
             }))
             .send()
-            .await?
-            .json()
             .await?;
+
+        let status = response.status();
+        let body_text = response.text().await?;
+        info!("Auth service response ({}): {}", status, body_text);
+
+        if !status.is_success() {
+            return Err(anyhow::anyhow!(
+                "Auth service returned error {}: {}",
+                status,
+                body_text
+            ));
+        }
+
+        let response: LiveKitAuthResponse = serde_json::from_str(&body_text)?;
 
         let livekit_url = response
             .livekit_url
-            .or(rtc.livekit_url)
-            .context("No LiveKit URL found")?;
+            .context("No LiveKit URL found in auth response")?;
 
         Ok((livekit_url, response.token))
     }
