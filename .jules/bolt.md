@@ -33,3 +33,10 @@
 **Action:** Remove `haystack.is_ascii()` preconditions when the query string is known to be pure ASCII. This allows the zero-allocation fast path to also process haystacks containing emojis or foreign characters without falling back to expensive `.to_lowercase()` heap allocations.
 ## 2024-05-13 - Redesigned Chat Layout for Density and Utility
 **Learning:** Utilizing structural elements like `Row` and `Column` with standard `cosmic::widget::divider::vertical` avoids allocating new containers with custom styles that must be verified at runtime, improving render consistency in iced apps while achieving a "dense" look.
+## 2024-05-14 - [Optimization] Avoid `.to_lowercase()` allocations in hot `view()` loops
+**Learning:** In immediate-mode GUI frameworks like iced/libcosmic, `view()` methods are called continuously. Calling `.to_lowercase()` unconditionally on search query strings inside these methods causes severe, unnecessary heap allocations on every render frame, even when the search feature is inactive.
+**Action:** When filtering views based on state variables, wrap string allocations (like `query.to_lowercase()`) inside a conditional block that verifies the active state first (e.g., `if self.is_search_active && !query.is_empty()`). This ensures the expensive allocation only happens when strictly required.
+
+## 2024-05-14 - [Optimization] Unrolling first-byte match for ASCII substring search
+**Learning:** The previous fast-path ASCII optimization using `haystack.as_bytes().windows(len).any(...)` is much faster than `.to_lowercase().contains()`, but still slow on long non-matching strings because `windows()` iterates every possible overlapping slice.
+**Action:** For simple byte-wise string searches, manually extracting the first byte of the query, converting it to upper and lower case, and only performing full-slice `eq_ignore_ascii_case` when the first byte matches is significantly faster and removes the iterator overhead of `windows()`.

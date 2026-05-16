@@ -17,10 +17,16 @@ impl Constellations {
     pub fn view_thread(&self) -> Element<'_, Message> {
         let mut timeline = Column::new().spacing(10).width(cosmic::iced::Length::Fill);
 
-        let filter = self.search_query.to_lowercase();
+        let is_filtering = self.is_search_active
+            && !self.search_query.is_empty()
+            && self.current_settings_panel.is_none();
+
+        let filter = if is_filtering {
+            self.search_query.to_lowercase()
+        } else {
+            String::new()
+        };
         let filter_is_ascii = self.search_query.is_ascii();
-        let is_filtering =
-            self.is_search_active && !filter.is_empty() && self.current_settings_panel.is_none();
 
         if self.selected_room.is_some() {
             timeline = timeline.push(
@@ -56,10 +62,16 @@ impl Constellations {
     pub fn view_timeline(&self) -> Element<'_, Message> {
         let mut timeline = Column::new().spacing(10).width(cosmic::iced::Length::Fill);
 
-        let filter = self.search_query.to_lowercase();
+        let is_filtering = self.is_search_active
+            && !self.search_query.is_empty()
+            && self.current_settings_panel.is_none();
+
+        let filter = if is_filtering {
+            self.search_query.to_lowercase()
+        } else {
+            String::new()
+        };
         let filter_is_ascii = self.search_query.is_ascii();
-        let is_filtering =
-            self.is_search_active && !filter.is_empty() && self.current_settings_panel.is_none();
 
         if self.selected_room.is_some() {
             let load_btn = if self.is_loading_more {
@@ -325,10 +337,16 @@ impl Constellations {
     pub fn view_threaded_timeline(&self) -> Element<'_, Message> {
         let mut timeline = Column::new().spacing(10).width(cosmic::iced::Length::Fill);
 
-        let filter = self.search_query.to_lowercase();
+        let is_filtering = self.is_search_active
+            && !self.search_query.is_empty()
+            && self.current_settings_panel.is_none();
+
+        let filter = if is_filtering {
+            self.search_query.to_lowercase()
+        } else {
+            String::new()
+        };
         let filter_is_ascii = self.search_query.is_ascii();
-        let is_filtering =
-            self.is_search_active && !filter.is_empty() && self.current_settings_panel.is_none();
 
         let header = Row::new()
             .spacing(10)
