@@ -275,7 +275,7 @@ impl Constellations {
                 ));
             } else {
                 bubble_col = bubble_col.push(
-                    button::text("Download Image")
+                    button::text(crate::fl!("download-image"))
                         .on_press(Message::FetchMedia(image.source.clone())),
                 );
             }
@@ -300,10 +300,10 @@ impl Constellations {
             },
         ));
         if self.media_cache.contains_key(&mxc_url) {
-            bubble_col = bubble_col.push(text::body("[Downloaded]"));
+            bubble_col = bubble_col.push(text::body(crate::fl!("downloaded")));
         } else {
             bubble_col = bubble_col.push(
-                button::text("Download File").on_press(Message::FetchMedia(file.source.clone())),
+                button::text(crate::fl!("download-file")).on_press(Message::FetchMedia(file.source.clone())),
             );
         }
         bubble_col
