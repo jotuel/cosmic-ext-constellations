@@ -1,0 +1,16 @@
+--- src/settings/user.rs
++++ src/settings/user.rs
+@@ -2261,11 +2261,11 @@
+             }
+             VerificationUIState::Done => {
+                 section = section.add(text::body("Verification successful!"));
+-                section = section.add(button::text("Done").on_press(Message::CancelVerification));
++                section = section.add(button::text(crate::fl!("done")).on_press(Message::CancelVerification));
+             }
+             VerificationUIState::Cancelled => {
+                 section = section.add(text::body("Verification cancelled or failed."));
+                 section =
+-                    section.add(button::text("Dismiss").on_press(Message::CancelVerification));
++                    section.add(button::text(crate::fl!("dismiss")).on_press(Message::CancelVerification));
+             }
+             _ => {}

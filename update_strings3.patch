@@ -1,0 +1,10 @@
+--- src/settings/user.rs
++++ src/settings/user.rs
+@@ -1942,7 +1942,7 @@
+         if let Some(success) = &self.password_success {
+             section = section.add(settings::item(
+                 success.as_str(),
+-                button::text("Dismiss").on_press(Message::DismissPasswordSuccess),
++                button::text(crate::fl!("dismiss")).on_press(Message::DismissPasswordSuccess),
+             ));
+         }

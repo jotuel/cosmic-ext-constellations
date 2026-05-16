@@ -1,0 +1,14 @@
+--- src/settings/user.rs
++++ src/settings/user.rs
+@@ -1904,9 +1904,9 @@
+         let passwords_match = self.new_password == self.confirm_new_password;
+
+         let mut pw_btn = button::text(if self.is_changing_password {
+-            "Changing..."
++            crate::fl!("changing")
+         } else {
+-            "Change Password"
++            crate::fl!("change-password")
+         });
+
+         if !self.is_changing_password && !is_empty && passwords_match {

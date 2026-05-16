@@ -1,0 +1,11 @@
+--- src/settings/user.rs
++++ src/settings/user.rs
+@@ -2151,7 +2151,7 @@
+                             .on_input(Message::New3PIDEmailChanged),
+                     )
+                     .push(
+-                        button::text("Send Verification").on_press(Message::Request3PIDEmailToken),
++                        button::text(crate::fl!("send-verification")).on_press(Message::Request3PIDEmailToken),
+                     )
+                     .wrap(),
+             ));

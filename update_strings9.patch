@@ -1,0 +1,18 @@
+--- src/settings/user.rs
++++ src/settings/user.rs
+@@ -2290,14 +2290,14 @@
+         if let Some(err) = &self.error {
+             col = col.push(settings::section().add(settings::item(
+                 err.as_str(),
+-                button::text("Dismiss").on_press(Message::DismissError),
++                button::text(crate::fl!("dismiss")).on_press(Message::DismissError),
+             )));
+         }
+
+         if let Some(msg) = &self.success_message {
+             col = col.push(settings::section().add(settings::item(
+                 msg.as_str(),
+-                button::text("Dismiss").on_press(Message::DismissSuccessMessage),
++                button::text(crate::fl!("dismiss")).on_press(Message::DismissSuccessMessage),
+             )));
+         }

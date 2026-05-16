@@ -1784,19 +1784,19 @@ impl State {
                     tooltip(
                         button::icon(Named::new("user-trash-symbolic"))
                             .on_press(Message::RemoveKeyword(keyword.clone())),
-                        text::body("Remove Keyword"),
+                        text::body(crate::fl!("remove-keyword")),
                         Position::Top,
                     ),
                 ));
             }
 
-            let mut add_btn = button::text("Add");
+            let mut add_btn = button::text(crate::fl!("add"));
             let is_empty = self.new_keyword.trim().is_empty();
             if !is_empty {
                 add_btn = add_btn.on_press(Message::AddKeyword);
             }
             let btn_widget: Element<'_, Message> = if is_empty {
-                tooltip(add_btn, text::body("Enter a keyword to add"), Position::Top).into()
+                tooltip(add_btn, text::body(crate::fl!("enter-keyword-to-add")), Position::Top).into()
             } else {
                 add_btn.into()
             };
@@ -1839,9 +1839,9 @@ impl State {
         }
 
         let mut avatar_btn = button::text(if self.is_uploading_avatar {
-            "Uploading..."
+            crate::fl!("uploading")
         } else {
-            "Change Avatar"
+            crate::fl!("change-avatar")
         });
 
         if !self.is_uploading_avatar {
@@ -1850,7 +1850,7 @@ impl State {
 
         avatar_col = avatar_col.push(avatar_btn);
 
-        let mut save_btn = button::text(if self.is_saving { "Saving..." } else { "Save" });
+        let mut save_btn = button::text(if self.is_saving { crate::fl!("saving") } else { crate::fl!("save-changes") });
         let has_changes = self.display_name != self.original_display_name;
 
         if has_changes && !self.is_saving {
@@ -1905,9 +1905,9 @@ impl State {
         let passwords_match = self.new_password == self.confirm_new_password;
 
         let mut pw_btn = button::text(if self.is_changing_password {
-            "Changing..."
+            crate::fl!("changing")
         } else {
-            "Change Password"
+            crate::fl!("change-password")
         });
 
         if !self.is_changing_password && !is_empty && passwords_match {
@@ -1941,7 +1941,7 @@ impl State {
         if let Some(success) = &self.password_success {
             section = section.add(settings::item(
                 success.as_str(),
-                button::text("Dismiss").on_press(Message::DismissPasswordSuccess),
+                button::text(crate::fl!("dismiss")).on_press(Message::DismissPasswordSuccess),
             ));
         }
 
@@ -1968,7 +1968,7 @@ impl State {
                     action_row = action_row.push(text::body("❌ Unverified").size(14));
                     if !device.is_current {
                         action_row = action_row.push(
-                            button::text("Verify")
+                            button::text(crate::fl!("verify"))
                                 .on_press(Message::VerifyDevice(device.device_id.clone())),
                         );
                     }
@@ -1997,11 +1997,11 @@ impl State {
                                 .on_submit(|_| Message::SaveDeviceName(device.device_id.clone())),
                         )
                         .push(
-                            button::text("Save")
+                            button::text(crate::fl!("save"))
                                 .on_press(Message::SaveDeviceName(device.device_id.clone())),
                         )
                         .push(
-                            button::text("Cancel")
+                            button::text(crate::fl!("cancel"))
                                 .on_press(Message::CancelRenameDevice(device.device_id.clone())),
                         );
                 } else {
@@ -2104,9 +2104,9 @@ impl State {
 
             if !status.is_complete() {
                 let mut btn = button::text(if self.is_bootstrapping {
-                    "Bootstrapping..."
+                    crate::fl!("bootstrapping")
                 } else {
-                    "Bootstrap Cross-signing"
+                    crate::fl!("bootstrap-cross-signing")
                 });
                 if !self.is_bootstrapping {
                     btn = btn.on_press(Message::BootstrapCrossSigning);
@@ -2115,9 +2115,9 @@ impl State {
             }
         } else {
             let mut btn = button::text(if self.is_bootstrapping {
-                "Bootstrapping..."
+                crate::fl!("bootstrapping")
             } else {
-                "Setup Cross-signing"
+                crate::fl!("setup-cross-signing")
             });
             if !self.is_bootstrapping {
                 btn = btn.on_press(Message::BootstrapCrossSigning);
@@ -2151,7 +2151,7 @@ impl State {
                             .on_input(Message::New3PIDEmailChanged),
                     )
                     .push(
-                        button::text("Send Verification").on_press(Message::Request3PIDEmailToken),
+                        button::text(crate::fl!("send-verification")).on_press(Message::Request3PIDEmailToken),
                     )
                     .wrap(),
             ));
@@ -2188,7 +2188,7 @@ impl State {
                         text_input("Phone Number", &self.new_3pid_msisdn)
                             .on_input(Message::New3PIDMsisdnChanged),
                     )
-                    .push(button::text("Send SMS").on_press(Message::Request3PIDMsisdnToken))
+                    .push(button::text(crate::fl!("send-sms")).on_press(Message::Request3PIDMsisdnToken))
                     .wrap(),
             ));
         }
@@ -2205,7 +2205,7 @@ impl State {
             for user_id in &self.ignored_users {
                 section = section.add(settings::item(
                     user_id.as_str(),
-                    button::text("Unignore").on_press(Message::UnignoreUser(user_id.clone())),
+                    button::text(crate::fl!("unignore")).on_press(Message::UnignoreUser(user_id.clone())),
                 ));
             }
 
@@ -2259,12 +2259,12 @@ impl State {
             }
             VerificationUIState::Done => {
                 section = section.add(text::body("Verification successful!"));
-                section = section.add(button::text("Done").on_press(Message::CancelVerification));
+                section = section.add(button::text(crate::fl!("done")).on_press(Message::CancelVerification));
             }
             VerificationUIState::Cancelled => {
                 section = section.add(text::body("Verification cancelled or failed."));
                 section =
-                    section.add(button::text("Dismiss").on_press(Message::CancelVerification));
+                    section.add(button::text(crate::fl!("dismiss")).on_press(Message::CancelVerification));
             }
             _ => {}
         }
@@ -2289,14 +2289,14 @@ impl State {
         if let Some(err) = &self.error {
             col = col.push(settings::section().add(settings::item(
                 err.as_str(),
-                button::text("Dismiss").on_press(Message::DismissError),
+                button::text(crate::fl!("dismiss")).on_press(Message::DismissError),
             )));
         }
 
         if let Some(msg) = &self.success_message {
             col = col.push(settings::section().add(settings::item(
                 msg.as_str(),
-                button::text("Dismiss").on_press(Message::DismissSuccessMessage),
+                button::text(crate::fl!("dismiss")).on_press(Message::DismissSuccessMessage),
             )));
         }
 

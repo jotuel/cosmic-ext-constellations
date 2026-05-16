@@ -69,3 +69,6 @@
 ## 2026-05-15 - Adding Helpful Empty States
 **Learning:** Hardcoded empty states (like 'No room selected') can be visually barren and not fully accessible to international users since they are not localized. It's important to use `crate::fl!()` for translating text.
 **Action:** Replaced hardcoded empty state strings and disabled action tooltips with localized strings using `crate::fl!()` to ensure users of all languages receive clear, actionable feedback.
+## 2026-06-25 - Localized UI Texts
+**Learning:** Hardcoding strings like "Loading keywords..." directly into widget initializations (like `text::body("...")`) causes internationalization issues and accessibility barriers.
+**Action:** When adding new UI text, empty states, tools tips, and buttons in libcosmic applications, use the `crate::fl!("key-name")` macro and add the corresponding key/value pair into `res/i18n/en/cosmic_ext_constellations.ftl` instead of hardcoding strings in the UI code.
