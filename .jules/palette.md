@@ -69,3 +69,6 @@
 ## 2026-05-15 - Adding Helpful Empty States
 **Learning:** Hardcoded empty states (like 'No room selected') can be visually barren and not fully accessible to international users since they are not localized. It's important to use `crate::fl!()` for translating text.
 **Action:** Replaced hardcoded empty state strings and disabled action tooltips with localized strings using `crate::fl!()` to ensure users of all languages receive clear, actionable feedback.
+## 2026-05-16 - Threads Mobile Redesign
+ **Learning:** Implemented a more mobile-friendly, cleaner interface for Threads using the provided design elements like app bars, full width spacing, distinct delimiters and simpler headers, removing elements that clutter the UI or add too much density on mobile.
+ **Action:** Removed tight layout container elements and added better back navigation spacing, applying a cleaner full width view for thread entries separated by full width dividers.

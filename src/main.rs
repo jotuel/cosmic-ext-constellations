@@ -120,8 +120,9 @@ pub fn contains_ignore_ascii_case(haystack: &str, query_lower: &str, is_query_as
 
         for i in 0..=(h_bytes.len() - query_len) {
             let h_first = h_bytes[i];
-            if (h_first == first_lower || h_first == first_upper) &&
-                h_bytes[i + 1..i + query_len].eq_ignore_ascii_case(&query_bytes[1..]) {
+            if (h_first == first_lower || h_first == first_upper)
+                && h_bytes[i + 1..i + query_len].eq_ignore_ascii_case(&query_bytes[1..])
+            {
                 return true;
             }
         }

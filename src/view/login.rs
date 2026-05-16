@@ -1,9 +1,9 @@
+use crate::{Constellations, Message, matrix};
 use cosmic::{
     Element,
     iced::Alignment,
-    widget::{Column, container, text, text_input, tooltip, tooltip::Position, button},
+    widget::{Column, button, container, text, text_input, tooltip, tooltip::Position},
 };
-use crate::{Constellations, Message, matrix};
 
 impl Constellations {
     pub fn view_login(&self) -> Element<'_, Message> {

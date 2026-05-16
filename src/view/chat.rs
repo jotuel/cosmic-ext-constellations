@@ -28,15 +28,14 @@ impl Constellations {
         };
         let filter_is_ascii = self.search_query.is_ascii();
 
-        if self.selected_room.is_some() {
-            timeline = timeline.push(
-                Row::new()
-                    .align_y(Alignment::Center)
-                    .push(button::text(crate::fl!("close-thread")).on_press(Message::CloseThread))
-                    .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
-                    .padding(10),
-            );
-        }
+        let mut header = Row::new()
+            .align_y(Alignment::Center)
+            .spacing(10)
+            .push(cosmic::widget::icon::from_name("go-previous").size(16))
+            .push(button::text(crate::fl!("close-thread")).on_press(Message::CloseThread));
+
+        header = header.push(cosmic::widget::space().width(cosmic::iced::Length::Fill));
+        timeline = timeline.push(container(header).padding(10));
 
         for item in &self.threaded_timeline_items {
             if let Some(event) = item.item.as_event() {
@@ -712,9 +711,7 @@ impl Constellations {
                     .align_x(Alignment::Center)
                     .push(cosmic::widget::icon::from_name("chat-bubble-symbolic").size(64))
                     .push(text::title1(crate::fl!("no-room-selected")))
-                    .push(text::body(
-                        crate::fl!("select-room-to-start"),
-                    )),
+                    .push(text::body(crate::fl!("select-room-to-start"))),
             )
             .width(cosmic::iced::Length::Fill)
             .height(cosmic::iced::Length::Fill)
