@@ -110,13 +110,22 @@ pub fn contains_ignore_ascii_case(haystack: &str, query_lower: &str, is_query_as
     let query_len = query_bytes.len();
 
     if is_query_ascii {
-        if haystack.len() < query_len {
+        let h_bytes = haystack.as_bytes();
+        if h_bytes.len() < query_len {
             return false;
         }
-        haystack
-            .as_bytes()
-            .windows(query_len)
-            .any(|w| w.eq_ignore_ascii_case(query_bytes))
+
+        let first_lower = query_bytes[0];
+        let first_upper = first_lower.to_ascii_uppercase();
+
+        for i in 0..=(h_bytes.len() - query_len) {
+            let h_first = h_bytes[i];
+            if (h_first == first_lower || h_first == first_upper) &&
+                h_bytes[i + 1..i + query_len].eq_ignore_ascii_case(&query_bytes[1..]) {
+                return true;
+            }
+        }
+        false
     } else {
         haystack.to_lowercase().contains(query_lower)
     }

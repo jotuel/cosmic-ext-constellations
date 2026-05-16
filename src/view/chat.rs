@@ -17,10 +17,16 @@ impl Constellations {
     pub fn view_thread(&self) -> Element<'_, Message> {
         let mut timeline = Column::new().spacing(10).width(cosmic::iced::Length::Fill);
 
-        let filter = self.search_query.to_lowercase();
+        let is_filtering = self.is_search_active
+            && !self.search_query.is_empty()
+            && self.current_settings_panel.is_none();
+
+        let filter = if is_filtering {
+            self.search_query.to_lowercase()
+        } else {
+            String::new()
+        };
         let filter_is_ascii = self.search_query.is_ascii();
-        let is_filtering =
-            self.is_search_active && !filter.is_empty() && self.current_settings_panel.is_none();
 
         if self.selected_room.is_some() {
             timeline = timeline.push(
@@ -56,10 +62,16 @@ impl Constellations {
     pub fn view_timeline(&self) -> Element<'_, Message> {
         let mut timeline = Column::new().spacing(10).width(cosmic::iced::Length::Fill);
 
-        let filter = self.search_query.to_lowercase();
+        let is_filtering = self.is_search_active
+            && !self.search_query.is_empty()
+            && self.current_settings_panel.is_none();
+
+        let filter = if is_filtering {
+            self.search_query.to_lowercase()
+        } else {
+            String::new()
+        };
         let filter_is_ascii = self.search_query.is_ascii();
-        let is_filtering =
-            self.is_search_active && !filter.is_empty() && self.current_settings_panel.is_none();
 
         if self.selected_room.is_some() {
             let load_btn = if self.is_loading_more {
@@ -217,7 +229,7 @@ impl Constellations {
                         .on_press(Message::UserSettings(
                             crate::settings::user::Message::UnignoreUserById(id),
                         ))
-                        .tooltip("Unignore User"),
+                        .tooltip(crate::fl!("unignore-user")),
                 );
             } else {
                 sender_info = sender_info.push(
@@ -225,7 +237,7 @@ impl Constellations {
                         .on_press(Message::UserSettings(
                             crate::settings::user::Message::IgnoreUserById(id),
                         ))
-                        .tooltip("Ignore User"),
+                        .tooltip(crate::fl!("ignore")),
                 );
             }
         }
@@ -325,10 +337,16 @@ impl Constellations {
     pub fn view_threaded_timeline(&self) -> Element<'_, Message> {
         let mut timeline = Column::new().spacing(10).width(cosmic::iced::Length::Fill);
 
-        let filter = self.search_query.to_lowercase();
+        let is_filtering = self.is_search_active
+            && !self.search_query.is_empty()
+            && self.current_settings_panel.is_none();
+
+        let filter = if is_filtering {
+            self.search_query.to_lowercase()
+        } else {
+            String::new()
+        };
         let filter_is_ascii = self.search_query.is_ascii();
-        let is_filtering =
-            self.is_search_active && !filter.is_empty() && self.current_settings_panel.is_none();
 
         let header = Row::new()
             .spacing(10)
@@ -693,9 +711,9 @@ impl Constellations {
                     .spacing(10)
                     .align_x(Alignment::Center)
                     .push(cosmic::widget::icon::from_name("chat-bubble-symbolic").size(64))
-                    .push(text::title1("No room selected"))
+                    .push(text::title1(crate::fl!("no-room-selected")))
                     .push(text::body(
-                        "Select a room from the sidebar to start chatting.",
+                        crate::fl!("select-room-to-start"),
                     )),
             )
             .width(cosmic::iced::Length::Fill)
