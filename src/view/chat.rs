@@ -590,7 +590,7 @@ impl Constellations {
                 })
                 .push(
                     button::icon(Named::new("emblem-system"))
-                        .tooltip("Room Settings")
+                        .tooltip(crate::fl!("room-settings"))
                         .on_press(Message::OpenSettings(crate::SettingsPanel::Room)),
                 );
             content = content.push(room_header);

@@ -221,7 +221,7 @@ impl Constellations {
                 .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
                 .push(
                     button::icon(Named::new("emblem-system"))
-                        .tooltip("Space Settings")
+                        .tooltip(crate::fl!("space-settings"))
                         .on_press(Message::OpenSettings(crate::SettingsPanel::Space)),
                 );
             room_list = room_list.push(container(space_header).padding(5));

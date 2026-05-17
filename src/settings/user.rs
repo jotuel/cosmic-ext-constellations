@@ -2011,7 +2011,7 @@ impl State {
                         .push(tooltip(
                             button::icon(Named::new("document-edit-symbolic"))
                                 .on_press(Message::StartRenameDevice(device.device_id.clone())),
-                            text::body("Rename Device"),
+                            text::body(crate::fl!("rename-device")),
                             Position::Top,
                         ));
                 }
