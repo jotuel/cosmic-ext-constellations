@@ -236,6 +236,7 @@ pub enum Message {
         eyeball_im::VectorDiff<std::sync::Arc<matrix::TimelineItem>>,
     ),
     MatrixThreadReset(matrix_sdk::ruma::OwnedEventId),
+    SpaceFilterUpdated,
     NoOp,
     SubmitOidcLogin,
     OidcLoginStarted(Result<Url, String>),
@@ -549,11 +550,11 @@ impl Constellations {
         };
 
         if let Some(selected_space) = &self.selected_space {
-            // ⚡ Bolt Optimization: Reuse existing vector capacity to prevent O(N) reallocation on keystrokes
-            let mut rooms = std::mem::take(&mut self.filtered_room_list);
-            rooms.clear();
             if let Some(matrix) = &self.matrix {
-                matrix.filter_in_space_bulk_sync(
+                // ⚡ Bolt Optimization: Use a temporary vector to avoid clearing the list if the lock fails
+                let mut rooms = Vec::with_capacity(self.room_list.len());
+
+                if matrix.filter_in_space_bulk_sync(
                     self.room_list
                         .iter()
                         .enumerate()
@@ -561,19 +562,23 @@ impl Constellations {
                     selected_space,
                     &mut rooms,
                     filter_by_search,
-                );
-            }
-            rooms.sort_by(|&a, &b| {
-                let ra = &self.room_list[a];
-                let rb = &self.room_list[b];
-                match (&ra.order, &rb.order) {
-                    (Some(oa), Some(ob)) => oa.cmp(ob).then_with(|| ra.id.cmp(&rb.id)),
-                    (Some(_), None) => std::cmp::Ordering::Less,
-                    (None, Some(_)) => std::cmp::Ordering::Greater,
-                    (None, None) => ra.id.cmp(&rb.id),
+                ) {
+                    rooms.sort_by(|&a, &b| {
+                        let ra = &self.room_list[a];
+                        let rb = &self.room_list[b];
+                        match (&ra.order, &rb.order) {
+                            (Some(oa), Some(ob)) => oa.cmp(ob).then_with(|| ra.id.cmp(&rb.id)),
+                            (Some(_), None) => std::cmp::Ordering::Less,
+                            (None, Some(_)) => std::cmp::Ordering::Greater,
+                            (None, None) => ra.id.cmp(&rb.id),
+                        }
+                    });
+                    self.filtered_room_list = rooms;
+                } else {
+                    // If we couldn't get the lock, just return and keep the old list
+                    return;
                 }
-            });
-            self.filtered_room_list = rooms;
+            }
 
             // Re-filter other_rooms to remove any that we've now joined
             self.other_rooms
@@ -727,6 +732,38 @@ impl Constellations {
                                     participants,
                                 },
                             ));
+                        }
+                    },
+                );
+            });
+
+            let tx_hierarchy = tx.clone();
+            let engine_hierarchy = engine.clone();
+            tokio::spawn(async move {
+                let client = engine_hierarchy.client().await;
+                let tx_child = tx_hierarchy.clone();
+                client.add_event_handler(
+                    move |_ev: matrix_sdk::ruma::events::SyncStateEvent<
+                        matrix_sdk::ruma::events::space::child::SpaceChildEventContent,
+                    >,
+                          _room: matrix_sdk::Room| {
+                        let tx = tx_child.clone();
+                        async move {
+                            let _ = tx
+                                .send(Message::Matrix(matrix::MatrixEvent::SpaceHierarchyChanged));
+                        }
+                    },
+                );
+                let tx_parent = tx_hierarchy.clone();
+                client.add_event_handler(
+                    move |_ev: matrix_sdk::ruma::events::SyncStateEvent<
+                        matrix_sdk::ruma::events::space::parent::SpaceParentEventContent,
+                    >,
+                          _room: matrix_sdk::Room| {
+                        let tx = tx_parent.clone();
+                        async move {
+                            let _ = tx
+                                .send(Message::Matrix(matrix::MatrixEvent::SpaceHierarchyChanged));
                         }
                     },
                 );
@@ -1395,6 +1432,10 @@ impl Application for Constellations {
             }
             Message::SpaceChildrenFetched(space_id, res) => {
                 self.handle_space_children_fetched(space_id, res)
+            }
+            Message::SpaceFilterUpdated => {
+                self.update_filtered_rooms();
+                Task::none()
             }
             Message::NoOp => Task::none(),
             Message::SubmitOidcLogin => self.handle_submit_oidc_login(),

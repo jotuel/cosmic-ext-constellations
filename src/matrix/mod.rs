@@ -245,6 +245,7 @@ pub enum MatrixEvent {
         reaction: String,
     },
     IgnoredUsersChanged(Vec<matrix_sdk::ruma::OwnedUserId>),
+    SpaceHierarchyChanged,
     CallParticipantsChanged {
         room_id: String,
         participants: Vec<matrix_sdk::ruma::OwnedUserId>,
@@ -1932,7 +1933,8 @@ impl MatrixEngine {
         space_id: &RoomId,
         out: &mut Vec<T>,
         mut filter_by_search: F,
-    ) where
+    ) -> bool
+    where
         I: Iterator<Item = (T, &'a RoomData)>,
         F: FnMut(&RoomData) -> bool,
     {
@@ -1940,16 +1942,21 @@ impl MatrixEngine {
             Ok(inner) => {
                 // Bolt Optimization: Calculate all space descendants once (O(S))
                 // to avoid O(N) string parsing and O(N * D) tree traversals.
-                let descendants = inner.space_hierarchy.get_descendants_strs(space_id);
+                let mut descendants = inner.space_hierarchy.get_descendants_strs(space_id);
+                // Also include the space itself so direct children match.
+                descendants.insert(space_id.as_str());
+
                 for (val, room) in rooms {
                     if descendants.contains(&*room.id) && filter_by_search(room) {
                         out.push(val);
                     }
                 }
+                true
             }
             Err(_) => {
                 // If we can't get a read lock, fallback to not filtering correctly
                 // or returning nothing. Usually this is transient.
+                false
             }
         }
     }

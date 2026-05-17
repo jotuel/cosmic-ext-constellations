@@ -249,7 +249,7 @@ impl Constellations {
                         header.push(cosmic::widget::image(handle.clone()).width(24).height(24));
                 } else {
                     header = header.push(
-                        container(text::body("#"))
+                        container(text::body("🚪"))
                             .width(24)
                             .height(24)
                             .align_x(Alignment::Center)
@@ -258,7 +258,7 @@ impl Constellations {
                 }
             } else {
                 header = header.push(
-                    container(text::body("#"))
+                    container(text::body("🚪"))
                         .width(24)
                         .height(24)
                         .align_x(Alignment::Center)
@@ -313,13 +313,14 @@ impl Constellations {
                     && let Some(avatar_url) = &room.avatar_url
                     && let Some(handle) = self.media_cache.get(avatar_url)
                 {
-                    header = header.push(cosmic::widget::image(handle.clone()));
+                    header =
+                        header.push(cosmic::widget::image(handle.clone()).width(24).height(24));
                     has_avatar = true;
                 }
 
                 if !has_avatar {
                     header = header.push(
-                        container(text::body("#"))
+                        container(text::body("🚪"))
                             .width(24)
                             .height(24)
                             .align_x(Alignment::Center)

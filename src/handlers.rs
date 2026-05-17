@@ -300,6 +300,27 @@ impl Constellations {
                 self.user_settings.ignored_users = users;
                 Task::none()
             }
+            matrix::MatrixEvent::SpaceHierarchyChanged => {
+                let mut tasks = Vec::new();
+                if let Some(matrix) = &self.matrix
+                    && let Some(sid) = &self.selected_space
+                {
+                    let matrix_clone = matrix.clone();
+                    let sid_clone = sid.clone();
+                    tasks.push(Task::perform(
+                        async move {
+                            let _ = matrix_clone.update_room_list_filter(Some(sid_clone)).await;
+                        },
+                        |_| Action::from(Message::SpaceFilterUpdated),
+                    ));
+                }
+                self.update_filtered_rooms();
+                if tasks.is_empty() {
+                    Task::none()
+                } else {
+                    Task::batch(tasks)
+                }
+            }
             matrix::MatrixEvent::CallParticipantsChanged {
                 room_id,
                 participants,
@@ -535,9 +556,8 @@ impl Constellations {
                 async move {
                     let _ = matrix_clone.update_room_list_filter(sid).await;
                 },
-                |_| Action::from(Message::NoOp),
+                |_| Action::from(Message::SpaceFilterUpdated),
             ));
-
             if let Some(space_id) = space_id {
                 let matrix_clone = matrix.clone();
                 tasks.push(Task::perform(
@@ -581,6 +601,18 @@ impl Constellations {
             Ok(children) => {
                 // First, update the filtered_room_list because the hierarchy in matrix engine was updated
                 self.update_filtered_rooms();
+
+                // Re-trigger the SDK filter with the new hierarchy data
+                if let Some(matrix) = &self.matrix {
+                    let matrix_clone = matrix.clone();
+                    let sid = space_id.clone();
+                    tasks.push(Task::perform(
+                        async move {
+                            let _ = matrix_clone.update_room_list_filter(Some(sid)).await;
+                        },
+                        |_| Action::from(Message::SpaceFilterUpdated),
+                    ));
+                }
 
                 if let Some(matrix) = &self.matrix
                     && self.user_settings.invite_avatars_display_policy
