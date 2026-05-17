@@ -1699,14 +1699,14 @@ impl State {
                     .on_input(Message::ActionReasonChanged),
             ));
 
-            let filter = self.member_filter.to_lowercase();
             let filter_is_ascii = self.member_filter.is_ascii();
+            let filter_lower_fallback = (!filter_is_ascii).then(|| self.member_filter.to_lowercase());
 
             for (user_id, level) in users {
                 let user_id_str = user_id.as_str();
-                if !filter.is_empty() {
+                if !self.member_filter.is_empty() {
                     let matches =
-                        crate::contains_ignore_ascii_case(user_id_str, &filter, filter_is_ascii);
+                        crate::contains_ignore_ascii_case(user_id_str, &self.member_filter, filter_lower_fallback.as_deref());
 
                     if !matches {
                         continue;

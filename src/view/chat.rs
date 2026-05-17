@@ -21,12 +21,8 @@ impl Constellations {
             && !self.search_query.is_empty()
             && self.current_settings_panel.is_none();
 
-        let filter = if is_filtering {
-            self.search_query.to_lowercase()
-        } else {
-            String::new()
-        };
         let filter_is_ascii = self.search_query.is_ascii();
+        let filter_lower_fallback = (is_filtering && !filter_is_ascii).then(|| self.search_query.to_lowercase());
 
         if self.selected_room.is_some() {
             timeline = timeline.push(
@@ -46,7 +42,7 @@ impl Constellations {
                         .as_message()
                         .map(|m| m.body())
                         .unwrap_or_default();
-                    if !crate::contains_ignore_ascii_case(body, &filter, filter_is_ascii) {
+                    if !crate::contains_ignore_ascii_case(body, &self.search_query, filter_lower_fallback.as_deref()) {
                         continue;
                     }
                 }
@@ -66,12 +62,8 @@ impl Constellations {
             && !self.search_query.is_empty()
             && self.current_settings_panel.is_none();
 
-        let filter = if is_filtering {
-            self.search_query.to_lowercase()
-        } else {
-            String::new()
-        };
         let filter_is_ascii = self.search_query.is_ascii();
+        let filter_lower_fallback = (is_filtering && !filter_is_ascii).then(|| self.search_query.to_lowercase());
 
         if self.selected_room.is_some() {
             let load_btn = if self.is_loading_more {
@@ -96,7 +88,7 @@ impl Constellations {
                         .as_message()
                         .map(|m| m.body())
                         .unwrap_or_default();
-                    if !crate::contains_ignore_ascii_case(body, &filter, filter_is_ascii) {
+                    if !crate::contains_ignore_ascii_case(body, &self.search_query, filter_lower_fallback.as_deref()) {
                         continue;
                     }
                 }
@@ -341,12 +333,8 @@ impl Constellations {
             && !self.search_query.is_empty()
             && self.current_settings_panel.is_none();
 
-        let filter = if is_filtering {
-            self.search_query.to_lowercase()
-        } else {
-            String::new()
-        };
         let filter_is_ascii = self.search_query.is_ascii();
+        let filter_lower_fallback = (is_filtering && !filter_is_ascii).then(|| self.search_query.to_lowercase());
 
         let header = Row::new()
             .spacing(10)
@@ -368,7 +356,7 @@ impl Constellations {
                         .as_message()
                         .map(|m| m.body())
                         .unwrap_or_default();
-                    if !crate::contains_ignore_ascii_case(body, &filter, filter_is_ascii) {
+                    if !crate::contains_ignore_ascii_case(body, &self.search_query, filter_lower_fallback.as_deref()) {
                         continue;
                     }
                 }

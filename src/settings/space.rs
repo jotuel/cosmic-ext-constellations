@@ -742,18 +742,18 @@ impl State {
         if self.is_loading_children {
             section = section.add(text::body(crate::fl!("loading-children")));
         } else {
-            let filter = self.child_filter.to_lowercase();
             let filter_is_ascii = self.child_filter.is_ascii();
+            let filter_lower_fallback = (!filter_is_ascii).then(|| self.child_filter.to_lowercase());
 
             for child in &self.children {
                 let name = child.name.as_deref().unwrap_or(&child.id);
 
-                if !filter.is_empty() {
-                    let matches = crate::contains_ignore_ascii_case(name, &filter, filter_is_ascii)
+                if !self.child_filter.is_empty() {
+                    let matches = crate::contains_ignore_ascii_case(name, &self.child_filter, filter_lower_fallback.as_deref())
                         || crate::contains_ignore_ascii_case(
                             child.id.as_ref(),
-                            &filter,
-                            filter_is_ascii,
+                            &self.child_filter,
+                            filter_lower_fallback.as_deref(),
                         );
 
                     if !matches {

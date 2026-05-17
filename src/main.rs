@@ -102,21 +102,23 @@ pub fn parse_markdown(text: &str, skip_first_blockquote: bool) -> Vec<PreviewEve
 
 // ⚡ Bolt Optimization: Fast path for ASCII string filtering
 // Avoids costly heap allocations from `.to_lowercase()`
-pub fn contains_ignore_ascii_case(haystack: &str, query_lower: &str, is_query_ascii: bool) -> bool {
-    if query_lower.is_empty() {
+pub fn contains_ignore_ascii_case(haystack: &str, query: &str, query_lower_fallback: Option<&str>) -> bool {
+    if query.is_empty() {
         return true;
     }
-    let query_bytes = query_lower.as_bytes();
-    let query_len = query_bytes.len();
 
-    if is_query_ascii {
+    if query.is_ascii() {
+        let query_bytes = query.as_bytes();
+        let query_len = query_bytes.len();
         let h_bytes = haystack.as_bytes();
+
         if h_bytes.len() < query_len {
             return false;
         }
 
-        let first_lower = query_bytes[0];
-        let first_upper = first_lower.to_ascii_uppercase();
+        let first_char = query_bytes[0];
+        let first_lower = first_char.to_ascii_lowercase();
+        let first_upper = first_char.to_ascii_uppercase();
 
         for i in 0..=(h_bytes.len() - query_len) {
             let h_first = h_bytes[i];
@@ -126,8 +128,10 @@ pub fn contains_ignore_ascii_case(haystack: &str, query_lower: &str, is_query_as
             }
         }
         false
-    } else {
+    } else if let Some(query_lower) = query_lower_fallback {
         haystack.to_lowercase().contains(query_lower)
+    } else {
+        haystack.to_lowercase().contains(&query.to_lowercase())
     }
 }
 
@@ -514,7 +518,7 @@ impl Constellations {
         let is_search_empty = self.search_query.is_empty();
 
         let is_query_ascii = self.search_query.is_ascii();
-        let search_query_lower = self.search_query.to_lowercase();
+        let search_query_lower_fallback = (!is_query_ascii).then(|| self.search_query.to_lowercase());
 
         let filter_by_search = |room: &matrix::RoomData| {
             if is_search_empty {
@@ -522,9 +526,9 @@ impl Constellations {
             } else {
                 room.name
                     .as_ref()
-                    .map(|n| contains_ignore_ascii_case(n, &search_query_lower, is_query_ascii))
+                    .map(|n| contains_ignore_ascii_case(n, &self.search_query, search_query_lower_fallback.as_deref()))
                     .unwrap_or(false)
-                    || contains_ignore_ascii_case(&room.id, &search_query_lower, is_query_ascii)
+                    || contains_ignore_ascii_case(&room.id, &self.search_query, search_query_lower_fallback.as_deref())
             }
         };
 
