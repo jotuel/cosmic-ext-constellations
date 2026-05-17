@@ -22,7 +22,8 @@ impl Constellations {
             && self.current_settings_panel.is_none();
 
         let filter_is_ascii = self.search_query.is_ascii();
-        let filter_lower_fallback = (is_filtering && !filter_is_ascii).then(|| self.search_query.to_lowercase());
+        let filter_lower_fallback =
+            (is_filtering && !filter_is_ascii).then(|| self.search_query.to_lowercase());
 
         if self.selected_room.is_some() {
             timeline = timeline.push(
@@ -42,7 +43,11 @@ impl Constellations {
                         .as_message()
                         .map(|m| m.body())
                         .unwrap_or_default();
-                    if !crate::contains_ignore_ascii_case(body, &self.search_query, filter_lower_fallback.as_deref()) {
+                    if !crate::contains_ignore_ascii_case(
+                        body,
+                        &self.search_query,
+                        filter_lower_fallback.as_deref(),
+                    ) {
                         continue;
                     }
                 }
@@ -63,7 +68,8 @@ impl Constellations {
             && self.current_settings_panel.is_none();
 
         let filter_is_ascii = self.search_query.is_ascii();
-        let filter_lower_fallback = (is_filtering && !filter_is_ascii).then(|| self.search_query.to_lowercase());
+        let filter_lower_fallback =
+            (is_filtering && !filter_is_ascii).then(|| self.search_query.to_lowercase());
 
         if self.selected_room.is_some() {
             let load_btn = if self.is_loading_more {
@@ -88,7 +94,11 @@ impl Constellations {
                         .as_message()
                         .map(|m| m.body())
                         .unwrap_or_default();
-                    if !crate::contains_ignore_ascii_case(body, &self.search_query, filter_lower_fallback.as_deref()) {
+                    if !crate::contains_ignore_ascii_case(
+                        body,
+                        &self.search_query,
+                        filter_lower_fallback.as_deref(),
+                    ) {
                         continue;
                     }
                 }
@@ -295,7 +305,8 @@ impl Constellations {
             bubble_col = bubble_col.push(text::body(crate::fl!("downloaded")));
         } else {
             bubble_col = bubble_col.push(
-                button::text(crate::fl!("download-file")).on_press(Message::FetchMedia(file.source.clone())),
+                button::text(crate::fl!("download-file"))
+                    .on_press(Message::FetchMedia(file.source.clone())),
             );
         }
         bubble_col
@@ -334,7 +345,8 @@ impl Constellations {
             && self.current_settings_panel.is_none();
 
         let filter_is_ascii = self.search_query.is_ascii();
-        let filter_lower_fallback = (is_filtering && !filter_is_ascii).then(|| self.search_query.to_lowercase());
+        let filter_lower_fallback =
+            (is_filtering && !filter_is_ascii).then(|| self.search_query.to_lowercase());
 
         let header = Row::new()
             .spacing(10)
@@ -356,7 +368,11 @@ impl Constellations {
                         .as_message()
                         .map(|m| m.body())
                         .unwrap_or_default();
-                    if !crate::contains_ignore_ascii_case(body, &self.search_query, filter_lower_fallback.as_deref()) {
+                    if !crate::contains_ignore_ascii_case(
+                        body,
+                        &self.search_query,
+                        filter_lower_fallback.as_deref(),
+                    ) {
                         continue;
                     }
                 }
@@ -514,6 +530,7 @@ impl Constellations {
         cosmic::widget::space().height(0).into()
     }
 
+    #[rust_analyzer::skip]
     pub fn view_main_content(&self, status_text: String) -> Element<'_, Message> {
         let mut content = Column::new()
             .spacing(20)
@@ -700,9 +717,7 @@ impl Constellations {
                     .align_x(Alignment::Center)
                     .push(cosmic::widget::icon::from_name("chat-bubble-symbolic").size(64))
                     .push(text::title1(crate::fl!("no-room-selected")))
-                    .push(text::body(
-                        crate::fl!("select-room-to-start"),
-                    )),
+                    .push(text::body(crate::fl!("select-room-to-start"))),
             )
             .width(cosmic::iced::Length::Fill)
             .height(cosmic::iced::Length::Fill)

@@ -345,7 +345,8 @@ impl Constellations {
                         .width(cosmic::iced::Length::Fill),
                 );
 
-                let join_btn = button::text(crate::fl!("join")).on_press(Message::JoinRoom(room_id.clone()));
+                let join_btn =
+                    button::text(crate::fl!("join")).on_press(Message::JoinRoom(room_id.clone()));
 
                 room_list = room_list.push(
                     Row::new()

@@ -1796,7 +1796,12 @@ impl State {
                 add_btn = add_btn.on_press(Message::AddKeyword);
             }
             let btn_widget: Element<'_, Message> = if is_empty {
-                tooltip(add_btn, text::body(crate::fl!("enter-keyword-to-add")), Position::Top).into()
+                tooltip(
+                    add_btn,
+                    text::body(crate::fl!("enter-keyword-to-add")),
+                    Position::Top,
+                )
+                .into()
             } else {
                 add_btn.into()
             };
@@ -1850,7 +1855,11 @@ impl State {
 
         avatar_col = avatar_col.push(avatar_btn);
 
-        let mut save_btn = button::text(if self.is_saving { crate::fl!("saving") } else { crate::fl!("save-changes") });
+        let mut save_btn = button::text(if self.is_saving {
+            crate::fl!("saving")
+        } else {
+            crate::fl!("save-changes")
+        });
         let has_changes = self.display_name != self.original_display_name;
 
         if has_changes && !self.is_saving {
@@ -2151,7 +2160,8 @@ impl State {
                             .on_input(Message::New3PIDEmailChanged),
                     )
                     .push(
-                        button::text(crate::fl!("send-verification")).on_press(Message::Request3PIDEmailToken),
+                        button::text(crate::fl!("send-verification"))
+                            .on_press(Message::Request3PIDEmailToken),
                     )
                     .wrap(),
             ));
@@ -2188,7 +2198,10 @@ impl State {
                         text_input("Phone Number", &self.new_3pid_msisdn)
                             .on_input(Message::New3PIDMsisdnChanged),
                     )
-                    .push(button::text(crate::fl!("send-sms")).on_press(Message::Request3PIDMsisdnToken))
+                    .push(
+                        button::text(crate::fl!("send-sms"))
+                            .on_press(Message::Request3PIDMsisdnToken),
+                    )
                     .wrap(),
             ));
         }
@@ -2205,7 +2218,8 @@ impl State {
             for user_id in &self.ignored_users {
                 section = section.add(settings::item(
                     user_id.as_str(),
-                    button::text(crate::fl!("unignore")).on_press(Message::UnignoreUser(user_id.clone())),
+                    button::text(crate::fl!("unignore"))
+                        .on_press(Message::UnignoreUser(user_id.clone())),
                 ));
             }
 
@@ -2259,12 +2273,13 @@ impl State {
             }
             VerificationUIState::Done => {
                 section = section.add(text::body("Verification successful!"));
-                section = section.add(button::text(crate::fl!("done")).on_press(Message::CancelVerification));
+                section = section
+                    .add(button::text(crate::fl!("done")).on_press(Message::CancelVerification));
             }
             VerificationUIState::Cancelled => {
                 section = section.add(text::body("Verification cancelled or failed."));
-                section =
-                    section.add(button::text(crate::fl!("dismiss")).on_press(Message::CancelVerification));
+                section = section
+                    .add(button::text(crate::fl!("dismiss")).on_press(Message::CancelVerification));
             }
             _ => {}
         }

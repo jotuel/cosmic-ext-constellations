@@ -102,7 +102,11 @@ pub fn parse_markdown(text: &str, skip_first_blockquote: bool) -> Vec<PreviewEve
 
 // ⚡ Bolt Optimization: Fast path for ASCII string filtering
 // Avoids costly heap allocations from `.to_lowercase()`
-pub fn contains_ignore_ascii_case(haystack: &str, query: &str, query_lower_fallback: Option<&str>) -> bool {
+pub fn contains_ignore_ascii_case(
+    haystack: &str,
+    query: &str,
+    query_lower_fallback: Option<&str>,
+) -> bool {
     if query.is_empty() {
         return true;
     }
@@ -122,8 +126,9 @@ pub fn contains_ignore_ascii_case(haystack: &str, query: &str, query_lower_fallb
 
         for i in 0..=(h_bytes.len() - query_len) {
             let h_first = h_bytes[i];
-            if (h_first == first_lower || h_first == first_upper) &&
-                h_bytes[i + 1..i + query_len].eq_ignore_ascii_case(&query_bytes[1..]) {
+            if (h_first == first_lower || h_first == first_upper)
+                && h_bytes[i + 1..i + query_len].eq_ignore_ascii_case(&query_bytes[1..])
+            {
                 return true;
             }
         }
@@ -518,7 +523,8 @@ impl Constellations {
         let is_search_empty = self.search_query.is_empty();
 
         let is_query_ascii = self.search_query.is_ascii();
-        let search_query_lower_fallback = (!is_query_ascii).then(|| self.search_query.to_lowercase());
+        let search_query_lower_fallback =
+            (!is_query_ascii).then(|| self.search_query.to_lowercase());
 
         let filter_by_search = |room: &matrix::RoomData| {
             if is_search_empty {
@@ -526,9 +532,19 @@ impl Constellations {
             } else {
                 room.name
                     .as_ref()
-                    .map(|n| contains_ignore_ascii_case(n, &self.search_query, search_query_lower_fallback.as_deref()))
+                    .map(|n| {
+                        contains_ignore_ascii_case(
+                            n,
+                            &self.search_query,
+                            search_query_lower_fallback.as_deref(),
+                        )
+                    })
                     .unwrap_or(false)
-                    || contains_ignore_ascii_case(&room.id, &self.search_query, search_query_lower_fallback.as_deref())
+                    || contains_ignore_ascii_case(
+                        &room.id,
+                        &self.search_query,
+                        search_query_lower_fallback.as_deref(),
+                    )
             }
         };
 
@@ -970,7 +986,11 @@ impl Application for Constellations {
 
         if self.user_id.is_some() {
             let user_btn = button::icon(Named::new("user-available-symbolic"));
-            let user_tooltip = tooltip(user_btn, text::body(crate::fl!("user-menu")), Position::Bottom);
+            let user_tooltip = tooltip(
+                user_btn,
+                text::body(crate::fl!("user-menu")),
+                Position::Bottom,
+            );
             let key_binds = std::collections::HashMap::new();
 
             let menu_tree = menu::Tree::with_children(

@@ -1677,6 +1677,7 @@ impl State {
         )
     }
 
+    #[rust_analyzer::skip]
     fn view_manage_members(&self) -> Option<Element<'_, Message>> {
         if let Some((default_level, users)) = &self.power_levels {
             let mut section = settings::section().title(crate::fl!("manage-members"));
@@ -1700,13 +1701,17 @@ impl State {
             ));
 
             let filter_is_ascii = self.member_filter.is_ascii();
-            let filter_lower_fallback = (!filter_is_ascii).then(|| self.member_filter.to_lowercase());
+            let filter_lower_fallback =
+                (!filter_is_ascii).then(|| self.member_filter.to_lowercase());
 
             for (user_id, level) in users {
                 let user_id_str = user_id.as_str();
                 if !self.member_filter.is_empty() {
-                    let matches =
-                        crate::contains_ignore_ascii_case(user_id_str, &self.member_filter, filter_lower_fallback.as_deref());
+                    let matches = crate::contains_ignore_ascii_case(
+                        user_id_str,
+                        &self.member_filter,
+                        filter_lower_fallback.as_deref(),
+                    );
 
                     if !matches {
                         continue;
