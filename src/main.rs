@@ -970,7 +970,7 @@ impl Application for Constellations {
 
         if self.user_id.is_some() {
             let user_btn = button::icon(Named::new("user-available-symbolic"));
-            let user_tooltip = tooltip(user_btn, text::body("User Menu"), Position::Bottom);
+            let user_tooltip = tooltip(user_btn, text::body(crate::fl!("user-menu")), Position::Bottom);
             let key_binds = std::collections::HashMap::new();
 
             let menu_tree = menu::Tree::with_children(

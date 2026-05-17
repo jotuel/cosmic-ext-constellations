@@ -72,3 +72,6 @@
 ## 2026-06-25 - Localized UI Texts
 **Learning:** Hardcoding strings like "Loading keywords..." directly into widget initializations (like `text::body("...")`) causes internationalization issues and accessibility barriers.
 **Action:** When adding new UI text, empty states, tools tips, and buttons in libcosmic applications, use the `crate::fl!("key-name")` macro and add the corresponding key/value pair into `res/i18n/en/cosmic_ext_constellations.ftl` instead of hardcoding strings in the UI code.
+## 2024-05-18 - Localize Tooltip Strings
+**Learning:** Found multiple instances where tooltips, particularly those for UI action buttons like 'User Menu' or 'Room Settings', used hardcoded strings instead of localizable ones. This violates our principle of accessibility and internationalization.
+**Action:** When creating or modifying tooltips in the UI, always use `crate::fl!("key")` and define the corresponding translated string in `res/i18n/en/cosmic_ext_constellations.ftl` rather than hardcoding English strings.
