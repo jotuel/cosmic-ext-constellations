@@ -40,3 +40,6 @@
 ## 2024-05-14 - [Optimization] Unrolling first-byte match for ASCII substring search
 **Learning:** The previous fast-path ASCII optimization using `haystack.as_bytes().windows(len).any(...)` is much faster than `.to_lowercase().contains()`, but still slow on long non-matching strings because `windows()` iterates every possible overlapping slice.
 **Action:** For simple byte-wise string searches, manually extracting the first byte of the query, converting it to upper and lower case, and only performing full-slice `eq_ignore_ascii_case` when the first byte matches is significantly faster and removes the iterator overhead of `windows()`.
+## 2024-05-15 - [Correct Fallback Initialization in String Filtering loops]
+**Learning:** In Rust UI loops, when computing case-insensitive string fallbacks, avoid conditionally initializing to an empty string (`""`) or computing `.to_lowercase()` unconditionally. An empty string evaluates to true in `.contains()` checks, breaking filtering.
+**Action:** Instead, use an `Option<String>` pattern like `let fallback = (!is_ascii).then(|| string.to_lowercase())` and pass it via `.as_deref()` to the search method. This ensures the expensive `to_lowercase()` allocation only happens if strictly necessary, without breaking filtering logic with dummy empty string variables.
