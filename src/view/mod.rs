@@ -6,6 +6,10 @@ pub mod chat;
 pub mod login;
 pub mod switcher;
 
+const AVATAR_WIDTH: i32 = 24;
+const AVATAR_HEIGHT: i32 = 24;
+const AVATAR_RADIUS: i32 = 15;
+
 impl Constellations {
     pub fn update_title(&mut self) -> Task<Action<Message>> {
         let selected_room_name = self.selected_room.as_ref().and_then(|id| {

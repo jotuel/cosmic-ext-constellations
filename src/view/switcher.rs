@@ -1,4 +1,7 @@
-use crate::{Constellations, MenuAct, Message};
+use crate::{
+    Constellations, MenuAct, Message,
+    view::{AVATAR_HEIGHT, AVATAR_RADIUS, AVATAR_WIDTH},
+};
 use cosmic::{
     Element,
     iced::Alignment,
@@ -243,39 +246,8 @@ impl<'switcher> Constellations {
 
             for &idx in &self.filtered_other_rooms {
                 let room = &self.other_rooms[idx];
-                let name = room.name.as_deref().unwrap_or_else(|| {
-                    let id = &room.id;
-                    id.strip_prefix('!')
-                        .and_then(|s| s.split(':').next())
-                        .unwrap_or(id)
-                });
-                let room_id = room.id.clone();
-
                 let mut room_content = Column::new().spacing(2);
-
-                let mut header = Row::new().spacing(10).align_y(Alignment::Center);
-
-                let mut has_avatar = false;
-                if self.user_settings.invite_avatars_display_policy
-                    && let Some(avatar_url) = &room.avatar_url
-                    && let Some(handle) = self.media_cache.get(avatar_url)
-                {
-                    header =
-                        header.push(cosmic::widget::image(handle.clone()).width(24).height(24));
-                    has_avatar = true;
-                }
-
-                if !has_avatar {
-                    header = header.push(
-                        container(text::body(crate::fl!("room-has-no-avatar")))
-                            .width(24)
-                            .height(24)
-                            .align_x(Alignment::Center)
-                            .align_y(Alignment::Center),
-                    );
-                }
-
-                header = header.push(text::body(name));
+                let mut header = self.view_avatar_room(room);
 
                 if let Some(unread_str) = &room.unread_count_str {
                     header = header.push(text::body(unread_str.as_str()).size(12));
@@ -294,7 +266,7 @@ impl<'switcher> Constellations {
                 );
 
                 let join_btn =
-                    button::text(crate::fl!("join")).on_press(Message::JoinRoom(room_id.clone()));
+                    button::text(crate::fl!("join")).on_press(Message::JoinRoom(room.id.clone()));
 
                 room_list = room_list.push(
                     Row::new()
@@ -316,29 +288,35 @@ impl<'switcher> Constellations {
         room: &'switcher crate::matrix::RoomData,
     ) -> Row<'switcher, Message, cosmic::prelude::Theme> {
         let name = text::body(room.name.as_deref().unwrap_or("Unknown Room"));
-        let header = Row::new().push(name).spacing(10).align_y(Alignment::Center);
+        let mut header = Row::new().spacing(10).align_y(Alignment::Center);
         let default_avatar = crate::fl!("room-has-no-avatar");
         if let Some(avatar_url) = &room.avatar_url {
             if let Some(handle) = self.media_cache.get(avatar_url) {
-                header.push(cosmic::widget::image(handle.clone()).width(24).height(24))
+                header = header.push(
+                    cosmic::widget::image(handle.clone())
+                        .width(AVATAR_WIDTH)
+                        .height(AVATAR_HEIGHT)
+                        .border_radius(AVATAR_RADIUS),
+                );
             } else {
-                header.push(
+                header = header.push(
                     container(text::body(default_avatar))
-                        .width(24)
-                        .height(24)
+                        .width(AVATAR_WIDTH)
+                        .height(AVATAR_HEIGHT)
                         .align_x(Alignment::Center)
                         .align_y(Alignment::Center),
-                )
+                );
             }
         } else {
-            header.push(
+            header = header.push(
                 container(text::body(default_avatar))
-                    .width(24)
-                    .height(24)
+                    .width(AVATAR_WIDTH)
+                    .height(AVATAR_HEIGHT)
                     .align_x(Alignment::Center)
                     .align_y(Alignment::Center),
-            )
+            );
         }
+        header.push(name)
     }
 }
 
