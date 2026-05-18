@@ -25,6 +25,7 @@ other-rooms = Other Rooms
 create-room = Create Room
 create-space = Create Space
 room-name = Room Name
+room-has-no-avatar = 🚪
 space-name = Space Name
 cancel = Cancel
 create = Create

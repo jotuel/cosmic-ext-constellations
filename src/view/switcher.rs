@@ -8,7 +8,7 @@ use cosmic::{
     },
 };
 
-impl Constellations {
+impl<'switcher> Constellations {
     pub fn view_space_switcher(&self) -> Element<'_, Message> {
         let mut content = Column::new().spacing(10).align_x(Alignment::Center);
 
@@ -38,52 +38,7 @@ impl Constellations {
             let is_selected =
                 self.selected_space.as_ref().map(|s| s.as_str()) == Some(&*space_id_str);
 
-            let avatar_element: Element<'_, Message> = if let Some(url) = &space.avatar_url {
-                if let Some(handle) = self.media_cache.get(url) {
-                    cosmic::widget::image(handle.clone())
-                        .width(32)
-                        .height(32)
-                        .into()
-                } else {
-                    container(
-                        text::body(
-                            space
-                                .name
-                                .as_deref()
-                                .unwrap_or("S")
-                                .chars()
-                                .next()
-                                .unwrap_or('S')
-                                .to_string(),
-                        )
-                        .size(24),
-                    )
-                    .width(32)
-                    .height(32)
-                    .align_x(Alignment::Center)
-                    .align_y(Alignment::Center)
-                    .into()
-                }
-            } else {
-                container(
-                    text::body(
-                        space
-                            .name
-                            .as_deref()
-                            .unwrap_or("S")
-                            .chars()
-                            .next()
-                            .unwrap_or('S')
-                            .to_string(),
-                    )
-                    .size(24),
-                )
-                .width(32)
-                .height(32)
-                .align_x(Alignment::Center)
-                .align_y(Alignment::Center)
-                .into()
-            };
+            let avatar_element = self.view_avatar_space(space);
 
             let space_container = container(avatar_element)
                 .padding(8)
@@ -104,41 +59,10 @@ impl Constellations {
 
         let scrollable_spaces = scrollable(content).height(cosmic::iced::Length::Fill);
 
-        let mut bottom_content = Column::new().spacing(10).align_x(Alignment::Center);
-
-        let plus_btn = button::icon(Named::new("list-add-symbolic"));
-        let plus_tooltip = tooltip(plus_btn, text::body("Create"), Position::Right);
-        let key_binds = std::collections::HashMap::new();
-
-        let menu_tree = menu::Tree::with_children(
-            RcElementWrapper::new(Element::from(plus_tooltip)),
-            menu::items(
-                &key_binds,
-                vec![
-                    menu::Item::Button(
-                        crate::fl!("create-room"),
-                        Some(cosmic::widget::icon::Handle::from(Named::new(
-                            "chat-symbolic",
-                        ))),
-                        MenuAct::CreateRoom,
-                    ),
-                    menu::Item::Button(
-                        crate::fl!("create-space"),
-                        Some(cosmic::widget::icon::Handle::from(Named::new(
-                            "network-workgroup-symbolic",
-                        ))),
-                        MenuAct::CreateSpace,
-                    ),
-                ],
-            ),
-        );
-
-        let create_menu = menu::bar(vec![menu_tree])
-            .item_height(menu::ItemHeight::Dynamic(40))
-            .item_width(menu::ItemWidth::Uniform(160))
-            .spacing(4.0);
-
-        bottom_content = bottom_content.push(create_menu);
+        let bottom_content = Column::new()
+            .push(view_menu_create())
+            .spacing(10)
+            .align_x(Alignment::Center);
 
         let layout = Column::new()
             .push(scrollable_spaces)
@@ -146,6 +70,56 @@ impl Constellations {
             .align_x(Alignment::Center);
 
         container(layout).width(60).padding(5).into()
+    }
+
+    fn view_avatar_space(&self, space: &crate::matrix::RoomData) -> Element<'switcher, Message> {
+        let avatar_element: Element<'switcher, Message> = if let Some(url) = &space.avatar_url {
+            if let Some(handle) = self.media_cache.get(url) {
+                cosmic::widget::image(handle.clone())
+                    .width(32)
+                    .height(32)
+                    .into()
+            } else {
+                container(
+                    text::body(
+                        space
+                            .name
+                            .as_deref()
+                            .unwrap_or("S")
+                            .chars()
+                            .next()
+                            .unwrap_or('S')
+                            .to_string(),
+                    )
+                    .size(24),
+                )
+                .width(32)
+                .height(32)
+                .align_x(Alignment::Center)
+                .align_y(Alignment::Center)
+                .into()
+            }
+        } else {
+            container(
+                text::body(
+                    space
+                        .name
+                        .as_deref()
+                        .unwrap_or("S")
+                        .chars()
+                        .next()
+                        .unwrap_or('S')
+                        .to_string(),
+                )
+                .size(24),
+            )
+            .width(32)
+            .height(32)
+            .align_x(Alignment::Center)
+            .align_y(Alignment::Center)
+            .into()
+        };
+        avatar_element
     }
 
     pub fn view_sidebar(&self) -> Element<'_, Message> {
@@ -236,37 +210,10 @@ impl Constellations {
 
         for &room_idx in &self.filtered_room_list {
             let room = &self.room_list[room_idx];
-            let name = room.name.as_deref().unwrap_or("Unknown Room");
             let room_id = room.id.clone();
-
             let mut room_content = Column::new().spacing(2);
 
-            let mut header = Row::new().spacing(10).align_y(Alignment::Center);
-
-            if let Some(avatar_url) = &room.avatar_url {
-                if let Some(handle) = self.media_cache.get(avatar_url) {
-                    header =
-                        header.push(cosmic::widget::image(handle.clone()).width(24).height(24));
-                } else {
-                    header = header.push(
-                        container(text::body("🚪"))
-                            .width(24)
-                            .height(24)
-                            .align_x(Alignment::Center)
-                            .align_y(Alignment::Center),
-                    );
-                }
-            } else {
-                header = header.push(
-                    container(text::body("🚪"))
-                        .width(24)
-                        .height(24)
-                        .align_x(Alignment::Center)
-                        .align_y(Alignment::Center),
-                );
-            }
-
-            header = header.push(text::body(name));
+            let mut header = self.view_avatar_room(room);
 
             if let Some(unread_str) = &room.unread_count_str {
                 header = header.push(text::body(unread_str.as_str()).size(12));
@@ -320,7 +267,7 @@ impl Constellations {
 
                 if !has_avatar {
                     header = header.push(
-                        container(text::body("🚪"))
+                        container(text::body(crate::fl!("room-has-no-avatar")))
                             .width(24)
                             .height(24)
                             .align_x(Alignment::Center)
@@ -363,4 +310,69 @@ impl Constellations {
             .padding(10)
             .into()
     }
+
+    fn view_avatar_room(
+        &self,
+        room: &'switcher crate::matrix::RoomData,
+    ) -> Row<'switcher, Message, cosmic::prelude::Theme> {
+        let name = text::body(room.name.as_deref().unwrap_or("Unknown Room"));
+        let header = Row::new().push(name).spacing(10).align_y(Alignment::Center);
+        let default_avatar = crate::fl!("room-has-no-avatar");
+        if let Some(avatar_url) = &room.avatar_url {
+            if let Some(handle) = self.media_cache.get(avatar_url) {
+                header.push(cosmic::widget::image(handle.clone()).width(24).height(24))
+            } else {
+                header.push(
+                    container(text::body(default_avatar))
+                        .width(24)
+                        .height(24)
+                        .align_x(Alignment::Center)
+                        .align_y(Alignment::Center),
+                )
+            }
+        } else {
+            header.push(
+                container(text::body(default_avatar))
+                    .width(24)
+                    .height(24)
+                    .align_x(Alignment::Center)
+                    .align_y(Alignment::Center),
+            )
+        }
+    }
+}
+
+fn view_menu_create() -> menu::MenuBar<Message> {
+    let plus_btn = button::icon(Named::new("list-add-symbolic"));
+    let plus_tooltip = tooltip(plus_btn, text::body("Create"), Position::Right);
+    let key_binds = std::collections::HashMap::new();
+
+    let menu_tree = menu::Tree::with_children(
+        RcElementWrapper::new(Element::from(plus_tooltip)),
+        menu::items(
+            &key_binds,
+            vec![
+                menu::Item::Button(
+                    crate::fl!("create-room"),
+                    Some(cosmic::widget::icon::Handle::from(Named::new(
+                        "chat-symbolic",
+                    ))),
+                    MenuAct::CreateRoom,
+                ),
+                menu::Item::Button(
+                    crate::fl!("create-space"),
+                    Some(cosmic::widget::icon::Handle::from(Named::new(
+                        "network-workgroup-symbolic",
+                    ))),
+                    MenuAct::CreateSpace,
+                ),
+            ],
+        ),
+    );
+
+    let create_menu = menu::bar(vec![menu_tree])
+        .item_height(menu::ItemHeight::Dynamic(40))
+        .item_width(menu::ItemWidth::Uniform(160))
+        .spacing(4.0);
+    create_menu
 }
