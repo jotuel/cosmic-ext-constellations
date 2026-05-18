@@ -43,3 +43,6 @@
 ## 2024-05-15 - [Correct Fallback Initialization in String Filtering loops]
 **Learning:** In Rust UI loops, when computing case-insensitive string fallbacks, avoid conditionally initializing to an empty string (`""`) or computing `.to_lowercase()` unconditionally. An empty string evaluates to true in `.contains()` checks, breaking filtering.
 **Action:** Instead, use an `Option<String>` pattern like `let fallback = (!is_ascii).then(|| string.to_lowercase())` and pass it via `.as_deref()` to the search method. This ensures the expensive `to_lowercase()` allocation only happens if strictly necessary, without breaking filtering logic with dummy empty string variables.
+## 2026-05-18 - [Safe Vec reuse with std::mem::take]
+**Learning:** In Rust UI state management, when passing a reused `Vec` buffer via `std::mem::take` into a bulk update method that acquires a lock (e.g., `filter_in_space_bulk_sync`), clearing the buffer *before* acquiring the lock results in UI flicker and lost data if the lock fails.
+**Action:** Always call `.clear()` on the buffer *inside* the success branch of the lock. This ensures that if the lock fails, the unmodified original `Vec` can be safely restored via reassignment, preventing UI flickering and preserving memory capacity.
