@@ -564,8 +564,8 @@ impl Constellations {
 
         if let Some(selected_space) = &self.selected_space {
             if let Some(matrix) = &self.matrix {
-                // ⚡ Bolt Optimization: Use a temporary vector to avoid clearing the list if the lock fails
-                let mut rooms = Vec::with_capacity(self.room_list.len());
+                // ⚡ Bolt Optimization: Reuse the existing vector allocation to avoid O(N) allocation on every keystroke
+                let mut rooms = std::mem::take(&mut self.filtered_room_list);
 
                 if matrix.filter_in_space_bulk_sync(
                     self.room_list
@@ -589,6 +589,7 @@ impl Constellations {
                     self.filtered_room_list = rooms;
                 } else {
                     // If we couldn't get the lock, just return and keep the old list
+                    self.filtered_room_list = rooms;
                     return;
                 }
             }

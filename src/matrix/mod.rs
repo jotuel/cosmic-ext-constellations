@@ -1978,6 +1978,7 @@ impl MatrixEngine {
     {
         match self.inner.try_read() {
             Ok(inner) => {
+                out.clear();
                 // Bolt Optimization: Calculate all space descendants once (O(S))
                 // to avoid O(N) string parsing and O(N * D) tree traversals.
                 let mut descendants = inner.space_hierarchy.get_descendants_strs(space_id);
