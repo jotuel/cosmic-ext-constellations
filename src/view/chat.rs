@@ -13,7 +13,7 @@ use matrix_sdk::ruma::events::room::{MediaSource, message::MessageType};
 
 use crate::{Constellations, Message, PreviewEvent, matrix};
 
-impl Constellations {
+impl<'chat> Constellations {
     pub fn view_timeline(&self) -> Element<'_, Message> {
         let mut timeline = Column::new().spacing(10).width(cosmic::iced::Length::Fill);
 
@@ -431,62 +431,6 @@ impl Constellations {
                 }
             }
 
-            let has_thread_root = event.content().thread_root().is_some();
-
-            let mut num_replies = event
-                .content()
-                .thread_summary()
-                .map(|s| s.num_replies)
-                .unwrap_or(0);
-
-            // Manual count if summary is missing or incomplete (due to view-side filtering)
-            if let Some(event_id) = event.event_id() {
-                let manual_count = self
-                    .timeline_items
-                    .iter()
-                    .filter(|i| {
-                        i.item
-                            .as_event()
-                            .and_then(|e| e.content().thread_root())
-                            .map(|r| r == event_id)
-                            .unwrap_or(false)
-                    })
-                    .count() as u32;
-                if manual_count > num_replies {
-                    num_replies = manual_count;
-                }
-            }
-
-            if num_replies > 0 && !has_thread_root && self.active_thread_root.is_none() {
-                let summary_row = Row::new()
-                    .spacing(5)
-                    .align_y(Alignment::Center)
-                    .push(
-                        text::body(format!(
-                            "{} {}",
-                            num_replies,
-                            if num_replies == 1 {
-                                crate::fl!("reply")
-                            } else {
-                                crate::fl!("replies")
-                            }
-                        ))
-                        .size(12),
-                    )
-                    .push(cosmic::widget::icon::from_name("chat-bubble-symbolic").size(14));
-
-                let summary_btn = button::custom(container(summary_row).padding([0, 5])).on_press(
-                    match event.identifier() {
-                        matrix::TimelineEventItemId::EventId(id) => {
-                            Message::OpenThread(id.to_owned())
-                        }
-                        _ => Message::NoOp,
-                    },
-                );
-
-                bubble_col = bubble_col.push(container(summary_btn).padding([5, 0]));
-            }
-
             let mut action_row = Row::new().spacing(5).align_y(Alignment::Center);
 
             // "Add reaction" button
@@ -543,9 +487,9 @@ impl Constellations {
                 action_row = action_row.push(delete_tooltip);
             }
 
-            bubble_col = bubble_col.push(action_row);
-
             bubble_col = bubble_col.push(reaction_row);
+            action_row = action_row.push(self.view_thread_summary(event));
+            bubble_col = bubble_col.push(action_row);
 
             let bubble = container(bubble_col)
                 .padding(if self.app_settings.compact_mode {
@@ -555,7 +499,7 @@ impl Constellations {
                 })
                 .max_width(600);
 
-            let bubble_wrapper =
+            let bubble_wrap =
                 container(bubble)
                     .width(cosmic::iced::Length::Fill)
                     .align_x(if is_me {
@@ -564,9 +508,138 @@ impl Constellations {
                         Alignment::Start
                     });
 
-            return bubble_wrapper.into();
+            return bubble_wrap.into();
         }
         cosmic::widget::space().height(0).into()
+    }
+
+    fn view_thread_summary(
+        &'chat self,
+        event: &matrix_sdk_ui::timeline::EventTimelineItem,
+    ) -> cosmic::widget::Container<'chat, Message, cosmic::Theme> {
+        let has_thread_root = event.content().thread_root().is_some();
+
+        let mut num_replies = event
+            .content()
+            .thread_summary()
+            .map(|s| s.num_replies)
+            .unwrap_or_default();
+
+        // Manual count if summary is missing or incomplete (due to view-side filtering)
+        if let Some(event_id) = event.event_id() {
+            let manual_count = self
+                .timeline_items
+                .iter()
+                .filter(|i| {
+                    i.item
+                        .as_event()
+                        .and_then(|e| e.content().thread_root())
+                        .map(|r| r == event_id)
+                        .unwrap_or(false)
+                })
+                .count() as u32;
+            if manual_count > num_replies {
+                num_replies = manual_count;
+            }
+        }
+
+        if num_replies > 0 && !has_thread_root && self.active_thread_root.is_none() {
+            let mut latest_sender = None;
+            let mut latest_body = None;
+
+            if let Some(summary) = event.content().thread_summary() {
+                if let matrix_sdk_ui::timeline::TimelineDetails::Ready(latest_ev) =
+                    &summary.latest_event
+                {
+                    // Try to find in timeline_items for better profile info
+                    if let Some(item) = self.timeline_items.iter().rfind(|i| {
+                        i.item
+                            .as_event()
+                            .and_then(|e| e.event_id())
+                            .map(|id| match &latest_ev.identifier {
+                                matrix::TimelineEventItemId::EventId(eid) => id == eid,
+                                _ => false,
+                            })
+                            .unwrap_or(false)
+                    }) {
+                        latest_sender = Some(item.sender_name.clone());
+                        if let Some(ev) = item.item.as_event() {
+                            if let Some(msg) = ev.content().as_message() {
+                                latest_body = Some(msg.body().to_string());
+                            }
+                        }
+                    } else {
+                        // Use info from embedded event
+                        latest_sender = Some(latest_ev.sender.to_string());
+                        if let Some(msg) = latest_ev.content.as_message() {
+                            latest_body = Some(msg.body().to_string());
+                        }
+                    }
+                }
+            }
+
+            // If we still don't have it (e.g. summary was missing or not ready),
+            // try manual search by thread root
+            if latest_body.is_none() {
+                if let Some(event_id) = event.event_id() {
+                    if let Some(item) = self.timeline_items.iter().rfind(|i| {
+                        i.item
+                            .as_event()
+                            .and_then(|e| e.content().thread_root())
+                            .map(|r| r == event_id)
+                            .unwrap_or(false)
+                    }) {
+                        latest_sender = Some(item.sender_name.clone());
+                        if let Some(ev) = item.item.as_event() {
+                            if let Some(msg) = ev.content().as_message() {
+                                latest_body = Some(msg.body().to_string());
+                            }
+                        }
+                    }
+                }
+            }
+
+            let mut summary_row = Row::new()
+                .spacing(5)
+                .align_y(Alignment::Center)
+                .push(
+                    text::body(format!(
+                        "{} {}",
+                        num_replies,
+                        if num_replies == 1 {
+                            crate::fl!("reply")
+                        } else {
+                            crate::fl!("replies")
+                        }
+                    ))
+                    .size(12),
+                )
+                .push(cosmic::widget::icon::from_name("chat-bubble-symbolic").size(14));
+
+            if let Some(mut body) = latest_body {
+                if body.len() > 30 {
+                    body.truncate(27);
+                    body.push_str("...");
+                }
+
+                if !body.is_empty() {
+                    let sender = latest_sender.unwrap_or_else(|| "Unknown".to_string());
+                    summary_row =
+                        summary_row.push(text::body(format!("{}: {}", sender, body)).size(12));
+                }
+            }
+
+            let summary_btn = button::custom(container(summary_row).padding([0, 5])).on_press(
+                match event.identifier() {
+                    matrix::TimelineEventItemId::EventId(id) => Message::OpenThread(id.to_owned()),
+                    _ => Message::NoOp,
+                },
+            );
+
+            container(summary_btn).padding([5, 0])
+        } else {
+            container(text(""))
+        }
     }
 
     #[rust_analyzer::skip]

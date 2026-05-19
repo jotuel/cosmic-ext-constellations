@@ -22,9 +22,9 @@ impl<'switcher> Constellations {
         let is_global_selected = self.selected_space.is_none();
 
         let global_btn = if is_global_selected {
-            button::icon(Named::new("system-users"))
+            button::icon(Named::new("web-browser"))
         } else {
-            button::icon(Named::new("system-users")).on_press(Message::SelectSpace(None))
+            button::icon(Named::new("web-browser")).on_press(Message::SelectSpace(None))
         };
 
         let global_tooltip = tooltip(

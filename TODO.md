@@ -12,9 +12,9 @@
 
 [x] Fluent for localization
 
-[ ] Implement real time audio connections
+[\(\frac{1}{2}\)] Implement real time audio connections
 
-[ ] Video connections using MatrixRTC
+[\(\frac{1}{2}\)] Video connections using MatrixRTC
 
 [ ] Way to enlarge images
 
