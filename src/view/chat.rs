@@ -146,7 +146,7 @@ impl<'chat> Constellations {
         avatar_url: Option<&'a str>,
         sender_name: &'a str,
         timestamp: &'a str,
-        sender_id: Option<matrix_sdk::ruma::OwnedUserId>,
+        sender_id: Option<&'a matrix_sdk::ruma::UserId>,
         is_ignored: bool,
         is_me: bool,
     ) -> Row<'a, Message, cosmic::Theme> {
@@ -176,7 +176,7 @@ impl<'chat> Constellations {
                 sender_info = sender_info.push(
                     button::icon(Named::new("dialog-error-symbolic"))
                         .on_press(Message::UserSettings(
-                            crate::settings::user::Message::UnignoreUserById(id),
+                            crate::settings::user::Message::UnignoreUserById(id.to_owned()),
                         ))
                         .tooltip(crate::fl!("unignore-user")),
                 );
@@ -184,7 +184,7 @@ impl<'chat> Constellations {
                 sender_info = sender_info.push(
                     button::icon(Named::new("dialog-error-symbolic"))
                         .on_press(Message::UserSettings(
-                            crate::settings::user::Message::IgnoreUserById(id),
+                            crate::settings::user::Message::IgnoreUserById(id.to_owned()),
                         ))
                         .tooltip(crate::fl!("ignore")),
                 );
@@ -383,7 +383,7 @@ impl<'chat> Constellations {
                 item.avatar_url.as_deref(),
                 item.sender_name.as_str(),
                 item.timestamp.as_str(),
-                Some(item.sender_id.clone()),
+                Some(&item.sender_id),
                 is_ignored,
                 is_me,
             );
@@ -463,7 +463,7 @@ impl<'chat> Constellations {
             action_row = action_row.push(action_tooltip);
 
             let reply_btn =
-                button::text(crate::fl!("reply")).on_press(Message::StartReply(item.clone()));
+                button::text(crate::fl!("reply")).on_press(Message::StartReply(event.identifier().clone()));
             let reply_tooltip = tooltip(
                 reply_btn,
                 text::body(crate::fl!("tooltip-reply")),
@@ -473,7 +473,7 @@ impl<'chat> Constellations {
 
             if is_me {
                 let edit_btn =
-                    button::text(crate::fl!("edit")).on_press(Message::StartEdit(item.clone()));
+                    button::text(crate::fl!("edit")).on_press(Message::StartEdit(event.identifier().clone()));
                 let edit_tooltip = tooltip(
                     edit_btn,
                     text::body(crate::fl!("tooltip-edit")),
@@ -812,14 +812,14 @@ impl<'chat> Constellations {
 
         let mut attachments_view = Column::new().spacing(5);
         if !self.composer_attachments.is_empty() {
-            attachments_view = attachments_view.push(text::body("Attachments:").size(12));
+            attachments_view = attachments_view.push(text::body(crate::fl!("attachments")).size(12));
             for (i, path) in self.composer_attachments.iter().enumerate() {
                 let filename = path.file_name().unwrap_or_default().to_string_lossy();
                 let attachment_row = Row::new()
                     .spacing(10)
                     .align_y(Alignment::Center)
                     .push(text::body(filename).size(12))
-                    .push(button::destructive("Remove").on_press(Message::RemoveAttachment(i)));
+                    .push(button::destructive(crate::fl!("remove-attachment")).on_press(Message::RemoveAttachment(i)));
                 attachments_view = attachments_view.push(attachment_row);
             }
         }
