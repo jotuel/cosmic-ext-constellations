@@ -13,10 +13,6 @@ use matrix_sdk::ruma::events::space::parent::SpaceParentEventContent;
 use matrix_sdk::{
     Client, Room, SessionChange, SessionTokens,
     ruma::{OwnedDeviceId, OwnedRoomId, RoomId, UserId, room::RoomType},
-    widget::{
-        ClientProperties, VirtualElementCallWidgetConfig, VirtualElementCallWidgetProperties,
-        WidgetSettings,
-    },
 };
 pub use matrix_sdk_ui::room_list_service::{RoomListDynamicEntriesController, RoomListService};
 use matrix_sdk_ui::sync_service::SyncService;
@@ -52,8 +48,9 @@ struct LiveKitRtcFocus {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct LiveKitAuthResponse {
-    #[serde(default)]
+    #[serde(alias = "url", default)]
     livekit_url: Option<String>,
+    #[serde(alias = "jwt")]
     token: String,
 }
 
@@ -2363,23 +2360,7 @@ impl MatrixEngine {
         }
     }
 
-    pub async fn get_element_call_url(&self, room_id: &RoomId) -> Result<Url> {
-        let client = self.client().await;
-        let room = client.get_room(room_id).context("Room not found")?;
 
-        let props = VirtualElementCallWidgetProperties {
-            element_call_url: "https://call.element.io".to_owned(),
-            widget_id: "element-call".to_owned(),
-            ..Default::default()
-        };
-        let config = VirtualElementCallWidgetConfig::default();
-
-        let settings = WidgetSettings::new_virtual_element_call_widget(props, config)?;
-        let client_props = ClientProperties::new("fi.joonastuomi.Constellations", None, None);
-
-        let url = settings.generate_webview_url(&room, client_props).await?;
-        Ok(url)
-    }
 
     pub async fn get_livekit_token(&self, room_id: &RoomId) -> Result<(String, String)> {
         let client = self.client().await;
@@ -2387,7 +2368,8 @@ impl MatrixEngine {
         // 1. Get OpenID token
         use matrix_sdk::ruma::api::client::account::request_openid_token;
         let user_id = client.user_id().context("No user ID")?.to_owned();
-        let request = request_openid_token::v3::Request::new(user_id);
+        let device_id = client.device_id().context("No device ID")?.to_string();
+        let request = request_openid_token::v3::Request::new(user_id.clone());
         let openid_token = client.send(request).await?;
 
         // 2. Discover LiveKit service
@@ -2405,20 +2387,28 @@ impl MatrixEngine {
         // 3. Exchange OpenID for LiveKit JWT
         let mut auth_url = Url::parse(&focus.livekit_service_url)?;
         if auth_url.path().is_empty() || auth_url.path() == "/" {
-            auth_url = auth_url.join("get")?;
+            auth_url = auth_url.join("get_token")?;
         }
         info!("Sending auth request to: {}", auth_url);
+
+        let member_id = format!("{:016x}", rand::random::<u64>());
 
         let response = reqwest::Client::new()
             .post(auth_url)
             .json(&serde_json::json!({
                 "room_id": room_id,
+                "slot_id": "m.call#ROOM",
                 "openid_token": {
                     "access_token": openid_token.access_token,
-                    "expires_in": openid_token.expires_in,
+                    "expires_in": openid_token.expires_in.as_secs(),
                     "matrix_server_name": openid_token.matrix_server_name,
                     "token_type": openid_token.token_type,
                 },
+                "member": {
+                    "id": member_id,
+                    "claimed_user_id": user_id,
+                    "claimed_device_id": device_id,
+                }
             }))
             .send()
             .await?;

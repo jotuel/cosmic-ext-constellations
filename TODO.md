@@ -8,19 +8,33 @@
 
 [ ] Sync error messages stays even after resolving issue
 
-[ ] Latest message from Room no longer shows up
+[ ] Date divider without any messages in between
+
+[x] Latest message from Room no longer shows up
+
+[ ] When you have a Room open and you switch Space its name changes from actual to "Room"
 
 # ***General***
 
+[ ] Remove the surrounding bubble from around Space avatars
+
 [x] Fluent for localization
 
-[\(\frac{1}{2}\)] Implement real time audio connections
+[ ] Implement real time audio connections (currently delegates to Element Call via browser)
 
-[\(\frac{1}{2}\)] Video connections using MatrixRTC
+[ ] Video connections using MatrixRTC (currently delegates to Element Call via browser)
 
-[ ] Way to enlarge images
+[x] Way to enlarge images
 
 [ ] Implement every Setting (autoloading images, typing notifications etc...)
+
+[ ] Logging in via QR code
+
+[ ] Refactor code into smaller functions moved into smaller files
+
+[ ] Location sharing in chat editor
+
+[ ] One unified error info display mechanism
 
 # ***Search***
 
@@ -50,13 +64,15 @@
 
 [x] Always use sliding sync, remove Load more button
 
-[ ] Improve UI (emoji picker, better threading)
+[x] Improve UI (emoji picker, better threading)
 
 # ***Notifications***
 
 [x] Notifications support
 
 [x] Settings for Notifications
+
+[ ] Notification for Errors?
 
 # ***Settings***
 ## **Application**

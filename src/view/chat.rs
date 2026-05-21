@@ -877,7 +877,7 @@ impl<'chat> Constellations {
                         .tooltip(crate::fl!("call-leave"))
                 } else {
                     button::icon(Named::new("camera-web"))
-                        .on_press(Message::JoinElementCall)
+                        .on_press(Message::JoinCall)
                         .tooltip(crate::fl!("call-join"))
                 })
                 .push(

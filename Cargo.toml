@@ -53,9 +53,12 @@ i18n-embed-fl = "0.10"
 rust-embed = "8"
 unic-langid = "0.9"
 mimalloc = { version = "0.1.50", features = ["secure"] }
-livekit = "0.7"
+livekit = { version = "0.7", features = ["rustls-tls-native-roots"] }
+ashpd = "0.10"
 reqwest = { version = "0.13", features = ["json"] }
 emojis = "0.8"
+rustls = { version = "0.23", features = ["ring"] }
+
 
 
 [dev-dependencies]

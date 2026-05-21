@@ -278,7 +278,6 @@ pub enum Message {
     ToggleSearch,
     SearchQueryChanged(String),
     JoinCall,
-    JoinElementCall,
     LeaveCall,
     CallJoined(Result<(), String>),
     CallLeft(Result<(), String>),
@@ -1717,27 +1716,6 @@ impl Application for Constellations {
                 Task::none()
             }
             Message::JoinCall => self.handle_join_call(),
-            Message::JoinElementCall => {
-                if let (Some(matrix), Some(room_id)) = (&self.matrix, &self.selected_room) {
-                    let matrix = matrix.clone();
-                    let room_id = room_id.clone();
-                    return Task::perform(
-                        async move {
-                            let rid = matrix_sdk::ruma::RoomId::parse(&*room_id)
-                                .map_err(|e| e.to_string())?;
-                            matrix
-                                .get_element_call_url(&rid)
-                                .await
-                                .map_err(|e| e.to_string())
-                        },
-                        |res| match res {
-                            Ok(url) => Message::OpenUrl(url.to_string()).into(),
-                            Err(e) => Message::CallJoined(Err(e)).into(),
-                        },
-                    );
-                }
-                Task::none()
-            }
             Message::LeaveCall => self.handle_leave_call(),
             Message::CallJoined(res) => {
                 if let Err(e) = res {
@@ -1937,6 +1915,7 @@ fn redact_url(url: &Url) -> String {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let _ = rustls::crypto::ring::default_provider().install_default();
     LazyLock::force(&i18n::LOAD_LOCALIZATION);
 
     tracing_subscriber::fmt()

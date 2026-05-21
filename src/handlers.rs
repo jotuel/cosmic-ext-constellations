@@ -458,17 +458,12 @@ impl Constellations {
             let room_id = room_id.clone();
             Task::perform(
                 async move {
-                    let rid =
-                        matrix_sdk::ruma::RoomId::parse(&*room_id).map_err(|e| e.to_string())?;
                     matrix
-                        .get_element_call_url(&rid)
+                        .join_call(&room_id)
                         .await
                         .map_err(|e| e.to_string())
                 },
-                |res| match res {
-                    Ok(url) => Action::from(Message::OpenUrl(url.to_string())),
-                    Err(e) => Action::from(Message::CallJoined(Err(e))),
-                },
+                |res| Action::from(Message::CallJoined(res)),
             )
         } else {
             Task::none()

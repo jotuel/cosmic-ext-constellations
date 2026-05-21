@@ -315,6 +315,23 @@ dependencies = [
 
 [[package]]
 name = "ashpd"
+version = "0.10.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "de3d60bee1a1d38c2077030f4788e1b4e31058d2e79a8cfc8f2b440bd44db290"
+dependencies = [
+ "enumflags2",
+ "futures-channel",
+ "futures-util",
+ "rand 0.8.6",
+ "serde",
+ "serde_repr",
+ "tokio",
+ "url",
+ "zbus",
+]
+
+[[package]]
+name = "ashpd"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2f3f79755c74fd155000314eb349864caa787c6592eace6c6882dad873d9c39"
@@ -1611,6 +1628,7 @@ name = "cosmic-ext-constellations"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "ashpd 0.10.3",
  "chrono",
  "cosmic-text",
  "dirs",
@@ -1640,6 +1658,7 @@ dependencies = [
  "ruma-events",
  "rusqlite",
  "rust-embed",
+ "rustls",
  "serde",
  "serde_json",
  "serial_test",
@@ -4996,12 +5015,14 @@ dependencies = [
  "prost 0.12.6",
  "rand 0.9.4",
  "reqwest 0.12.28",
+ "rustls-native-certs",
  "scopeguard",
  "serde",
  "serde_json",
  "sha2",
  "thiserror 2.0.18",
  "tokio",
+ "tokio-rustls",
  "tokio-tungstenite",
  "url",
 ]
@@ -9515,7 +9536,11 @@ checksum = "8f72a05e828585856dacd553fba484c242c46e391fb0e58917c942ee9202915c"
 dependencies = [
  "futures-util",
  "log",
+ "rustls",
+ "rustls-native-certs",
+ "rustls-pki-types",
  "tokio",
+ "tokio-rustls",
  "tungstenite",
 ]
 
@@ -9756,6 +9781,8 @@ dependencies = [
  "httparse",
  "log",
  "rand 0.9.4",
+ "rustls",
+ "rustls-pki-types",
  "sha1",
  "thiserror 2.0.18",
  "url",
