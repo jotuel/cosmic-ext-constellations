@@ -238,8 +238,8 @@ where
                 state.is_dragging = false;
                 shell.request_redraw();
             }
-            Event::Mouse(mouse::Event::CursorMoved { .. }) => {
-                if state.is_dragging {
+            Event::Mouse(mouse::Event::CursorMoved { .. })
+                if state.is_dragging => {
                     let cursor_pos = cursor.position().unwrap_or(Point::ORIGIN);
                     let buf_x = cursor_pos.x - bounds.x;
                     let buf_y = cursor_pos.y - bounds.y - y_offset;
@@ -253,7 +253,6 @@ where
                     shell.capture_event();
                     shell.request_redraw();
                 }
-            }
             _ => {}
         }
     }

@@ -838,22 +838,17 @@ impl MatrixEngine {
 
             match keyring.search_items(&attributes).await {
                 Ok(items) => {
-                    if let Some(item) = items.first() {
-                        if let Ok(secret) = item.secret().await {
+                    if let Some(item) = items.first()
+                        && let Ok(secret) = item.secret().await {
                             break 'find_secret Some(secret.to_vec());
                         }
-                    }
                 }
                 Err(e) => {
                     tracing::warn!("Failed to search Keyring items for restore: {}. Attempting file-based fallback.", e);
                 }
             }
 
-            if let Some(data) = use_fallback()? {
-                Some(data)
-            } else {
-                None
-            }
+            use_fallback()?
         };
 
         let Some(secret) = secret_data else {
@@ -2204,11 +2199,10 @@ impl MatrixEngine {
     pub(crate) async fn get_or_create_store_passphrase() -> Result<String> {
         let use_fallback = || {
             let path = Self::get_fallback_path("store-passphrase");
-            if path.exists() {
-                if let Ok(passphrase) = std::fs::read_to_string(&path) {
+            if path.exists()
+                && let Ok(passphrase) = std::fs::read_to_string(&path) {
                     return Ok(passphrase);
                 }
-            }
             let mut buf = [0u8; 32];
             SysRng
                 .try_fill_bytes(&mut buf)
@@ -2226,7 +2220,7 @@ impl MatrixEngine {
             Ok(k) => k,
             Err(e) => {
                 if std::env::var("CONSTELLATIONS_DISABLE_FALLBACK").is_ok() {
-                    return Err(e.into());
+                    return Err(e);
                 }
                 tracing::warn!("Failed to initialize Keyring: {}. Falling back to file-based passphrase storage.", e);
                 return use_fallback();
@@ -2239,13 +2233,11 @@ impl MatrixEngine {
 
         match keyring.search_items(&attributes).await {
             Ok(items) => {
-                if let Some(item) = items.first() {
-                    if let Ok(secret) = item.secret().await {
-                        if let Ok(passphrase) = String::from_utf8(secret.to_vec()) {
+                if let Some(item) = items.first()
+                    && let Ok(secret) = item.secret().await
+                        && let Ok(passphrase) = String::from_utf8(secret.to_vec()) {
                             return Ok(passphrase);
                         }
-                    }
-                }
             }
             Err(e) => {
                 if std::env::var("CONSTELLATIONS_DISABLE_FALLBACK").is_ok() {
@@ -2259,8 +2251,8 @@ impl MatrixEngine {
         // Before generating a new passphrase, check if a fallback file already exists
         // to keep it stable across calls in environments where keyring is broken/partially functional.
         let path = Self::get_fallback_path("store-passphrase");
-        if path.exists() {
-            if let Ok(passphrase) = std::fs::read_to_string(&path) {
+        if path.exists()
+            && let Ok(passphrase) = std::fs::read_to_string(&path) {
                 // Try to write it to keyring in case it is now writable
                 let _ = keyring
                     .create_item(
@@ -2272,7 +2264,6 @@ impl MatrixEngine {
                     .await;
                 return Ok(passphrase);
             }
-        }
 
         let mut buf = [0u8; 32];
         SysRng

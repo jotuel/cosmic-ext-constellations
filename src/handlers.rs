@@ -155,9 +155,9 @@ impl Constellations {
                 }
 
                 // Fetch image if enabled
-                if self.user_settings.media_previews_display_policy {
-                    if let Some(message) = event.content().as_message() {
-                        if let MessageType::Image(image) = message.msgtype() {
+                if self.user_settings.media_previews_display_policy
+                    && let Some(message) = event.content().as_message()
+                        && let MessageType::Image(image) = message.msgtype() {
                             let mxc_url = match &image.source {
                                 MediaSource::Plain(uri) => uri.to_string(),
                                 MediaSource::Encrypted(file) => file.url.to_string(),
@@ -177,8 +177,6 @@ impl Constellations {
                                 );
                             }
                         }
-                    }
-                }
             }
         };
 
@@ -240,9 +238,9 @@ impl Constellations {
                     }
                 }
 
-                if self.user_settings.media_previews_display_policy {
-                    if let Some(message) = event.content().as_message() {
-                        if let MessageType::Image(image) = message.msgtype() {
+                if self.user_settings.media_previews_display_policy
+                    && let Some(message) = event.content().as_message()
+                        && let MessageType::Image(image) = message.msgtype() {
                             let mxc_url = match &image.source {
                                 MediaSource::Plain(uri) => uri.to_string(),
                                 MediaSource::Encrypted(file) => file.url.to_string(),
@@ -264,8 +262,6 @@ impl Constellations {
                                 );
                             }
                         }
-                    }
-                }
             }
         };
 

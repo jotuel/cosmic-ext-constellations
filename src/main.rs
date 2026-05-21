@@ -1240,12 +1240,11 @@ impl Application for Constellations {
                     .iter()
                     .chain(self.threaded_timeline_items.iter())
                 {
-                    if let Some(event) = item.item.as_event() {
-                        if event.identifier() == item_id {
+                    if let Some(event) = item.item.as_event()
+                        && event.identifier() == item_id {
                             found_item = Some(item.clone());
                             break;
                         }
-                    }
                 }
                 self.replying_to = found_item;
                 Task::none()
@@ -1369,15 +1368,14 @@ impl Application for Constellations {
                     .iter()
                     .chain(self.threaded_timeline_items.iter())
                 {
-                    if let Some(event) = item.item.as_event() {
-                        if event.identifier() == item_id {
+                    if let Some(event) = item.item.as_event()
+                        && event.identifier() == item_id {
                             found_item = Some(item.clone());
                             break;
                         }
-                    }
                 }
-                if let Some(item) = found_item {
-                    if let Some(event) = item.item.as_event()
+                if let Some(item) = found_item
+                    && let Some(event) = item.item.as_event()
                         && let Some(msg) = event.content().as_message()
                     {
                         self.composer_text = msg.body().to_string();
@@ -1385,7 +1383,6 @@ impl Application for Constellations {
                         self.editing_item = Some(item);
                         self.replying_to = None;
                     }
-                }
                 Task::none()
             }
             Message::CancelEdit => {

@@ -697,8 +697,8 @@ impl<'chat> Constellations {
             let mut fallback_sender_buf = String::new();
             let mut fallback_body_buf = String::new();
 
-            if let Some(summary) = event.content().thread_summary() {
-                if let matrix_sdk_ui::timeline::TimelineDetails::Ready(latest_ev) =
+            if let Some(summary) = event.content().thread_summary()
+                && let matrix_sdk_ui::timeline::TimelineDetails::Ready(latest_ev) =
                     &summary.latest_event
                 {
                     // Try to find in timeline_items for better profile info
@@ -713,11 +713,10 @@ impl<'chat> Constellations {
                             .unwrap_or(false)
                     }) {
                         latest_sender = Some(item.sender_name.as_str());
-                        if let Some(ev) = item.item.as_event() {
-                            if let Some(msg) = ev.content().as_message() {
+                        if let Some(ev) = item.item.as_event()
+                            && let Some(msg) = ev.content().as_message() {
                                 latest_body = Some(msg.body());
                             }
-                        }
                     } else {
                         // Use info from embedded event
                         fallback_sender_buf.push_str(latest_ev.sender.as_str());
@@ -726,13 +725,12 @@ impl<'chat> Constellations {
                         }
                     }
                 }
-            }
 
             // If we still don't have it (e.g. summary was missing or not ready),
             // try manual search by thread root
-            if latest_body.is_none() && fallback_body_buf.is_empty() {
-                if let Some(event_id) = event.event_id() {
-                    if let Some(item) = self.timeline_items.iter().rfind(|i| {
+            if latest_body.is_none() && fallback_body_buf.is_empty()
+                && let Some(event_id) = event.event_id()
+                    && let Some(item) = self.timeline_items.iter().rfind(|i| {
                         i.item
                             .as_event()
                             .and_then(|e| e.content().thread_root())
@@ -740,14 +738,11 @@ impl<'chat> Constellations {
                             .unwrap_or(false)
                     }) {
                         latest_sender = Some(item.sender_name.as_str());
-                        if let Some(ev) = item.item.as_event() {
-                            if let Some(msg) = ev.content().as_message() {
+                        if let Some(ev) = item.item.as_event()
+                            && let Some(msg) = ev.content().as_message() {
                                 latest_body = Some(msg.body());
                             }
-                        }
                     }
-                }
-            }
 
             let mut summary_row = Row::new()
                 .spacing(5)
