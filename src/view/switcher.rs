@@ -44,18 +44,26 @@ impl<'switcher> Constellations {
             let is_selected =
                 self.selected_space.as_ref().map(|s| s.as_str()) == Some(&*space_id_str);
 
+            let has_avatar = space.avatar_url.as_ref()
+                .map(|url| self.media_cache.contains_key(url))
+                .unwrap_or(false);
+
             let avatar_element = self.view_avatar_space(space);
 
             let space_container = container(avatar_element)
-                .padding(8)
+                .padding(if has_avatar { 0 } else { 8 })
                 .align_x(Alignment::Center)
                 .align_y(Alignment::Center);
 
-            let btn = if is_selected {
+            let mut btn = if is_selected {
                 button::custom(space_container)
             } else {
                 button::custom(space_container).on_press(Message::SelectSpace(Some(space_id_str)))
             };
+
+            if has_avatar {
+                btn = btn.padding(0);
+            }
 
             let space_name = space.name.as_deref().unwrap_or("Unknown Space");
             let space_tooltip = tooltip(btn, text::body(space_name), Position::Right);
