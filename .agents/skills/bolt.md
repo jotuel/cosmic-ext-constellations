@@ -1,4 +1,6 @@
-[Output truncated for brevity]
+## 2024-04-24 - [Reduced RwLock contention on `SpaceHierarchy`]
+**Learning:** `update_filtered_rooms` heavily iterated through `self.room_list` calling `MatrixEngine::is_in_space_sync` iteratively. The underlying state access acquired an `RwLock` for each query.
+**Action:** Created `is_in_space_bulk` to retrieve all boolean checks in a single read lock. This reduces locking overhead N-fold. It is important to structure `bulk` checks so they correctly handle iterators locally while retaining safe short-circuit mechanisms, and only extract string matches or object references once to avoid string parsing deduplications.
 
 strings that fail the `.is_ascii()` check.
 
