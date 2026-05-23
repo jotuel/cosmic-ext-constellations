@@ -1,17 +1,33 @@
-use cosmic::Element;
-use cosmic::widget::{button, container, text, Row};
-use cosmic::iced::Alignment;
 use crate::Message;
+use cosmic::Element;
+use cosmic::iced::Alignment;
+use cosmic::widget::{Row, button, container, icon, text};
 
 pub fn view_error(error: &str) -> Element<'_, Message> {
     let error_card = container(
         Row::new()
             .spacing(12)
             .align_y(Alignment::Center)
-            .push(cosmic::widget::icon::from_name("dialog-error-symbolic").size(20))
+            .push(
+                icon::from_name("dialog-error-symbolic")
+                    .symbolic(true)
+                    .size(20),
+            )
             .push(text::body(error.to_string()))
-            .push(button::text(crate::fl!("dismiss")).on_press(Message::DismissError))
+            .push(
+                button::icon(icon::from_name("window-close-symbolic").symbolic(true))
+                    .tooltip(crate::fl!("dismiss"))
+                    .on_press(Message::DismissError),
+            ),
     )
+    .style(|theme: &cosmic::Theme| {
+        use cosmic::iced::widget::container::Catalog;
+        let cosmic = theme.cosmic();
+        let mut style = theme.style(&cosmic::theme::Container::Dialog);
+        style.border.color = cosmic.destructive.base.into();
+        style.border.width = 1.0;
+        style
+    })
     .padding(16)
     .max_width(500);
 

@@ -6,7 +6,8 @@ use cosmic::{
         widget::{scrollable, tooltip},
     },
     widget::{
-        Column, Row, button, container, divider, icon::Named, text, text_editor, text_input, tooltip::Position,
+        Column, Row, button, container, divider, icon::Named, text, text_editor, text_input,
+        tooltip::Position,
     },
 };
 use matrix_sdk::ruma::events::room::{MediaSource, message::MessageType};
@@ -818,7 +819,7 @@ impl<'chat> Constellations {
     }
 
     #[rust_analyzer::skip]
-    pub fn view_main_content(&self, status_text: String) -> Element<'_, Message> {
+    pub fn view_main_content(&self) -> Element<'_, Message> {
         let mut content = Column::new()
             .spacing(20)
             .padding(20)
@@ -961,17 +962,19 @@ impl<'chat> Constellations {
                 text_editor(&self.composer_content)
                     .placeholder(crate::fl!("type-message"))
                     .on_action(Message::ComposerAction)
-                    .key_binding(|keypress| {
-                        match keypress.key.as_ref() {
-                            cosmic::iced::keyboard::Key::Named(cosmic::iced::keyboard::key::Named::Enter) => {
-                                if keypress.modifiers.shift() {
-                                    Some(cosmic::widget::text_editor::Binding::Enter)
-                                } else {
-                                    Some(cosmic::widget::text_editor::Binding::Custom(Message::SendMessage))
-                                }
+                    .key_binding(|keypress| match keypress.key.as_ref() {
+                        cosmic::iced::keyboard::Key::Named(
+                            cosmic::iced::keyboard::key::Named::Enter,
+                        ) => {
+                            if keypress.modifiers.shift() {
+                                Some(cosmic::widget::text_editor::Binding::Enter)
+                            } else {
+                                Some(cosmic::widget::text_editor::Binding::Custom(
+                                    Message::SendMessage,
+                                ))
                             }
-                            _ => cosmic::widget::text_editor::Binding::from_key_press(keypress),
                         }
+                        _ => cosmic::widget::text_editor::Binding::from_key_press(keypress),
                     })
                     .height(80),
             )
@@ -997,7 +1000,8 @@ impl<'chat> Constellations {
             }
         }
 
-        let is_empty = self.composer_content.text().trim().is_empty() && self.composer_attachments.is_empty();
+        let is_empty =
+            self.composer_content.text().trim().is_empty() && self.composer_attachments.is_empty();
 
         let mut send_btn = button::text(if self.editing_item.is_some() {
             crate::fl!("save")

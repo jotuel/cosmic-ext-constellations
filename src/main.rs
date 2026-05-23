@@ -1430,8 +1430,10 @@ impl Application for Constellations {
                     && let Some(event) = item.item.as_event()
                     && let Some(msg) = event.content().as_message()
                 {
-                    self.composer_content = cosmic::widget::text_editor::Content::with_text(msg.body());
-                    self.composer_preview_events = parse_markdown(&self.composer_content.text(), false);
+                    self.composer_content =
+                        cosmic::widget::text_editor::Content::with_text(msg.body());
+                    self.composer_preview_events =
+                        parse_markdown(&self.composer_content.text(), false);
                     self.editing_item = Some(item);
                     self.replying_to = None;
                 }
@@ -1857,16 +1859,8 @@ impl Application for Constellations {
             return self.view_login();
         }
 
-        let status_text = match &self.sync_status {
-            matrix::SyncStatus::Disconnected => "Disconnected".to_string(),
-            matrix::SyncStatus::Syncing => "Syncing...".to_string(),
-            matrix::SyncStatus::Connected => "Connected".to_string(),
-            matrix::SyncStatus::Error(e) => format!("⚠️ Sync Error: {}", e),
-            matrix::SyncStatus::MissingSlidingSyncSupport => "Error: Your homeserver does not support Sliding Sync (MSC4186), which is required by Constellations.".to_string(),
-        };
-
         let sidebar = self.view_sidebar();
-        let content = self.view_main_content(status_text);
+        let content = self.view_main_content();
 
         let main_view = Row::new()
             .push(self.view_space_switcher())
@@ -1944,14 +1938,14 @@ impl Application for Constellations {
             .into();
         }
 
-        let active_error = self.error.clone().or_else(|| match &self.sync_status {
-            matrix::SyncStatus::Error(e) => Some(format!("⚠️ Sync Error: {}", e)),
-            matrix::SyncStatus::MissingSlidingSyncSupport => Some("Error: Your homeserver does not support Sliding Sync (MSC4186), which is required by Constellations.".to_string()),
+        let active_error = self.error.as_deref().or_else(|| match &self.sync_status {
+            matrix::SyncStatus::Error(e) => Some(e.as_str()),
+            matrix::SyncStatus::MissingSlidingSyncSupport => Some("Error: Your homeserver does not support Sliding Sync (MSC4186), which is required by Constellations."),
             _ => None,
         });
 
         if let Some(error) = active_error {
-            let error_overlay = crate::view::error::view_error(&error);
+            let error_overlay = crate::view::error::view_error(error);
             final_view = cosmic::iced::widget::stack![final_view, error_overlay].into();
         }
 
