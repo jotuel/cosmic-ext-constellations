@@ -315,8 +315,8 @@ impl<'chat> Constellations {
     ) -> Column<'a, Message, cosmic::Theme> {
         let mut bubble_col = Column::new();
         let mxc_url = match &image.source {
-            MediaSource::Plain(uri) => uri.to_string(),
-            MediaSource::Encrypted(file) => file.url.to_string(),
+            MediaSource::Plain(uri) => uri.as_str(),
+            MediaSource::Encrypted(file) => file.url.as_str(),
         };
         bubble_col = bubble_col.push(text::body(format!("📷 Image: {}", image.body)).size(
             if self.app_settings.compact_mode {
@@ -327,7 +327,7 @@ impl<'chat> Constellations {
         ));
 
         if self.user_settings.media_previews_display_policy {
-            if let Some(handle) = self.media_cache.get(&mxc_url) {
+            if let Some(handle) = self.media_cache.get(mxc_url) {
                 bubble_col = bubble_col.push(
                     button::custom(cosmic::widget::image(handle.clone()).width(
                         if self.app_settings.compact_mode {
@@ -355,8 +355,8 @@ impl<'chat> Constellations {
     ) -> Column<'a, Message, cosmic::Theme> {
         let mut bubble_col = Column::new();
         let mxc_url = match &file.source {
-            MediaSource::Plain(uri) => uri.to_string(),
-            MediaSource::Encrypted(file) => file.url.to_string(),
+            MediaSource::Plain(uri) => uri.as_str(),
+            MediaSource::Encrypted(file) => file.url.as_str(),
         };
         bubble_col = bubble_col.push(text::body(format!("📁 File: {}", file.body)).size(
             if self.app_settings.compact_mode {
@@ -365,7 +365,7 @@ impl<'chat> Constellations {
                 14
             },
         ));
-        if self.media_cache.contains_key(&mxc_url) {
+        if self.media_cache.contains_key(mxc_url) {
             bubble_col = bubble_col.push(text::body(crate::fl!("downloaded")));
         } else {
             bubble_col = bubble_col.push(
