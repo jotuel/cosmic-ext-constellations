@@ -17,7 +17,10 @@ If you are looking for a more mature Matrix client today, we highly recommend:
 
 ## Build
 
-To build Constellations, you will need a new version Rust toolchain.
+To build Constellations, you will need a new version Rust toolchain. On Debian based distros (atleast):
+```sh
+sudo apt-get update && sudo apt-get install -y pkg-config libxkbcommon-dev libx11-dev libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libglib2.0-dev before running cargo test or cargo build.
+```
 
 ```bash
 cargo build --release

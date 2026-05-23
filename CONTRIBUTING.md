@@ -1,6 +1,6 @@
 # Contributing to Constellations
 
-We welcome contributions from both humans and AI agents.
+Contributions are welcome from both humans and AI agents. Currently getting a domain and host for running own matrix homeserver is something I'm also looking into. For testing and development discussion could happen there. If this is something you could help with get in touch. Setting up a project with proper milestones is happening at some point.
 
 ## How to Contribute
 

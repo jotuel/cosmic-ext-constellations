@@ -18,7 +18,9 @@ The application follows a decoupled "Engine and Shell" model to bridge the async
 | Markdown | pulldown-cmark | Parsing raw input for the preview and HTML generation. |
 | Keyring | oo7 | Secure storage of the user's access token and store passphrase via Secret Service. |
 | IPC | zbus | D-Bus communication for OIDC callbacks. |
-
+| Portals | ashpd | XDG-Portals for getting sharing location, microphone/camera permission etc... |
+| MatrixRTC | livekit | Used as a backend for real time communication. | 
+ 
 ## Implementation 
 ### Phases 
 1. **The Matrix Sync & Auth**
@@ -44,12 +46,12 @@ The application follows a decoupled "Engine and Shell" model to bridge the async
    - The Send Action: Generate HTML via pulldown-cmark and send as formatted_body.
 
 ### OIDC Authentication
-Claw supports modern OIDC-based authentication. The flow is as follows:
+Constellations supports modern OIDC-based authentication. The flow is as follows:
 1. The user enters their homeserver.
-2. Claw requests an OIDC login URL from the homeserver.
-3. Claw opens the URL in the user's default browser.
-4. After successful login, the browser redirects to `com.system76.Claw://callback?code=...&state=...`.
-5. The `cosmic-ext-claw` binary is invoked with the URI.
+2. Constellations requests an OIDC login URL from the homeserver.
+3. Constellations opens the URL in the user's default browser.
+4. After successful login, the browser redirects to `fi.joonastuomi.Constellations://callback?code=...&state=...`.
+5. The `cosmic-ext-constellations` binary is invoked with the URI.
 6. If an instance is already running, the URI is sent via D-Bus to the existing instance's `handle_callback` method.
 7. The existing instance completes the login flow using the provided code and state.
 
@@ -60,7 +62,7 @@ To ensure a resilient connection, the background synchronization task implements
 - **Backoff Reset**: The retry delay is reset if the service maintains a stable connection for at least 30 seconds.
 
 ### Security Considerations
-- **URI Validation**: The IPC interface validates that all incoming callback URIs start with the expected prefix (`com.system76.Claw://callback`) to prevent URI injection attacks.
+- **URI Validation**: The IPC interface validates that all incoming callback URIs start with the expected prefix (`fi.joonastuomi.Constellations://callback`) to prevent URI injection attacks.
 - **Store Encryption**: The SQLite state store is encrypted using a unique passphrase generated on first run and stored securely in the user's keyring via `oo7`.
 - **Credential Storage**: Matrix session tokens (access and refresh tokens) are stored in the system keyring using `oo7`.
 - **Log Redaction**: Sensitive OIDC parameters (`code` and `state`) are redacted from application logs to prevent accidental leakage of authentication tokens.

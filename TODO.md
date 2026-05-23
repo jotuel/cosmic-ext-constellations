@@ -6,7 +6,7 @@
 
 [x] After Logout can't Login again
 
-[ ] Sync error messages stays even after resolving issue
+[x] Sync error messages stays even after resolving issue
 
 [ ] Date divider without any messages in between
 
@@ -16,7 +16,7 @@
 
 # ***General***
 
-[ ] Remove the surrounding bubble from around Space avatars
+[x] Remove the surrounding bubble from around Space avatars
 
 [x] Fluent for localization
 
@@ -34,9 +34,9 @@
 
 [x] Location sharing in chat editor
 
-[ ] Multi-line editing
+[x] Multi-line editing
 
-[ ] One unified error info display mechanism
+[x] One unified error info display mechanism
 
 [x] Room with only two users (DM) should show other participants avatar
 
