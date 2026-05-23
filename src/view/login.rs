@@ -22,16 +22,6 @@ impl Constellations {
             .align_x(Alignment::Center)
             .push(text::title1(title));
 
-        let status_error = match &self.sync_status {
-            matrix::SyncStatus::Error(e) => Some(format!("⚠️ Sync Error: {}", e)),
-            matrix::SyncStatus::MissingSlidingSyncSupport => Some("Error: Your homeserver does not support Sliding Sync (MSC4186), which is required by Constellations.".to_string()),
-            _ => None,
-        };
-
-        if let Some(error) = status_error.or_else(|| self.error.clone()) {
-            content = content.push(text::body(error));
-        }
-
         let homeserver_input = text_input(crate::fl!("homeserver"), &self.login_homeserver);
         let username_input = text_input(crate::fl!("username"), &self.login_username);
         let password_input = text_input(crate::fl!("password"), &self.login_password).password();

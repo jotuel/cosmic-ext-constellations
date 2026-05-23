@@ -824,13 +824,6 @@ impl<'chat> Constellations {
             .padding(20)
             .width(cosmic::iced::Length::Fill);
 
-        if matches!(
-            self.sync_status,
-            matrix::SyncStatus::Error(_) | matrix::SyncStatus::MissingSlidingSyncSupport
-        ) {
-            content = content.push(text::body(status_text).size(14));
-        }
-
         if let Some(room_id) = &self.selected_room {
             let room_name = self
                 .room_list
@@ -910,18 +903,6 @@ impl<'chat> Constellations {
             .align_y(Alignment::Center);
 
             content = content.push(empty_state);
-        }
-
-        if let Some(error) = &self.error {
-            let error_bar = container(
-                Row::new()
-                    .spacing(10)
-                    .align_y(Alignment::Center)
-                    .push(text::body(error))
-                    .push(button::text(crate::fl!("dismiss")).on_press(Message::DismissError)),
-            )
-            .padding(10);
-            content = content.push(error_bar);
         }
 
         content.into()

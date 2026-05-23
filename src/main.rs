@@ -1558,6 +1558,12 @@ impl Application for Constellations {
             Message::MediaFetchedBatch(batch) => self.handle_media_fetched_batch(batch),
             Message::DismissError => {
                 self.error = None;
+                if matches!(
+                    self.sync_status,
+                    matrix::SyncStatus::Error(_) | matrix::SyncStatus::MissingSlidingSyncSupport
+                ) {
+                    self.sync_status = matrix::SyncStatus::Disconnected;
+                }
                 Task::none()
             }
             Message::ToggleCreateRoom => {
@@ -1936,6 +1942,17 @@ impl Application for Constellations {
                 close_button
             ]
             .into();
+        }
+
+        let active_error = self.error.clone().or_else(|| match &self.sync_status {
+            matrix::SyncStatus::Error(e) => Some(format!("⚠️ Sync Error: {}", e)),
+            matrix::SyncStatus::MissingSlidingSyncSupport => Some("Error: Your homeserver does not support Sliding Sync (MSC4186), which is required by Constellations.".to_string()),
+            _ => None,
+        });
+
+        if let Some(error) = active_error {
+            let error_overlay = crate::view::error::view_error(&error);
+            final_view = cosmic::iced::widget::stack![final_view, error_overlay].into();
         }
 
         final_view
