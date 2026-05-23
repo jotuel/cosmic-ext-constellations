@@ -1891,23 +1891,16 @@ impl MatrixEngine {
         Ok(())
     }
 
-    pub async fn send_location(
-        &self,
-        room_id: &str,
-        body: String,
-        geo_uri: String,
-    ) -> Result<()> {
+    pub async fn send_location(&self, room_id: &str, body: String, geo_uri: String) -> Result<()> {
         let room_id = RoomId::parse(room_id)?;
         let client = self.client().await;
         let room = client.get_room(&room_id).context("Room not found")?;
 
-        use matrix_sdk::ruma::events::room::message::{
-            LocationMessageEventContent, MessageType,
-        };
+        use matrix_sdk::ruma::events::room::message::{LocationMessageEventContent, MessageType};
 
-        let content = RoomMessageEventContent::new(
-            MessageType::Location(LocationMessageEventContent::new(body, geo_uri))
-        );
+        let content = RoomMessageEventContent::new(MessageType::Location(
+            LocationMessageEventContent::new(body, geo_uri),
+        ));
 
         room.send(content).await?;
         Ok(())

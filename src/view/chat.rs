@@ -206,9 +206,12 @@ impl<'chat> Constellations {
                     &self.emoji_search_query,
                     filter_lower_fallback.as_deref(),
                 ) || emoji.shortcodes().any(|s| {
-                    crate::contains_ignore_ascii_case(s, &self.emoji_search_query, filter_lower_fallback.as_deref())
-                })
-                {
+                    crate::contains_ignore_ascii_case(
+                        s,
+                        &self.emoji_search_query,
+                        filter_lower_fallback.as_deref(),
+                    )
+                }) {
                     let emoji_str = emoji.as_str();
                     let btn = button::custom(
                         container(text::body(emoji.as_str()).size(18))
