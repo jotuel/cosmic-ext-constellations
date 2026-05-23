@@ -2054,22 +2054,20 @@ impl State {
 
     fn view_deactivate_account<'a>(&'a self) -> Element<'a, Message> {
         settings::section()
-            .title("Deactivate Account")
-            .add(text::body(
-                "⚠️ This will permanently delete your account and all associated data.",
-            ))
+            .title(crate::fl!("deactivate-account"))
+            .add(text::body(crate::fl!("deactivate-warning")))
             .add(settings::item(
-                "Password",
-                text_input("Confirm password", &self.deactivate_password)
+                crate::fl!("password"),
+                text_input(crate::fl!("confirm-password"), &self.deactivate_password)
                     .password()
                     .on_input(Message::DeactivatePasswordChanged),
             ))
             .add(settings::item(
-                "Deactivate",
+                crate::fl!("deactivate"),
                 button::destructive(if self.is_deactivating {
-                    "Deactivating..."
+                    crate::fl!("deactivating")
                 } else {
-                    "Deactivate Account"
+                    crate::fl!("deactivate-account")
                 })
                 .on_press(Message::DeactivateAccount),
             ))

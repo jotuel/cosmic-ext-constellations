@@ -553,8 +553,12 @@ impl Constellations {
                     .map_err(|e| e.to_string())?;
 
                 let (_, location_res) = futures::join!(
-                    proxy.start(&session, None).map(|e| e.map_err(|err| err.to_string())),
-                    stream.next().map(|opt| opt.ok_or_else(|| "Stream is exhausted".to_string()))
+                    proxy
+                        .start(&session, None)
+                        .map(|e| e.map_err(|err| err.to_string())),
+                    stream
+                        .next()
+                        .map(|opt| opt.ok_or_else(|| "Stream is exhausted".to_string()))
                 );
 
                 let _ = session.close().await;

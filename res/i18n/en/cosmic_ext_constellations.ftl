@@ -274,3 +274,4 @@ verification-successful = Verification successful!
 verification-cancelled = Verification cancelled or failed.
 attachments = Attachments:
 remove-attachment = Remove
+deactivating = Deactivating...
