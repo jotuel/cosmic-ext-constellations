@@ -574,7 +574,7 @@ impl<'chat> Constellations {
 
             // "Add reaction" button
             let is_picker_open = self.active_reaction_picker.as_ref() == Some(&event.identifier());
-            let btn = button::icon(Named::new("face-smile-symbolic")).on_press(if is_picker_open {
+            let btn = button::icon(cosmic::widget::icon::from_name("face-smile-symbolic")).on_press(if is_picker_open {
                 Message::OpenReactionPicker(None)
             } else {
                 Message::OpenReactionPicker(Some(event.identifier().clone()))
@@ -589,7 +589,7 @@ impl<'chat> Constellations {
             // Start a thread
             let root_id = event.identifier();
             let start_thread_btn =
-                button::icon(Named::new("view-list-symbolic")).on_press(match root_id {
+                button::icon(cosmic::widget::icon::from_name("view-list-symbolic")).on_press(match root_id {
                     matrix::TimelineEventItemId::EventId(id) => Message::OpenThread(id.to_owned()),
                     _ => Message::NoOp,
                 });
@@ -600,7 +600,7 @@ impl<'chat> Constellations {
             );
             action_row = action_row.push(action_tooltip);
 
-            let reply_btn = button::icon(Named::new("mail-reply-sender-symbolic"))
+            let reply_btn = button::icon(cosmic::widget::icon::from_name("mail-reply-sender-symbolic"))
                 .on_press(Message::StartReply(event.identifier().clone()));
             let reply_tooltip = tooltip(
                 reply_btn,
@@ -610,7 +610,7 @@ impl<'chat> Constellations {
             action_row = action_row.push(reply_tooltip);
 
             if is_me {
-                let edit_btn = button::icon(Named::new("document-edit-symbolic"))
+                let edit_btn = button::icon(cosmic::widget::icon::from_name("document-edit-symbolic"))
                     .on_press(Message::StartEdit(event.identifier().clone()));
                 let edit_tooltip = tooltip(
                     edit_btn,
@@ -619,10 +619,9 @@ impl<'chat> Constellations {
                 );
                 action_row = action_row.push(edit_tooltip);
 
-                let delete_btn =
-                    button::custom(cosmic::widget::icon::from_name("user-trash-symbolic"))
-                        .class(cosmic::theme::Button::Destructive)
-                        .on_press(Message::RedactMessage(event.identifier().clone()));
+                let delete_btn = button::custom(cosmic::widget::icon::from_name("user-trash-symbolic"))
+                    .class(cosmic::theme::Button::Destructive)
+                    .on_press(Message::RedactMessage(event.identifier().clone()));
                 let delete_tooltip = tooltip(
                     delete_btn,
                     text::body(crate::fl!("tooltip-delete")),
