@@ -511,6 +511,7 @@ pub struct ConstellationsItem {
     pub timestamp: String,
     pub is_me: bool,
     pub markdown: Vec<PreviewEvent>,
+    pub plain_text: Vec<PreviewEvent>,
 }
 
 impl ConstellationsItem {
@@ -521,12 +522,16 @@ impl ConstellationsItem {
         let mut timestamp = String::new();
         let mut is_me = false;
         let mut markdown = Vec::new();
+        let mut plain_text = Vec::new();
+        // ⚡ Bolt Optimization: Pre-compute plain_text representation here
+        // to avoid allocating new Strings and Vecs inside the UI render loop (`view_message_text`).
 
         if let Some(event) = item.as_event() {
             sender_id = event.sender().to_owned();
             if let Some(msg) = event.content().as_message() {
                 let is_reply = event.content().in_reply_to().is_some();
                 markdown = crate::parse_markdown(msg.body(), is_reply);
+                plain_text = vec![crate::PreviewEvent::Text(msg.body().to_owned())];
             }
             let (name, url) = match event.sender_profile() {
                 matrix_sdk_ui::timeline::TimelineDetails::Ready(profile) => (
@@ -561,6 +566,7 @@ impl ConstellationsItem {
             timestamp,
             is_me,
             markdown,
+            plain_text,
         }
     }
 }

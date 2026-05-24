@@ -382,13 +382,16 @@ impl<'chat> Constellations {
 
     fn view_message_text<'a>(
         &'a self,
-        message: &'a matrix_sdk::ruma::events::room::message::MessageType,
+        _message: &'a matrix_sdk::ruma::events::room::message::MessageType,
         markdown: &'a [PreviewEvent],
+        plain_text: &'a [PreviewEvent],
     ) -> Column<'a, Message, Theme> {
         let mut bubble_col: Column<'a, Message, Theme> = Column::new();
+        // ⚡ Bolt Optimization: `RichSelectableText` now borrows `[PreviewEvent]` slices
+        // avoiding a `.to_vec()` or `.to_string()` allocation bottleneck on every single frame.
         if self.app_settings.render_markdown {
             bubble_col = bubble_col.push(
-                crate::rich_text::RichSelectableText::new(markdown.to_vec(), |url| {
+                crate::rich_text::RichSelectableText::new(markdown, |url| {
                     Message::OpenUrl(url)
                 })
                 .into_element(),
@@ -396,7 +399,7 @@ impl<'chat> Constellations {
         } else {
             bubble_col = bubble_col.push(
                 crate::rich_text::RichSelectableText::new(
-                    vec![crate::PreviewEvent::Text(message.body().to_string())],
+                    plain_text,
                     Message::OpenUrl,
                 )
                 .into_element(),
@@ -477,7 +480,7 @@ impl<'chat> Constellations {
         container(
             scrollable(
                 crate::rich_text::RichSelectableText::new(
-                    self.composer_preview_events.clone(),
+                    &self.composer_preview_events,
                     Message::OpenUrl,
                 )
                 .into_element(),
@@ -566,7 +569,7 @@ impl<'chat> Constellations {
                 }
                 _ => {
                     bubble_col =
-                        bubble_col.push(self.view_message_text(message.msgtype(), &item.markdown));
+                        bubble_col.push(self.view_message_text(message.msgtype(), &item.markdown, &item.plain_text));
                 }
             }
 
