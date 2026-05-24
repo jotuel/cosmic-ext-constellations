@@ -14,13 +14,13 @@ use std::sync::{Arc, LazyLock, Mutex};
 static FONT_SYSTEM: LazyLock<Mutex<FontSystem>> = LazyLock::new(|| Mutex::new(FontSystem::new()));
 
 pub struct RichSelectableText<'a, Message> {
-    content: Vec<crate::PreviewEvent>,
+    content: &'a [crate::PreviewEvent],
     on_link_click: Arc<dyn Fn(String) -> Message + 'a>,
 }
 
 impl<'a, Message> RichSelectableText<'a, Message> {
     pub fn new(
-        content: Vec<crate::PreviewEvent>,
+        content: &'a [crate::PreviewEvent],
         on_link_click: impl Fn(String) -> Message + 'a,
     ) -> Self {
         Self {
@@ -148,7 +148,7 @@ where
     }
 
     fn state(&self) -> widget::tree::State {
-        widget::tree::State::new(State::new(&self.content))
+        widget::tree::State::new(State::new(self.content))
     }
 
     fn size(&self) -> Size<Length> {
@@ -162,7 +162,7 @@ where
         limits: &layout::Limits,
     ) -> layout::Node {
         let state = tree.state.downcast_mut::<State>();
-        state.update(&self.content);
+        state.update(self.content);
 
         let mut font_system = FONT_SYSTEM.lock().unwrap();
 
