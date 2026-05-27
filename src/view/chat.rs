@@ -41,7 +41,9 @@ impl<'chat> Constellations {
         let mut pending_date_divider: Option<matrix_sdk::ruma::MilliSecondsSinceUnixEpoch> = None;
 
         for item in &self.timeline_items {
-            if let Some(event) = item.item.as_event() {
+            if let Some(event) = item.item.as_event()
+                && event.content().as_message().is_some()
+            {
                 // View-side thread filtering
                 if self.app_settings.hide_threaded_messages
                     && event.content().thread_root().is_some()
@@ -463,7 +465,9 @@ impl<'chat> Constellations {
         }
 
         for item in &self.threaded_timeline_items {
-            if let Some(event) = item.item.as_event() {
+            if let Some(event) = item.item.as_event()
+                && event.content().as_message().is_some()
+            {
                 if is_filtering {
                     let body = event
                         .content()
