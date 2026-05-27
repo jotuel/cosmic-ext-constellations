@@ -401,6 +401,11 @@ impl Constellations {
                 }
 
                 self.room_list.apply_diff(*diff);
+                for room in &self.room_list {
+                    if let Some(name) = &room.name {
+                        self.room_name_cache.insert(room.id.clone(), name.clone());
+                    }
+                }
                 self.update_filtered_rooms();
                 self.update_title()
             }
@@ -1350,6 +1355,7 @@ mod tests {
             is_qr_logging_in: false,
             qr_login_step: QrLoginStep::NotStarted,
             qr_rendezvous_url: None,
+            room_name_cache: HashMap::new(),
         }
     }
 

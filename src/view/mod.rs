@@ -14,15 +14,21 @@ const ROOM_AVATAR_HEIGHT: i32 = 24;
 const AVATAR_RADIUS: i32 = 15;
 
 impl Constellations {
+    pub fn get_room_name(&self, room_id: &str) -> Option<String> {
+        if let Some(room) = self.room_list.iter().find(|r| r.id.as_ref() == room_id) {
+            if let Some(name) = &room.name {
+                return Some(name.clone());
+            }
+        }
+        self.room_name_cache.get(room_id).cloned()
+    }
+
     pub fn update_title(&mut self) -> Task<Action<Message>> {
         let selected_room_name = self.selected_room.as_ref().and_then(|id| {
-            self.room_list
-                .iter()
-                .find(|r| &r.id == id)
-                .and_then(|r| r.name.as_deref())
+            self.get_room_name(id)
         });
 
-        let title = selected_room_name.unwrap_or("Constellations - Matrix Client");
+        let title = selected_room_name.as_deref().unwrap_or("Constellations - Matrix Client");
         self.core.set_header_title(title.to_string());
         Task::none()
     }

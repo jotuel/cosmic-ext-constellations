@@ -212,6 +212,7 @@ struct Constellations {
     emoji_search_query: String,
     selected_emoji_group: Option<emojis::Group>,
     is_composer_emoji_picker_active: bool,
+    room_name_cache: std::collections::HashMap<std::sync::Arc<str>, String>,
 }
 
 #[derive(Debug, Clone)]
@@ -1203,6 +1204,7 @@ impl Application for Constellations {
             emoji_search_query: String::new(),
             selected_emoji_group: None,
             is_composer_emoji_picker_active: false,
+            room_name_cache: std::collections::HashMap::new(),
         };
 
         let title_task = app.update_title();
@@ -1321,6 +1323,11 @@ impl Application for Constellations {
                 }
             }
             Message::RoomSelected(room_id) => {
+                if let Some(room) = self.room_list.iter().find(|r| r.id == room_id) {
+                    if let Some(name) = &room.name {
+                        self.room_name_cache.insert(room_id.clone(), name.clone());
+                    }
+                }
                 self.selected_room = Some(room_id.clone());
                 self.timeline_items.clear();
                 self.last_timeline_offset = 0.0;
@@ -2116,6 +2123,7 @@ mod tests {
             emoji_search_query: String::new(),
             selected_emoji_group: None,
             is_composer_emoji_picker_active: false,
+            room_name_cache: std::collections::HashMap::new(),
         }
     }
 
@@ -2452,5 +2460,36 @@ mod tests {
             app.error,
             Some("Failed to join room: some connection error".to_string())
         );
+    }
+
+    #[test]
+    fn test_room_name_cache() {
+        let mut app = create_test_app();
+        let room_id: std::sync::Arc<str> = std::sync::Arc::from("!room1:matrix.org");
+
+        // 1. Initially, get_room_name should return None because it is not in the list or cache.
+        assert_eq!(app.get_room_name(&room_id), None);
+
+        // 2. Add to room_name_cache. get_room_name should now return the cached name.
+        app.room_name_cache.insert(room_id.clone(), "Cached Room Name".to_string());
+        assert_eq!(app.get_room_name(&room_id), Some("Cached Room Name".to_string()));
+
+        // 3. Add the room to room_list with a different name. get_room_name should prefer the room_list name.
+        app.room_list = vec![matrix::RoomData {
+            id: room_id.clone(),
+            name: Some("Active Room Name".to_string()),
+            last_message: None,
+            unread_count: 0,
+            unread_count_str: None,
+            avatar_url: None,
+            room_type: None,
+            is_space: false,
+            parent_space_id: None,
+            order: None,
+            join_rule: None,
+            allowed_spaces: Vec::new(),
+            suggested: false,
+        }];
+        assert_eq!(app.get_room_name(&room_id), Some("Active Room Name".to_string()));
     }
 }

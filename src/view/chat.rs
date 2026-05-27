@@ -38,6 +38,8 @@ impl<'chat> Constellations {
             }
         }
 
+        let mut pending_date_divider: Option<matrix_sdk::ruma::MilliSecondsSinceUnixEpoch> = None;
+
         for item in &self.timeline_items {
             if let Some(event) = item.item.as_event() {
                 // View-side thread filtering
@@ -61,25 +63,30 @@ impl<'chat> Constellations {
                         continue;
                     }
                 }
+
+                if let Some(date) = pending_date_divider.take() {
+                    timeline = timeline.push(
+                        Row::new()
+                            .push(divider::horizontal::default())
+                            .push(text::body(
+                                DateTime::from_timestamp_secs(date.as_secs().into())
+                                    .unwrap_or_default()
+                                    .duration_trunc(TimeDelta::try_days(1).unwrap_or_default())
+                                    .unwrap_or_default()
+                                    .to_rfc2822()
+                                    .trim_end_matches(" 00:00:00 +0000")
+                                    .to_owned(),
+                            ))
+                            .push(divider::horizontal::default())
+                            .align_y(Alignment::Center),
+                    );
+                }
+
                 timeline = timeline.push(self.view_item(item, &thread_counts));
             } else if let Some(matrix::VirtualTimelineItem::DateDivider(date)) =
                 item.item.as_virtual()
             {
-                timeline = timeline.push(
-                    Row::new()
-                        .push(divider::horizontal::default())
-                        .push(text::body(
-                            DateTime::from_timestamp_secs(date.as_secs().into())
-                                .unwrap_or_default()
-                                .duration_trunc(TimeDelta::try_days(1).unwrap_or_default())
-                                .unwrap_or_default()
-                                .to_rfc2822()
-                                .trim_end_matches(" 00:00:00 +0000")
-                                .to_owned(),
-                        ))
-                        .push(divider::horizontal::default())
-                        .align_y(Alignment::Center),
-                )
+                pending_date_divider = Some(*date);
             }
         }
 
@@ -426,15 +433,11 @@ impl<'chat> Constellations {
         let filter_lower_fallback =
             (is_filtering && !filter_is_ascii).then(|| self.search_query.to_lowercase());
 
-        let room_name = if let Some(room_id) = &self.selected_room {
-            self.room_list
-                .iter()
-                .find(|r| &r.id == room_id)
-                .and_then(|r| r.name.as_deref())
-                .unwrap_or("Room")
-        } else {
-            "Room"
-        };
+        let room_name = self
+            .selected_room
+            .as_ref()
+            .and_then(|room_id| self.get_room_name(room_id))
+            .unwrap_or_else(|| "Room".to_string());
 
         let header = Row::new()
             .spacing(10)
@@ -848,12 +851,7 @@ impl<'chat> Constellations {
             .width(cosmic::iced::Length::Fill);
 
         if let Some(room_id) = &self.selected_room {
-            let room_name = self
-                .room_list
-                .iter()
-                .find(|r| &r.id == room_id)
-                .and_then(|r| r.name.as_deref())
-                .unwrap_or("Room");
+            let room_name = self.get_room_name(room_id).unwrap_or_else(|| "Room".to_string());
 
             // ⚡ Bolt Optimization: Avoid parsing UserId per frame
             let is_in_call = self.user_id.as_ref().is_some_and(|uid| {

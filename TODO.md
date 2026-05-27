@@ -8,11 +8,13 @@
 
 [x] Sync error messages stays even after resolving issue
 
-[ ] Date divider without any messages in between
+[x] Date divider without any messages in between
 
 [x] Latest message from Room no longer shows up
 
-[ ] When you have a Room open and you switch Space its name changes from actual to "Room"
+[x] When you have a Room open and you switch Space its name changes from actual to "Room"
+
+[ ] New messages listed in Room switcher should be stopped at '\n'
 
 # ***General***
 
