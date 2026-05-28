@@ -1323,10 +1323,11 @@ impl Application for Constellations {
                 }
             }
             Message::RoomSelected(room_id) => {
-                if let Some(room) = self.room_list.iter().find(|r| r.id == room_id)
-                    && let Some(name) = &room.name {
+                if let Some(room) = self.room_list.iter().find(|r| r.id == room_id) {
+                    if let Some(name) = &room.name {
                         self.room_name_cache.insert(room_id.clone(), name.clone());
                     }
+                }
                 self.selected_room = Some(room_id.clone());
                 self.timeline_items.clear();
                 self.last_timeline_offset = 0.0;
@@ -1952,7 +1953,7 @@ impl Application for Constellations {
             .into();
         }
 
-        let active_error = self.error.as_deref().or(match &self.sync_status {
+        let active_error = self.error.as_deref().or_else(|| match &self.sync_status {
             matrix::SyncStatus::Error(e) => Some(e.as_str()),
             matrix::SyncStatus::MissingSlidingSyncSupport => Some("Error: Your homeserver does not support Sliding Sync (MSC4186), which is required by Constellations."),
             _ => None,
@@ -2474,7 +2475,7 @@ mod tests {
 
         // 2. Add to room_name_cache. get_room_name should now return the cached name.
         app.room_name_cache.insert(room_id.clone(), "Cached Room Name".to_string());
-        assert_eq!(app.get_room_name(&room_id), Some("Cached Room Name"));
+        assert_eq!(app.get_room_name(&room_id), Some("Cached Room Name".to_string()));
 
         // 3. Add the room to room_list with a different name. get_room_name should prefer the room_list name.
         app.room_list = vec![matrix::RoomData {
@@ -2492,6 +2493,6 @@ mod tests {
             allowed_spaces: Vec::new(),
             suggested: false,
         }];
-        assert_eq!(app.get_room_name(&room_id), Some("Active Room Name"));
+        assert_eq!(app.get_room_name(&room_id), Some("Active Room Name".to_string()));
     }
 }
