@@ -31,11 +31,10 @@ impl<'chat> Constellations {
         let mut thread_counts: std::collections::HashMap<matrix_sdk::ruma::OwnedEventId, u32> =
             std::collections::HashMap::new();
         for item in &self.timeline_items {
-            if let Some(event) = item.item.as_event() {
-                if let Some(root_id) = event.content().thread_root() {
+            if let Some(event) = item.item.as_event()
+                && let Some(root_id) = event.content().thread_root() {
                     *thread_counts.entry(root_id).or_insert(0) += 1;
                 }
-            }
         }
 
         let mut pending_date_divider: Option<matrix_sdk::ruma::MilliSecondsSinceUnixEpoch> = None;
@@ -418,7 +417,7 @@ impl<'chat> Constellations {
         // avoiding a `.to_vec()` or `.to_string()` allocation bottleneck on every single frame.
         if self.app_settings.render_markdown {
             bubble_col = bubble_col.push(
-                crate::rich_text::RichSelectableText::new(markdown, |url| Message::OpenUrl(url))
+                crate::rich_text::RichSelectableText::new(markdown, Message::OpenUrl)
                     .into_element(),
             );
         } else {
@@ -445,7 +444,7 @@ impl<'chat> Constellations {
             .selected_room
             .as_ref()
             .and_then(|room_id| self.get_room_name(room_id))
-            .unwrap_or_else(|| "Room".to_string());
+            .unwrap_or("Room");
 
         let header = Row::new()
             .spacing(10)
@@ -463,11 +462,10 @@ impl<'chat> Constellations {
         let mut thread_counts: std::collections::HashMap<matrix_sdk::ruma::OwnedEventId, u32> =
             std::collections::HashMap::new();
         for item in &self.timeline_items {
-            if let Some(event) = item.item.as_event() {
-                if let Some(root_id) = event.content().thread_root() {
+            if let Some(event) = item.item.as_event()
+                && let Some(root_id) = event.content().thread_root() {
                     *thread_counts.entry(root_id.clone()).or_insert(0) += 1;
                 }
-            }
         }
 
         for item in &self.threaded_timeline_items {
@@ -861,7 +859,7 @@ impl<'chat> Constellations {
             .width(cosmic::iced::Length::Fill);
 
         if let Some(room_id) = &self.selected_room {
-            let room_name = self.get_room_name(room_id).unwrap_or_else(|| "Room".to_string());
+            let room_name = self.get_room_name(room_id).unwrap_or("Room");
 
             // ⚡ Bolt Optimization: Avoid parsing UserId per frame
             let is_in_call = self.user_id.as_ref().is_some_and(|uid| {

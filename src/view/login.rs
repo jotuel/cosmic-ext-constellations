@@ -161,8 +161,8 @@ impl Constellations {
             QrLoginStep::ShowingQr => {
                 content = content.push(text::body(crate::fl!("login-qr-scanning")));
 
-                if let Some(ref url) = self.qr_rendezvous_url {
-                    if let Ok(code) = qrcode::QrCode::new(url.as_bytes()) {
+                if let Some(ref url) = self.qr_rendezvous_url
+                    && let Ok(code) = qrcode::QrCode::new(url.as_bytes()) {
                         let width = code.width();
                         let mut qr_text = String::new();
                         for y in 0..width {
@@ -185,7 +185,6 @@ impl Constellations {
                             .padding(15),
                         );
                     }
-                }
 
                 let simulate_btn =
                     button::text(crate::fl!("login-qr-simulate")).on_press(Message::SimulateQrScan);
