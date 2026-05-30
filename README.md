@@ -2,9 +2,9 @@
 
 Constellations is a native Matrix client for the [COSMIC desktop environment](https://github.com/pop-os/cosmic-epoch), built with [libcosmic](https://github.com/pop-os/libcosmic) and [matrix-rust-sdk](https://github.com/matrix-org/matrix-rust-sdk).
 
-## Project Status: Alpha
+## Project Status
 
-Constellations is currently **alpha quality** software. While it is usable for basic daily tasks, you should expect bugs, missing features, and potential breaking changes.
+Constellations is currently alpha quality software. While it is usable for basic daily tasks, you should expect bugs, missing features, and potential breaking changes.
 
 The goal is to reach a stable 1.0 release around the same time the underlying [matrix-rust-sdk](https://github.com/matrix-org/matrix-rust-sdk) and [iced-rs](https://iced.rs/) reach their stable releases.
 
