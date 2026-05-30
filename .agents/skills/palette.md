@@ -93,3 +93,7 @@
 ## 2026-06-25 - Tooltips for Disabled Action Buttons in User Settings
 **Learning:** Found several primary action buttons (like linking an email/phone, ignoring a user, or deactivating an account) in User Settings that were left enabled even when the required input fields were empty. This allows for phantom submissions and user confusion.
 **Action:** Always conditionally disable primary action buttons when the required input fields are empty or consist only of whitespace. Wrap the conditionally disabled buttons in a `cosmic::widget::tooltip` with an explanatory message (e.g., "Enter a user ID to ignore") to provide context.
+
+## 2026-06-26 - Add Search Icon to Empty States
+**Learning:** Empty states, especially those indicating no results (e.g., "No matches found." in search), can look barren if they consist only of text. Adding an associated icon (like `edit-find-symbolic`) and using localized text makes the empty state more appealing and accessible.
+**Action:** When designing or updating an empty state, particularly for search results or filtering, wrap the state in a `Column`, add an appropriate icon (e.g., `cosmic::widget::icon::from_name("edit-find-symbolic").size(64)`), and use `crate::fl!("key-name")` for the text to improve the visual hierarchy and internationalization.
