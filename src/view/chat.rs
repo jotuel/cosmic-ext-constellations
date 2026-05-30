@@ -1135,10 +1135,10 @@ impl<'chat> Constellations {
                     .spacing(10)
                     .align_y(Alignment::Center)
                     .push(
-                        text::body(format!(
-                            "Search Results: Found {} matches for \"{}\" (fuzzy subsequence matching)",
-                            matches.len(),
-                            self.search_query
+                        text::body(crate::fl!(
+                            "search-results-found",
+                            count = matches.len(),
+                            query = self.search_query.as_str()
                         ))
                         .size(14)
                     )
@@ -1157,8 +1157,11 @@ impl<'chat> Constellations {
         if matches.is_empty() {
             results_list = results_list.push(
                 container(
-                    text::body("No matches found.")
-                        .size(16)
+                    Column::new()
+                        .spacing(10)
+                        .align_x(Alignment::Center)
+                        .push(cosmic::widget::icon::from_name("edit-find-symbolic").size(64))
+                        .push(text::body(crate::fl!("no-results-found")).size(16))
                 )
                 .width(cosmic::iced::Length::Fill)
                 .align_x(Alignment::Center)
