@@ -21,7 +21,7 @@ impl Constellations {
     pub fn recompute_thread_counts(&mut self) {
         self.thread_counts.clear();
         for item in &self.timeline_items {
-            if let Some(event) = item.item.as_event()
+            if let Some(event) = item.item.as_ref().expect("No item").as_event()
                 && let Some(root_id) = event.content().thread_root()
             {
                 *self.thread_counts.entry(root_id).or_insert(0) += 1;
@@ -640,7 +640,8 @@ impl Constellations {
 
             if let Some(editing_item) = &self.editing_item {
                 if let Some(index) = self.timeline_items.iter().position(|item| {
-                    item.sender_name == editing_item.sender_name && item.timestamp == editing_item.timestamp
+                    item.sender_name == editing_item.sender_name
+                        && item.timestamp == editing_item.timestamp
                 }) {
                     self.timeline_items[index] = crate::ConstellationsItem::new_mock(
                         &editing_item.sender_name,
@@ -651,29 +652,33 @@ impl Constellations {
                 }
                 self.editing_item = None;
             } else if let Some(replying_to) = &self.replying_to {
-                let reply_text = replying_to.plain_text.iter().filter_map(|p| {
-                    if let crate::preview::PreviewEvent::Text(txt) = p {
-                        Some(txt.clone())
-                    } else {
-                        None
-                    }
-                }).collect::<Vec<_>>().join(" ");
+                let reply_text = replying_to
+                    .plain_text
+                    .iter()
+                    .filter_map(|p| {
+                        if let crate::preview::PreviewEvent::Text(txt) = p {
+                            Some(txt.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" ");
                 let reply_body = format!("> {}\n\n{}", reply_text, body);
 
-                self.timeline_items.push_back(crate::ConstellationsItem::new_mock(
-                    "You",
-                    &reply_body,
-                    &timestamp,
-                    true,
-                ));
+                self.timeline_items
+                    .push_back(crate::ConstellationsItem::new_mock(
+                        "You",
+                        &reply_body,
+                        &timestamp,
+                        true,
+                    ));
                 self.replying_to = None;
             } else {
-                self.timeline_items.push_back(crate::ConstellationsItem::new_mock(
-                    "You",
-                    &body,
-                    &timestamp,
-                    true,
-                ));
+                self.timeline_items
+                    .push_back(crate::ConstellationsItem::new_mock(
+                        "You", &body, &timestamp, true,
+                    ));
             }
 
             self.composer_content = cosmic::widget::text_editor::Content::new();
@@ -703,7 +708,11 @@ impl Constellations {
 
                 return Task::perform(
                     async move {
-                        let event = editing_item.item.as_ref().and_then(|i| i.as_event()).ok_or("Not an event")?;
+                        let event = editing_item
+                            .item
+                            .as_ref()
+                            .and_then(|i| i.as_event())
+                            .ok_or("Not an event")?;
                         let item_id = event.identifier();
                         matrix_clone
                             .edit_message(&room_id_clone, &item_id, body, html_body)
@@ -734,7 +743,11 @@ impl Constellations {
                 if let Some(replying_to) = self.replying_to.clone() {
                     tasks.push(Task::perform(
                         async move {
-                            let event = replying_to.item.as_ref().and_then(|i| i.as_event()).ok_or("Not an event")?;
+                            let event = replying_to
+                                .item
+                                .as_ref()
+                                .and_then(|i| i.as_event())
+                                .ok_or("Not an event")?;
                             let event_id = event.event_id().ok_or("No event ID")?;
                             let sender = event.sender();
 
@@ -1223,9 +1236,11 @@ impl Constellations {
                     ];
                     self.update_filtered_rooms();
 
-                    let default_room: std::sync::Arc<str> = std::sync::Arc::from("!general:matrix.org");
+                    let default_room: std::sync::Arc<str> =
+                        std::sync::Arc::from("!general:matrix.org");
                     self.selected_room = Some(default_room.clone());
-                    self.room_name_cache.insert(default_room.clone(), "General Chat".to_string());
+                    self.room_name_cache
+                        .insert(default_room.clone(), "General Chat".to_string());
                     self.timeline_items = self.generate_mock_timeline(&default_room);
                 }
             }
@@ -1361,15 +1376,12 @@ impl Constellations {
         let random_id: u64 = rand::random();
         let rendezvous_endpoint = format!(
             "{}/_matrix/client/unstable/org.matrix.msc3886/rendezvous/constellations-{:x}",
-            hs_trimmed,
-            random_id
+            hs_trimmed, random_id
         );
 
-        let encoded_endpoint: String = url::form_urlencoded::byte_serialize(rendezvous_endpoint.as_bytes()).collect();
-        let rendezvous_url = format!(
-            "https://matrix.to/#/login?rendezvous={}",
-            encoded_endpoint
-        );
+        let encoded_endpoint: String =
+            url::form_urlencoded::byte_serialize(rendezvous_endpoint.as_bytes()).collect();
+        let rendezvous_url = format!("https://matrix.to/#/login?rendezvous={}", encoded_endpoint);
         self.qr_rendezvous_url = Some(rendezvous_url);
 
         // Transition to ShowingQr step after a small simulated initiation delay (500ms)
@@ -1389,7 +1401,6 @@ impl Constellations {
         self.qr_rendezvous_url = None;
         Task::none()
     }
-
 
     pub fn handle_qr_login_step_changed(
         &mut self,
@@ -2045,7 +2056,10 @@ impl Constellations {
         }
     }
 
-    pub fn generate_mock_timeline(&self, room_id: &str) -> eyeball_im::Vector<crate::ConstellationsItem> {
+    pub fn generate_mock_timeline(
+        &self,
+        room_id: &str,
+    ) -> eyeball_im::Vector<crate::ConstellationsItem> {
         let mut items = eyeball_im::Vector::new();
         match room_id {
             "!general:matrix.org" => {
