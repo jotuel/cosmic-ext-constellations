@@ -109,6 +109,7 @@ pub struct Constellations {
     selected_emoji_group: Option<emojis::Group>,
     is_composer_emoji_picker_active: bool,
     room_name_cache: std::collections::HashMap<std::sync::Arc<str>, String>,
+    pub thread_counts: std::collections::HashMap<matrix_sdk::ruma::OwnedEventId, u32>,
 }
 
 #[derive(Debug, Clone)]
@@ -896,6 +897,7 @@ impl Application for Constellations {
             selected_emoji_group: None,
             is_composer_emoji_picker_active: false,
             room_name_cache: std::collections::HashMap::new(),
+            thread_counts: std::collections::HashMap::new(),
         };
 
         let title_task = app.update_title();
@@ -1083,6 +1085,7 @@ mod tests {
             selected_emoji_group: None,
             is_composer_emoji_picker_active: false,
             room_name_cache: std::collections::HashMap::new(),
+            thread_counts: std::collections::HashMap::new(),
         }
     }
 
