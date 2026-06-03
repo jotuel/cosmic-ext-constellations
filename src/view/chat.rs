@@ -30,17 +30,7 @@ impl<'chat> Constellations {
         let filter_lower_fallback =
             (is_filtering && !filter_is_ascii).then(|| self.search_query.to_lowercase());
 
-        // ⚡ Bolt Optimization: Precompute thread counts in O(N) to avoid O(N^2) bottleneck
-        // inside view_thread_summary which previously iterated over the whole timeline per message.
-        let mut thread_counts: std::collections::HashMap<matrix_sdk::ruma::OwnedEventId, u32> =
-            std::collections::HashMap::new();
-        for item in &self.timeline_items {
-            if let Some(event) = item.item.as_event()
-                && let Some(root_id) = event.content().thread_root()
-            {
-                *thread_counts.entry(root_id).or_insert(0) += 1;
-            }
-        }
+
 
         let mut pending_date_divider: Option<matrix_sdk::ruma::MilliSecondsSinceUnixEpoch> = None;
 
@@ -88,7 +78,7 @@ impl<'chat> Constellations {
                     );
                 }
 
-                timeline = timeline.push(self.view_item(item, &thread_counts));
+                timeline = timeline.push(self.view_item(item, &self.thread_counts));
             } else if let Some(matrix::VirtualTimelineItem::DateDivider(date)) =
                 item.item.as_virtual()
             {
@@ -467,17 +457,7 @@ impl<'chat> Constellations {
                 Position::Bottom,
             ));
 
-        // ⚡ Bolt Optimization: Reuse precomputed thread_counts from main timeline
-        // to maintain O(N) rendering for the thread summary fallback checks.
-        let mut thread_counts: std::collections::HashMap<matrix_sdk::ruma::OwnedEventId, u32> =
-            std::collections::HashMap::new();
-        for item in &self.timeline_items {
-            if let Some(event) = item.item.as_event()
-                && let Some(root_id) = event.content().thread_root()
-            {
-                *thread_counts.entry(root_id.clone()).or_insert(0) += 1;
-            }
-        }
+
 
         for item in &self.threaded_timeline_items {
             if let Some(event) = item.item.as_event()
@@ -497,7 +477,7 @@ impl<'chat> Constellations {
                         continue;
                     }
                 }
-                timeline_col = timeline_col.push(self.view_item(item, &thread_counts));
+                timeline_col = timeline_col.push(self.view_item(item, &self.thread_counts));
             }
         }
 
