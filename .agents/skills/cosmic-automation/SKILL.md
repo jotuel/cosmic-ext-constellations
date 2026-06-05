@@ -1,4 +1,9 @@
-# COSMIC Desktop Automation and Screenshotting Skill
+---
+name: cosmic-automation
+description: Guidelines, wtype commands, window management, and templates for programmatically controlling and screenshotting COSMIC applications under Wayland.
+---
+
+# COSMIC Desktop Automation and Screenshotting
 
 This skill provides the guidelines, commands, and tools needed to programmatically control and capture running applications in the COSMIC Desktop Environment (under Wayland).
 
