@@ -489,7 +489,7 @@ impl<'chat> Constellations {
             )
             .height(100),
         )
-        .padding(10)
+        .padding(0)
         .into()
     }
 
@@ -512,9 +512,17 @@ impl<'chat> Constellations {
                 item.timestamp.as_str(),
             );
 
+            let sender_info_wrap = container(sender_info)
+                .width(cosmic::iced::Length::Fill)
+                .align_x(if is_me {
+                    Alignment::End
+                } else {
+                    Alignment::Start
+                });
+
             let mut bubble_col = Column::new()
                 .spacing(if self.app_settings.compact_mode { 0 } else { 2 })
-                .push(sender_info);
+                .push(sender_info_wrap);
 
             if let Some(in_reply_to) = event.content().in_reply_to() {
                 let mut reply_sender = "";
@@ -561,7 +569,16 @@ impl<'chat> Constellations {
                     .push(text::body("⤴").size(10))
                     .push(text::body(reply_snippet).size(10));
 
-                bubble_col = bubble_col.push(container(reply_indicator).padding([0, 0, 5, 10]));
+                let reply_indicator_wrap = container(reply_indicator)
+                    .width(cosmic::iced::Length::Fill)
+                    .align_x(if is_me {
+                        Alignment::End
+                    } else {
+                        Alignment::Start
+                    })
+                    .padding([0, 0, 5, 10]);
+
+                bubble_col = bubble_col.push(reply_indicator_wrap);
             }
 
             match message.msgtype() {
@@ -683,16 +700,40 @@ impl<'chat> Constellations {
                 }
             }
 
-            bubble_col = bubble_col.push(reaction_row);
+            let reaction_row_wrap = container(reaction_row)
+                .width(cosmic::iced::Length::Fill)
+                .align_x(if is_me {
+                    Alignment::End
+                } else {
+                    Alignment::Start
+                });
+            bubble_col = bubble_col.push(reaction_row_wrap);
 
             if self.active_reaction_picker.as_ref() == Some(&event.identifier()) {
                 bubble_col =
                     bubble_col.push(self.view_emoji_picker(Some(event.identifier().clone())));
             }
 
-            bubble_col = bubble_col.push(action_row);
+            let action_row_wrap = container(action_row)
+                .width(cosmic::iced::Length::Fill)
+                .align_x(if is_me {
+                    Alignment::End
+                } else {
+                    Alignment::Start
+                });
+            bubble_col = bubble_col.push(action_row_wrap);
 
             let bubble = container(bubble_col)
+                .style(move |theme: &cosmic::Theme| {
+                    use cosmic::iced::widget::container::Catalog;
+                    let cosmic = theme.cosmic();
+                    let mut style = theme.style(&cosmic::theme::Container::Card);
+                    if is_me {
+                        style.border.color = cosmic.accent.base.into();
+                        style.border.width = 1.0;
+                    }
+                    style
+                })
                 .padding(if self.app_settings.compact_mode {
                     5
                 } else {
@@ -718,13 +759,31 @@ impl<'chat> Constellations {
                 item.timestamp.as_str(),
             );
 
+            let sender_info_wrap = container(sender_info)
+                .width(cosmic::iced::Length::Fill)
+                .align_x(if is_me {
+                    Alignment::End
+                } else {
+                    Alignment::Start
+                });
+
             let mut bubble_col = Column::new()
                 .spacing(if self.app_settings.compact_mode { 0 } else { 2 })
-                .push(sender_info);
+                .push(sender_info_wrap);
 
             bubble_col = bubble_col.push(self.view_message_text(&item.markdown, &item.plain_text));
 
             let bubble = container(bubble_col)
+                .style(move |theme: &cosmic::Theme| {
+                    use cosmic::iced::widget::container::Catalog;
+                    let cosmic = theme.cosmic();
+                    let mut style = theme.style(&cosmic::theme::Container::Card);
+                    if is_me {
+                        style.border.color = cosmic.accent.base.into();
+                        style.border.width = 1.0;
+                    }
+                    style
+                })
                 .padding(if self.app_settings.compact_mode {
                     5
                 } else {
@@ -1102,7 +1161,7 @@ impl<'chat> Constellations {
                     })
                     .height(80),
             )
-            .padding(10)
+            .padding(0)
             .into()
         };
 
@@ -1177,12 +1236,24 @@ impl<'chat> Constellations {
                     .on_press(Message::TogglePreview)
                     .tooltip(crate::fl!("tooltip-preview"))
             })
+            .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
             .push(send_btn_widget);
+
+        let composer_card = container(
+            Column::new()
+                .spacing(5)
+                .push(composer)
+                .push(controls)
+        )
+        .style(|theme: &cosmic::Theme| {
+            use cosmic::iced::widget::container::Catalog;
+            theme.style(&cosmic::theme::Container::Card)
+        })
+        .padding(10);
 
         content
             .push(attachments_view)
-            .push(composer)
-            .push(controls)
+            .push(composer_card)
             .into()
     }
 
