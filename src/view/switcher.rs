@@ -9,7 +9,7 @@ use cosmic::{
     Element,
     iced::Alignment,
     widget::{
-        Column, RcElementWrapper, Row, button, container, icon::Named, menu, scrollable, text,
+        Column, RcElementWrapper, Row, button, container, divider, icon::Named, menu, scrollable, text,
         text_input, tooltip, tooltip::Position,
     },
 };
@@ -44,11 +44,11 @@ impl<'switcher> Constellations {
         // Global icon (All Rooms)
         let is_global_selected = self.selected_space.is_none();
 
-        let global_btn = if is_global_selected {
-            button::icon(Named::new("web-browser"))
-        } else {
-            button::icon(Named::new("web-browser")).on_press(Message::SelectSpace(None))
-        };
+        let mut global_btn = button::icon(Named::new("web-browser"))
+            .selected(is_global_selected);
+        if !is_global_selected {
+            global_btn = global_btn.on_press(Message::SelectSpace(None));
+        }
 
         let global_tooltip = tooltip(
             global_btn,
@@ -80,11 +80,11 @@ impl<'switcher> Constellations {
                 .align_x(Alignment::Center)
                 .align_y(Alignment::Center);
 
-            let mut btn = if is_selected {
-                button::custom(space_container)
-            } else {
-                button::custom(space_container).on_press(Message::SelectSpace(Some(space_id_str)))
-            };
+            let mut btn = button::custom(space_container)
+                .selected(is_selected);
+            if !is_selected {
+                btn = btn.on_press(Message::SelectSpace(Some(space_id_str)));
+            }
 
             if has_avatar {
                 btn = btn.padding(0);
@@ -99,6 +99,7 @@ impl<'switcher> Constellations {
         let scrollable_spaces = scrollable(content).height(cosmic::iced::Length::Fill);
 
         let bottom_content = Column::new()
+            .push(divider::horizontal::default())
             .push(view_menu_create())
             .spacing(10)
             .align_x(Alignment::Center);
@@ -207,24 +208,72 @@ impl<'switcher> Constellations {
         }
 
         if let Some(selected_space) = &self.selected_space {
-            let space_name = self
+            let space_room = self
                 .room_list
                 .iter()
-                .find(|r| r.id.as_ref() == selected_space.as_str())
+                .find(|r| r.id.as_ref() == selected_space.as_str());
+
+            let space_name = space_room
                 .and_then(|r| r.name.as_deref())
                 .map(std::borrow::Cow::Borrowed)
                 .unwrap_or_else(|| std::borrow::Cow::Owned(crate::fl!("unknown-space")));
 
+            let avatar = if let Some(space) = space_room {
+                let default_avatar = container(
+                    text::body(
+                        space
+                            .name
+                            .as_deref()
+                            .unwrap_or("S")
+                            .chars()
+                            .next()
+                            .unwrap_or('S')
+                            .to_string(),
+                    )
+                    .size(14),
+                )
+                .width(24)
+                .height(24)
+                .align_x(Alignment::Center)
+                .align_y(Alignment::Center);
+
+                if let Some(url) = &space.avatar_url {
+                    if let Some(handle) = self.media_cache.get(url) {
+                        Element::from(
+                            cosmic::widget::image(handle.clone())
+                                .width(24)
+                                .height(24)
+                                .border_radius(AVATAR_RADIUS),
+                        )
+                    } else {
+                        Element::from(default_avatar)
+                    }
+                } else {
+                    Element::from(default_avatar)
+                }
+            } else {
+                Element::from(
+                    container(text::body("S").size(14))
+                        .width(24)
+                        .height(24)
+                        .align_x(Alignment::Center)
+                        .align_y(Alignment::Center)
+                )
+            };
+
             let space_header = Row::new()
                 .align_y(Alignment::Center)
-                .push(text::title3(space_name))
-                .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
+                .spacing(10)
+                .width(cosmic::iced::Length::Fill)
+                .push(avatar)
+                .push(text::title3(space_name).width(cosmic::iced::Length::Fill))
                 .push(
                     button::icon(Named::new("emblem-system"))
                         .tooltip(crate::fl!("space-settings"))
                         .on_press(Message::OpenSettings(crate::SettingsPanel::Space)),
                 );
             room_list = room_list.push(container(space_header).padding(5));
+            room_list = room_list.push(divider::horizontal::default());
 
             if !self.other_rooms.is_empty() {
                 room_list = room_list.push(
@@ -249,7 +298,7 @@ impl<'switcher> Constellations {
 
             if let Some(last_msg) = &room.last_message {
                 let first_line = clean_last_message(last_msg);
-                room_content = room_content.push(text::body(first_line).size(12));
+                room_content = room_content.push(text::body(first_line).size(12).width(cosmic::iced::Length::Fill));
             }
 
             let is_selected = self.selected_room.as_ref() == Some(&room.id);
@@ -266,6 +315,7 @@ impl<'switcher> Constellations {
         }
 
         if !self.filtered_other_rooms.is_empty() {
+            room_list = room_list.push(divider::horizontal::default());
             room_list = room_list.push(
                 container(text::title3(crate::fl!("other-rooms")).size(14)).padding([10, 5, 5, 5]),
             );
@@ -283,7 +333,7 @@ impl<'switcher> Constellations {
 
                 if let Some(last_msg) = &room.last_message {
                     let first_line = clean_last_message(last_msg);
-                    room_content = room_content.push(text::body(first_line).size(12));
+                    room_content = room_content.push(text::body(first_line).size(12).width(cosmic::iced::Length::Fill));
                 }
 
                 let btn = button::custom(
@@ -292,7 +342,8 @@ impl<'switcher> Constellations {
                         .width(cosmic::iced::Length::Fill),
                 )
                 .selected(false)
-                .class(cosmic::theme::Button::ListItem(self.core.system_theme().cosmic().corner_radii.radius_m));
+                .class(cosmic::theme::Button::ListItem(self.core.system_theme().cosmic().corner_radii.radius_m))
+                .width(cosmic::iced::Length::Fill);
 
                 let join_btn =
                     button::text(crate::fl!("join")).on_press(Message::JoinRoom(room.id.clone()));
@@ -321,8 +372,9 @@ impl<'switcher> Constellations {
             name_str
                 .map(std::borrow::Cow::Borrowed)
                 .unwrap_or_else(|| std::borrow::Cow::Owned(crate::fl!("unknown-room"))),
-        );
-        let mut header = Row::new().spacing(10).align_y(Alignment::Center);
+        )
+        .width(cosmic::iced::Length::Fill);
+        let mut header = Row::new().spacing(10).align_y(Alignment::Center).width(cosmic::iced::Length::Fill);
 
         let view_default_avatar = || {
             container(text::body(crate::fl!("room-has-no-avatar")))
