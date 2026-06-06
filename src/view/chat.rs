@@ -106,17 +106,14 @@ impl<'chat> Constellations {
         let item_id = event.identifier();
 
         if let Some(reaction) = reactions {
-            for key in reaction.keys() {
-                let people = reaction.get_key_value(key);
-                let count = people.iter().count();
+            for (key, senders) in reaction.iter() {
+                let count = senders.len();
 
-                let is_me_reacted = people.iter().any(|(user_id, _)| {
-                    if let Some(me) = &self.user_id {
-                        user_id.as_str() == me
-                    } else {
-                        false
-                    }
-                });
+                let is_me_reacted = if let Some(me) = &self.user_id {
+                    senders.keys().any(|user_id| user_id.as_str() == me)
+                } else {
+                    false
+                };
 
                 let btn_content =
                     container(text::body(format!("{} {}", key, count)).size(10)).padding([2, 4]);
