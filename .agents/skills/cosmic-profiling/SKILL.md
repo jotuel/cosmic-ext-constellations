@@ -13,7 +13,8 @@ Ensure target profiling tools are installed:
 * **`heaptrack`**: Memory heap allocation profiler.
 
 ## Instructions
-1. Run the profiling script located at `scripts/profile_run.sh <tool>` (where `<tool>` is `samply` or `heaptrack`).
-2. Analyze output:
-   - For `samply`: Load the generated `.json` files into [profiler.firefox.com](https://profiler.firefox.com/).
+1. The script compiles the application using the custom `profiling` profile defined in `Cargo.toml` (which inherits release optimizations, uses memory-friendly settings like thin LTO and split units, and retains line debug symbols).
+2. Run the profiling script located at `.agents/skills/cosmic-profiling/scripts/profile_run.sh <tool>` (where `<tool>` is `samply` or `heaptrack`).
+3. Analyze output:
+   - For `samply`: Load the generated `profile.json.gz` file into [profiler.firefox.com](https://profiler.firefox.com/).
    - For `heaptrack`: Run `heaptrack_gui heaptrack.<binary>.<pid>.gz` to inspect heap allocation size and leaks.
