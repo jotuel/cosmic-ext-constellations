@@ -257,7 +257,17 @@ impl<'chat> Constellations {
         }
 
         let scroll_grid = if no_results {
-            let no_found = text::body(crate::fl!("no-results-found")).size(12);
+            let no_found = container(
+                Column::new()
+                    .spacing(10)
+                    .align_x(Alignment::Center)
+                    .push(cosmic::widget::icon::from_name("edit-find-symbolic").size(64))
+                    .push(text::body(crate::fl!("no-results-found")).size(16)),
+            )
+            .width(cosmic::iced::Length::Fill)
+            .align_x(Alignment::Center)
+            .padding(20);
+
             scrollable(no_found)
                 .height(200)
                 .width(cosmic::iced::Length::Fill)
