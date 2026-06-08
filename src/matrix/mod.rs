@@ -239,6 +239,7 @@ pub enum MatrixEvent {
     RoomDiff(Box<RoomListDiff>),
     TimelineDiff(TimelineDiff<TimelineItem>),
     TimelineReset,
+    TimelineInitFinished,
     ReactionAdded {
         room_id: String,
         event_id: String,

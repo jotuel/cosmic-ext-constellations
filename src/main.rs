@@ -102,6 +102,7 @@ pub struct Constellations {
     needs_initial_scroll: bool,
     is_timeline_at_bottom: bool,
     is_threaded_timeline_at_bottom: bool,
+    is_timeline_initialized: bool,
     replying_to: Option<ConstellationsItem>,
     editing_item: Option<ConstellationsItem>,
     selected_space: Option<OwnedRoomId>,
@@ -671,6 +672,7 @@ impl Constellations {
                             eyeball_im::VectorDiff::Insert { index, value: item },
                         )));
                     }
+                    let _ = tx.send(Message::Matrix(matrix::MatrixEvent::TimelineInitFinished));
 
                     use cosmic::iced::futures::StreamExt;
                     while let Some(diff) = stream.next().await {
@@ -912,6 +914,7 @@ impl Application for Constellations {
             needs_initial_scroll: false,
             is_timeline_at_bottom: true,
             is_threaded_timeline_at_bottom: true,
+            is_timeline_initialized: false,
             replying_to: None,
             editing_item: None,
             selected_space: None,
@@ -1106,6 +1109,7 @@ mod tests {
             needs_initial_scroll: false,
             is_timeline_at_bottom: true,
             is_threaded_timeline_at_bottom: true,
+            is_timeline_initialized: false,
             selected_space: None,
             current_settings_panel: None,
             user_settings: settings::user::State::default(),

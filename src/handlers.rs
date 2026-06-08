@@ -226,8 +226,11 @@ impl Constellations {
     fn check_and_perform_initial_scroll(
         &mut self,
     ) -> Option<Task<Action<<Constellations as Application>::Message>>> {
-        if self.needs_initial_scroll && !self.is_loading_more && !self.timeline_items.is_empty() {
+        if self.needs_initial_scroll && !self.is_loading_more && self.is_timeline_initialized {
             self.needs_initial_scroll = false;
+            if self.timeline_items.is_empty() {
+                return None;
+            }
             if let Some(room_id) = &self.selected_room {
                 let unread_count = if let Some(room) = self.room_list.iter().find(|r| &r.id == room_id) {
                     room.unread_count
@@ -501,7 +504,16 @@ impl Constellations {
                 self.needs_initial_scroll = true;
                 self.is_timeline_at_bottom = true;
                 self.is_threaded_timeline_at_bottom = true;
+                self.is_timeline_initialized = false;
                 Task::none()
+            }
+            matrix::MatrixEvent::TimelineInitFinished => {
+                self.is_timeline_initialized = true;
+                if let Some(task) = self.check_and_perform_initial_scroll() {
+                    task
+                } else {
+                    Task::none()
+                }
             }
             matrix::MatrixEvent::ReactionAdded { .. } => {
                 // For now, we don't do anything specific as reactions are handled via TimelineDiff
@@ -1599,6 +1611,7 @@ impl Constellations {
                 self.last_timeline_offset = 0.0;
                 self.is_timeline_at_bottom = true;
                 self.is_threaded_timeline_at_bottom = true;
+                self.is_timeline_initialized = false;
 
                 if self.user_id == Some("@simulated_user:matrix.org".to_string()) {
                     self.timeline_items = self.generate_mock_timeline(&room_id);
@@ -2277,6 +2290,7 @@ mod tests {
             needs_initial_scroll: false,
             is_timeline_at_bottom: true,
             is_threaded_timeline_at_bottom: true,
+            is_timeline_initialized: false,
             selected_space: None,
             current_settings_panel: None,
             user_settings: crate::settings::user::State::default(),
@@ -2657,6 +2671,10 @@ mod tests {
             ));
         }
 
+        // Simulate TimelineInitFinished
+        let _ = app.update(Message::Matrix(matrix::MatrixEvent::TimelineInitFinished));
+        assert_eq!(app.is_timeline_initialized, true);
+
         let _task = app.update(Message::LoadMoreFinished(Ok(())));
         assert_eq!(app.needs_initial_scroll, false);
 
@@ -2679,6 +2697,10 @@ mod tests {
             ));
         }
 
+        // Simulate TimelineInitFinished
+        let _ = app.update(Message::Matrix(matrix::MatrixEvent::TimelineInitFinished));
+        assert_eq!(app.is_timeline_initialized, true);
+
         let _task2 = app.update(Message::LoadMoreFinished(Ok(())));
         assert_eq!(app.needs_initial_scroll, false);
 
@@ -2686,11 +2708,13 @@ mod tests {
         app.timeline_items.clear();
         app.needs_initial_scroll = true;
         app.is_loading_more = true;
+        app.is_timeline_initialized = false;
         assert!(app.check_and_perform_initial_scroll().is_none());
 
         app.is_loading_more = false;
-        assert!(app.check_and_perform_initial_scroll().is_none()); // still none because timeline is empty
+        assert!(app.check_and_perform_initial_scroll().is_none()); // still none because is_timeline_initialized is false
 
+        app.is_timeline_initialized = true;
         app.timeline_items.push_back(crate::ConstellationsItem::new_mock(
             "Sender",
             "Msg",
@@ -2704,5 +2728,6 @@ mod tests {
         let _ = app.update(Message::Matrix(matrix::MatrixEvent::TimelineReset));
         assert_eq!(app.needs_initial_scroll, true);
         assert_eq!(app.is_timeline_at_bottom, true);
+        assert_eq!(app.is_timeline_initialized, false);
     }
 }
