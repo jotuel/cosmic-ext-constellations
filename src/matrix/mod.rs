@@ -543,7 +543,8 @@ impl MatrixEngine {
                             .appname("Constellations")
                             .summary(&format!("{} in {}", sender, room_name))
                             .body(&body)
-                            .show();
+                            .show_async()
+                            .await;
                     }
                 }
             },

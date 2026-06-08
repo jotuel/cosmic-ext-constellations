@@ -258,12 +258,25 @@ impl Eq for MatrixEngineWrapper {}
 impl Constellations {
     pub fn set_error(&mut self, error: String) {
         tracing::error!("Error occurred: {}", error);
-        let _ = notify_rust::Notification::new()
-            .appname("Constellations")
-            .summary("Constellations Error")
-            .body(&error)
-            .icon("dialog-error")
-            .show();
+        let error_clone = error.clone();
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async move {
+                let _ = notify_rust::Notification::new()
+                    .appname("Constellations")
+                    .summary("Constellations Error")
+                    .body(&error_clone)
+                    .icon("dialog-error")
+                    .show_async()
+                    .await;
+            });
+        } else {
+            let _ = notify_rust::Notification::new()
+                .appname("Constellations")
+                .summary("Constellations Error")
+                .body(&error_clone)
+                .icon("dialog-error")
+                .show();
+        }
         self.error = Some(error);
     }
 
