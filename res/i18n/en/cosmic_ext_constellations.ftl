@@ -308,3 +308,18 @@ current-device = Current
 password-to-delete-devices = Password to delete devices:
 devices-and-sessions = Devices & Sessions
 unknown-device = Unknown Device
+
+# User Settings Privacy & Notifications
+privacy-and-preferences = Privacy & Preferences
+display-media-previews = Display Media Previews
+display-invite-avatars = Display Invite Avatars
+default-notification-settings = Default Notification Settings
+direct-messages = Direct Messages
+group-chats = Group Chats
+notification-mode-all-messages = All Messages
+notification-mode-mentions-only = Mentions Only
+notification-mode-muted = Muted
+keyword-notifications = Keyword Notifications
+keyword-notifications-description = Receive notifications when these keywords are mentioned in any room.
+add-keyword-title = Add Keyword
+new-keyword-placeholder = New keyword
