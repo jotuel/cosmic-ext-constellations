@@ -1742,14 +1742,14 @@ impl State {
 
     fn view_privacy<'a>(&'a self) -> Element<'a, Message> {
         settings::section()
-            .title("Privacy & Preferences")
+            .title(crate::fl!("privacy-and-preferences"))
             .add(settings::item(
-                "Display Media Previews",
+                crate::fl!("display-media-previews"),
                 cosmic::widget::toggler(self.media_previews_display_policy)
                     .on_toggle(Message::ToggleMediaPreviewsDisplayPolicy),
             ))
             .add(settings::item(
-                "Display Invite Avatars",
+                crate::fl!("display-invite-avatars"),
                 cosmic::widget::toggler(self.invite_avatars_display_policy)
                     .on_toggle(Message::ToggleInviteAvatarsDisplayPolicy),
             ))
@@ -1769,9 +1769,9 @@ impl State {
             let mut r = Row::new().spacing(10);
             for mode in modes {
                 let label = match mode {
-                    RoomNotificationMode::AllMessages => "All Messages",
-                    RoomNotificationMode::MentionsAndKeywordsOnly => "Mentions Only",
-                    RoomNotificationMode::Mute => "Muted",
+                    RoomNotificationMode::AllMessages => crate::fl!("notification-mode-all-messages"),
+                    RoomNotificationMode::MentionsAndKeywordsOnly => crate::fl!("notification-mode-mentions-only"),
+                    RoomNotificationMode::Mute => crate::fl!("notification-mode-muted"),
                 };
 
                 let mut btn = if current_mode == Some(mode) {
@@ -1789,13 +1789,13 @@ impl State {
         };
 
         settings::section()
-            .title("Default Notification Settings")
+            .title(crate::fl!("default-notification-settings"))
             .add(settings::item(
-                "Direct Messages",
+                crate::fl!("direct-messages"),
                 build_mode_row(self.global_notification_mode_dm, true),
             ))
             .add(settings::item(
-                "Group Chats",
+                crate::fl!("group-chats"),
                 build_mode_row(self.global_notification_mode_group, false),
             ))
             .into()
@@ -1803,10 +1803,8 @@ impl State {
 
     fn view_keywords<'a>(&'a self) -> Element<'a, Message> {
         let mut section = settings::section()
-            .title("Keyword Notifications")
-            .header(text::body(
-                "Receive notifications when these keywords are mentioned in any room.",
-            ));
+            .title(crate::fl!("keyword-notifications"))
+            .header(text::body(crate::fl!("keyword-notifications-description")));
 
         if self.is_loading_keywords {
             section = section.add(text::body(crate::fl!("loading-keywords")));
@@ -1842,13 +1840,13 @@ impl State {
 
             let add_keyword_layout = Column::new()
                 .spacing(5)
-                .push(text::body("Add Keyword").size(12))
+                .push(text::body(crate::fl!("add-keyword-title")).size(12))
                 .push(
                     Row::new()
                         .spacing(10)
                         .align_y(Alignment::Center)
                         .push(
-                            text_input("New keyword", &self.new_keyword)
+                            text_input(crate::fl!("new-keyword-placeholder"), &self.new_keyword)
                                 .on_input(Message::NewKeywordChanged)
                                 .on_submit(|_| Message::AddKeyword),
                         )
