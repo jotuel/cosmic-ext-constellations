@@ -1,8 +1,8 @@
 use crate::{
     Constellations, MenuAct, Message,
     view::{
-        AVATAR_RADIUS, ROOM_AVATAR_HEIGHT, ROOM_AVATAR_WIDTH, SPACE_AVATAR_HEIGHT,
-        SPACE_AVATAR_WIDTH,
+        AVATAR_RADIUS, ROOM_AVATAR_HEIGHT, ROOM_AVATAR_WIDTH, ROOM_SWITCHER_WIDTH,
+        SPACE_AVATAR_HEIGHT, SPACE_AVATAR_WIDTH,
     },
 };
 use cosmic::{
@@ -97,7 +97,6 @@ impl<'switcher> Constellations {
         let scrollable_spaces = scrollable(content).height(cosmic::iced::Length::Fill);
 
         let bottom_content = Column::new()
-            .push(divider::horizontal::default())
             .push(view_menu_create())
             .spacing(10)
             .align_x(Alignment::Center);
@@ -369,7 +368,7 @@ impl<'switcher> Constellations {
         }
 
         container(scrollable(room_list))
-            .width(250)
+            .width(ROOM_SWITCHER_WIDTH)
             .padding(10)
             .into()
     }
