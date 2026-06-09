@@ -1788,6 +1788,7 @@ impl Constellations {
                 self.timeline_items.clear();
                 self.room_members.clear();
                 self.pinned_events.clear();
+                self.pinned_events_details.clear();
                 let fetch_members_task = if self.show_members_panel {
                     self.is_loading_members = true;
                     self.fetch_members_task()
@@ -2272,6 +2273,7 @@ impl Constellations {
                 self.show_members_panel = false;
                 self.show_pinned_panel = false;
                 self.room_members.clear();
+                self.pinned_events_details.clear();
                 Task::none()
             }
             Message::UserSettings(msg) => self.user_settings.update(msg, &self.matrix),
@@ -2409,8 +2411,12 @@ impl Constellations {
             Message::PinnedEventsFetched(res) => {
                 self.is_loading_pinned = false;
                 match res {
-                    Ok(pinned) => {
-                        self.pinned_events = pinned.into_iter().collect();
+                    Ok(pinned_details) => {
+                        self.pinned_events = pinned_details
+                            .iter()
+                            .filter_map(|d| matrix_sdk::ruma::EventId::parse(&d.event_id).ok())
+                            .collect();
+                        self.pinned_events_details = pinned_details;
                     }
                     Err(e) => {
                         self.set_error(format!("Failed to fetch pinned events: {}", e));
@@ -2546,7 +2552,14 @@ impl Constellations {
     fn fetch_pinned_events_task(&self) -> Task<Action<Message>> {
         if self.user_id == Some("@simulated_user:matrix.org".to_string()) {
             let mock_pinned = vec![
-                matrix_sdk::ruma::event_id!("$mock_pinned_1:example.com").to_owned(),
+                matrix::PinnedEventInfo {
+                    event_id: "$mock_pinned_1:example.com".to_string(),
+                    sender_id: "@mock_sender:example.com".to_string(),
+                    sender_name: "Mock Sender".to_string(),
+                    avatar_url: None,
+                    timestamp: "2026-06-09 12:00:00".to_string(),
+                    body: "This is a mock pinned message that is always loaded!".to_string(),
+                }
             ];
             return Task::done(Action::from(Message::PinnedEventsFetched(Ok(mock_pinned))));
         }
@@ -2559,7 +2572,25 @@ impl Constellations {
         };
         Task::perform(
             async move {
-                matrix.get_pinned_events(&room_id).await.map_err(|e| e.to_string())
+                let ids = matrix.get_pinned_events(&room_id).await.map_err(|e| e.to_string())?;
+                let mut details = Vec::new();
+                for id in ids {
+                    match matrix.fetch_pinned_event_details(&room_id, &id).await {
+                        Ok(detail) => details.push(detail),
+                        Err(e) => {
+                            tracing::error!("Failed to fetch details for pinned event {}: {}", id, e);
+                            details.push(matrix::PinnedEventInfo {
+                                event_id: id.to_string(),
+                                sender_id: "@unknown:example.com".to_string(),
+                                sender_name: "Unknown".to_string(),
+                                avatar_url: None,
+                                timestamp: "Unknown time".to_string(),
+                                body: format!("[Failed to load message content: {}]", e),
+                            });
+                        }
+                    }
+                }
+                Ok(details)
             },
             |res| Action::from(Message::PinnedEventsFetched(res))
         )
@@ -2648,6 +2679,7 @@ mod tests {
             show_pinned_panel: false,
             is_loading_pinned: false,
             pinned_events: HashSet::new(),
+            pinned_events_details: Vec::new(),
             show_members_panel: false,
             room_members: Vec::new(),
             is_loading_members: false,
@@ -2717,10 +2749,19 @@ mod tests {
 
         // Send simulated fetched pinned events
         let mock_id = matrix_sdk::ruma::event_id!("$123:example.com").to_owned();
-        let _ = app.update(Message::PinnedEventsFetched(Ok(vec![mock_id.clone()])));
+        let mock_info = matrix::PinnedEventInfo {
+            event_id: mock_id.to_string(),
+            sender_id: "@user:matrix.org".to_string(),
+            sender_name: "User".to_string(),
+            avatar_url: None,
+            timestamp: "2026-06-09 12:00:00".to_string(),
+            body: "Pinned message content".to_string(),
+        };
+        let _ = app.update(Message::PinnedEventsFetched(Ok(vec![mock_info])));
         assert_eq!(app.is_loading_pinned, false);
         assert_eq!(app.pinned_events.len(), 1);
         assert!(app.pinned_events.contains(&mock_id));
+        assert_eq!(app.pinned_events_details.len(), 1);
 
         let _ = app.update(Message::TogglePinnedPanel);
         assert_eq!(app.show_pinned_panel, false);

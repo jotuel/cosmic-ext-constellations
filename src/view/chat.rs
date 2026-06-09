@@ -1087,12 +1087,28 @@ impl<'chat> Constellations {
             room_header = room_header
                 .push(cosmic::widget::space().width(cosmic::iced::Length::Fill))
                 .push(call_button)
-                .push(
-                    button::icon(Named::new("pin-symbolic"))
-                        .tooltip(crate::fl!("pinned-messages"))
-                        .selected(self.current_settings_panel == Some(crate::SettingsPanel::Pinned))
-                        .on_press(Message::TogglePinnedPanel),
-                )
+                .push({
+                    let count = self.pinned_events.len();
+                    if count > 0 {
+                        let btn_content = Row::new()
+                            .spacing(6)
+                            .align_y(Alignment::Center)
+                            .push(cosmic::widget::icon::from_name("pin-symbolic").size(16))
+                            .push(text::body(count.to_string()).size(12));
+                        Element::from(tooltip(
+                            button::custom(btn_content)
+                                .selected(self.current_settings_panel == Some(crate::SettingsPanel::Pinned))
+                                .on_press(Message::TogglePinnedPanel),
+                            text::body(crate::fl!("pinned-messages")),
+                            Position::Bottom,
+                        ))
+                    } else {
+                        Element::from(button::icon(Named::new("pin-symbolic"))
+                            .tooltip(crate::fl!("pinned-messages"))
+                            .selected(self.current_settings_panel == Some(crate::SettingsPanel::Pinned))
+                            .on_press(Message::TogglePinnedPanel))
+                    }
+                })
                 .push(
                     button::icon(Named::new("system-users-symbolic"))
                         .tooltip(crate::fl!("room-members"))
@@ -1458,92 +1474,45 @@ impl<'chat> Constellations {
             let mut pinned_list = Column::new().spacing(10);
             let mut found_any = false;
 
-            for item in &self.timeline_items {
-                if let Some(item_id) = &item.item_id
-                    && let matrix_sdk_ui::timeline::TimelineEventItemId::EventId(id) = item_id
-                    && self.pinned_events.contains(id)
+            for item in &self.pinned_events_details {
+                found_any = true;
+
+                let avatar = if let Some(avatar_url) = &item.avatar_url
+                    && let Some(handle) = self.media_cache.get(avatar_url)
                 {
-                    found_any = true;
-                    let body = item.body_text();
+                    Element::from(cosmic::widget::image(handle.clone()).width(20).height(20))
+                } else {
+                    container(cosmic::widget::icon::from_name("avatar-default-symbolic").size(12))
+                        .padding(2)
+                        .into()
+                };
 
-                    let avatar = if let Some(avatar_url) = &item.avatar_url
-                        && let Some(handle) = self.media_cache.get(avatar_url)
-                    {
-                        Element::from(cosmic::widget::image(handle.clone()).width(20).height(20))
-                    } else {
-                        container(cosmic::widget::icon::from_name("avatar-default-symbolic").size(12))
-                            .padding(2)
-                            .into()
-                    };
+                let message_row = Row::new()
+                    .spacing(10)
+                    .align_y(Alignment::Center)
+                    .push(avatar)
+                    .push(
+                        Column::new()
+                            .spacing(2)
+                            .push(
+                                Row::new()
+                                    .spacing(5)
+                                    .align_y(Alignment::Center)
+                                    .push(text::title3(&item.sender_name).size(12))
+                                    .push(text::body(&item.timestamp).size(10)),
+                            )
+                            .push(text::body(&item.body).size(12)),
+                    );
 
-                    let message_row = Row::new()
-                        .spacing(10)
-                        .align_y(Alignment::Center)
-                        .push(avatar)
-                        .push(
-                            Column::new()
-                                .spacing(2)
-                                .push(
-                                    Row::new()
-                                        .spacing(5)
-                                        .align_y(Alignment::Center)
-                                        .push(text::title3(&item.sender_name).size(12))
-                                        .push(text::body(&item.timestamp).size(10)),
-                                )
-                                .push(text::body(body).size(12)),
-                        );
+                let card = container(message_row)
+                    .padding(10)
+                    .style(move |theme: &cosmic::Theme| {
+                        use cosmic::iced::widget::container::Catalog;
+                        theme.style(&cosmic::theme::Container::Card)
+                    })
+                    .width(cosmic::iced::Length::Fill);
 
-                    let card = container(message_row)
-                        .padding(10)
-                        .style(move |theme: &cosmic::Theme| {
-                            use cosmic::iced::widget::container::Catalog;
-                            theme.style(&cosmic::theme::Container::Card)
-                        })
-                        .width(cosmic::iced::Length::Fill);
-
-                    pinned_list = pinned_list.push(card);
-                }
-            }
-
-            // Also show pinned events that aren't currently loaded in timeline
-            for event_id in &self.pinned_events {
-                let is_loaded = self.timeline_items.iter().any(|item| {
-                    if let Some(item_id) = &item.item_id
-                        && let matrix_sdk_ui::timeline::TimelineEventItemId::EventId(id) = item_id
-                    {
-                        id == event_id
-                    } else {
-                        false
-                    }
-                });
-
-                if !is_loaded {
-                    found_any = true;
-                    let mut event_id_str = event_id.to_string();
-                    if event_id_str.len() > 30 {
-                        event_id_str = format!("{}…{}", &event_id_str[..15], &event_id_str[event_id_str.len() - 10..]);
-                    }
-                    let message_row = Row::new()
-                        .spacing(10)
-                        .align_y(Alignment::Start)
-                        .push(cosmic::widget::icon::from_name("dialog-information-symbolic").size(16))
-                        .push(
-                            Column::new()
-                                .spacing(2)
-                                .push(text::title3(crate::fl!("pinned-message-not-loaded")).size(12))
-                                .push(text::body(event_id_str).size(10)),
-                        );
-
-                    let card = container(message_row)
-                        .padding(10)
-                        .style(move |theme: &cosmic::Theme| {
-                            use cosmic::iced::widget::container::Catalog;
-                            theme.style(&cosmic::theme::Container::Card)
-                        })
-                        .width(cosmic::iced::Length::Fill);
-
-                    pinned_list = pinned_list.push(card);
-                }
+                pinned_list = pinned_list.push(card);
             }
 
             if !found_any {
