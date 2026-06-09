@@ -570,6 +570,8 @@ impl Constellations {
                 self.needs_initial_scroll = !is_background_reset;
                 self.needs_scroll_restoration = is_background_reset;
                 self.last_content_height = 0.0;
+                self.last_viewport_width = 0.0;
+                self.last_viewport_height = 0.0;
                 self.needs_scroll_adjustment = false;
                 if !is_background_reset {
                     self.is_timeline_at_bottom = true;
@@ -1609,6 +1611,8 @@ impl Constellations {
                     self.threaded_timeline_items.clear();
                     self.needs_threaded_scroll_restoration = is_background_reset;
                     self.last_threaded_content_height = 0.0;
+                    self.last_threaded_viewport_width = 0.0;
+                    self.last_threaded_viewport_height = 0.0;
                     self.needs_threaded_scroll_adjustment = false;
                     self.is_threaded_timeline_initialized = false;
                 }
@@ -1645,6 +1649,8 @@ impl Constellations {
                 self.threaded_timeline_items.clear();
                 self.last_threaded_timeline_offset = 0.0;
                 self.last_threaded_content_height = 0.0;
+                self.last_threaded_viewport_width = 0.0;
+                self.last_threaded_viewport_height = 0.0;
                 self.needs_threaded_scroll_adjustment = false;
                 self.is_threaded_timeline_initialized = false;
                 Task::batch(vec![
@@ -1682,6 +1688,8 @@ impl Constellations {
                 self.threaded_timeline_items.clear();
                 self.last_threaded_timeline_offset = 0.0;
                 self.last_threaded_content_height = 0.0;
+                self.last_threaded_viewport_width = 0.0;
+                self.last_threaded_viewport_height = 0.0;
                 self.needs_threaded_scroll_adjustment = false;
                 self.is_threaded_timeline_initialized = false;
                 Task::none()
@@ -1707,6 +1715,16 @@ impl Constellations {
                         return Task::none();
                     }
 
+                    let mut is_layout_resize = false;
+                    if (self.last_threaded_content_height > 0.0 && current_height != self.last_threaded_content_height)
+                        || (self.last_threaded_viewport_width > 0.0 && viewport.bounds().width != self.last_threaded_viewport_width)
+                        || (self.last_threaded_viewport_height > 0.0 && viewport.bounds().height != self.last_threaded_viewport_height)
+                    {
+                        if !self.needs_threaded_scroll_adjustment {
+                            is_layout_resize = true;
+                        }
+                    }
+
                     let mut task = Task::none();
                     let mut actual_offset = current_offset;
 
@@ -1724,15 +1742,40 @@ impl Constellations {
                                 y: Some(actual_offset),
                             },
                         );
+                    } else if is_layout_resize {
+                        if self.is_threaded_timeline_at_bottom {
+                            task = scrollable::snap_to(
+                                THREADED_TIMELINE_ID.clone(),
+                                scrollable::RelativeOffset::END.into(),
+                            );
+                        } else {
+                            let target_offset = self.last_threaded_timeline_offset.min(current_height - viewport.bounds().height).max(0.0);
+                            task = scrollable::scroll_to(
+                                THREADED_TIMELINE_ID.clone(),
+                                scrollable::AbsoluteOffset {
+                                    x: Some(0.0),
+                                    y: Some(target_offset),
+                                },
+                            );
+                            actual_offset = target_offset;
+                        }
                     }
 
                     let last_offset = self.last_threaded_timeline_offset;
-                    let should_load = actual_offset < 100.0 && actual_offset < last_offset;
+                    let should_load = !is_layout_resize && actual_offset < 100.0 && actual_offset < last_offset;
                     let is_at_bottom = actual_offset + viewport.bounds().height >= current_height - 20.0;
 
-                    self.last_threaded_timeline_offset = actual_offset;
-                    self.last_threaded_content_height = current_height;
-                    self.is_threaded_timeline_at_bottom = is_at_bottom;
+                    if !is_layout_resize {
+                        self.last_threaded_timeline_offset = actual_offset;
+                        self.last_threaded_content_height = current_height;
+                        self.last_threaded_viewport_width = viewport.bounds().width;
+                        self.last_threaded_viewport_height = viewport.bounds().height;
+                        self.is_threaded_timeline_at_bottom = is_at_bottom;
+                    } else {
+                        self.last_threaded_content_height = current_height;
+                        self.last_threaded_viewport_width = viewport.bounds().width;
+                        self.last_threaded_viewport_height = viewport.bounds().height;
+                    }
 
                     if should_load {
                         Task::batch(vec![task, self.handle_load_more(true)])
@@ -1742,6 +1785,16 @@ impl Constellations {
                 } else {
                     if !self.is_timeline_initialized {
                         return Task::none();
+                    }
+
+                    let mut is_layout_resize = false;
+                    if (self.last_content_height > 0.0 && current_height != self.last_content_height)
+                        || (self.last_viewport_width > 0.0 && viewport.bounds().width != self.last_viewport_width)
+                        || (self.last_viewport_height > 0.0 && viewport.bounds().height != self.last_viewport_height)
+                    {
+                        if !self.needs_scroll_adjustment {
+                            is_layout_resize = true;
+                        }
                     }
 
                     let mut task = Task::none();
@@ -1761,15 +1814,40 @@ impl Constellations {
                                 y: Some(actual_offset),
                             },
                         );
+                    } else if is_layout_resize {
+                        if self.is_timeline_at_bottom {
+                            task = scrollable::snap_to(
+                                TIMELINE_ID.clone(),
+                                scrollable::RelativeOffset::END.into(),
+                            );
+                        } else {
+                            let target_offset = self.last_timeline_offset.min(current_height - viewport.bounds().height).max(0.0);
+                            task = scrollable::scroll_to(
+                                TIMELINE_ID.clone(),
+                                scrollable::AbsoluteOffset {
+                                    x: Some(0.0),
+                                    y: Some(target_offset),
+                                },
+                            );
+                            actual_offset = target_offset;
+                        }
                     }
 
                     let last_offset = self.last_timeline_offset;
-                    let should_load = actual_offset < 100.0 && actual_offset < last_offset;
+                    let should_load = !is_layout_resize && actual_offset < 100.0 && actual_offset < last_offset;
                     let is_at_bottom = actual_offset + viewport.bounds().height >= current_height - 20.0;
 
-                    self.last_timeline_offset = actual_offset;
-                    self.last_content_height = current_height;
-                    self.is_timeline_at_bottom = is_at_bottom;
+                    if !is_layout_resize {
+                        self.last_timeline_offset = actual_offset;
+                        self.last_content_height = current_height;
+                        self.last_viewport_width = viewport.bounds().width;
+                        self.last_viewport_height = viewport.bounds().height;
+                        self.is_timeline_at_bottom = is_at_bottom;
+                    } else {
+                        self.last_content_height = current_height;
+                        self.last_viewport_width = viewport.bounds().width;
+                        self.last_viewport_height = viewport.bounds().height;
+                    }
 
                     if should_load {
                         Task::batch(vec![task, self.handle_load_more(false)])
@@ -1799,6 +1877,8 @@ impl Constellations {
                 self.recompute_thread_counts();
                 self.last_timeline_offset = 0.0;
                 self.last_content_height = 0.0;
+                self.last_viewport_width = 0.0;
+                self.last_viewport_height = 0.0;
                 self.needs_scroll_adjustment = false;
                 self.is_timeline_at_bottom = true;
                 self.is_threaded_timeline_at_bottom = true;
@@ -2648,6 +2728,10 @@ mod tests {
             is_threaded_timeline_initialized: false,
             last_content_height: 0.0,
             last_threaded_content_height: 0.0,
+            last_viewport_width: 0.0,
+            last_viewport_height: 0.0,
+            last_threaded_viewport_width: 0.0,
+            last_threaded_viewport_height: 0.0,
             needs_scroll_adjustment: false,
             needs_threaded_scroll_adjustment: false,
             selected_space: None,
