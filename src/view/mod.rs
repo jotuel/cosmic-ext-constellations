@@ -13,6 +13,7 @@ const SPACE_AVATAR_HEIGHT: i32 = 32;
 const ROOM_AVATAR_WIDTH: i32 = 24;
 const ROOM_AVATAR_HEIGHT: i32 = 24;
 const AVATAR_RADIUS: i32 = 15;
+const ROOM_SWITCHER_WIDTH: i32 = 250;
 
 impl Constellations {
     pub fn get_room_name(&self, room_id: &str) -> Option<&str> {
