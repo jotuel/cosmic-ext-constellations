@@ -1759,7 +1759,7 @@ impl MatrixEngine {
             .ok()
             .flatten()
             .and_then(|e| e.deserialize().ok())
-            .map(|ev| match ev {
+            .and_then(|ev| match ev {
                 matrix_sdk_base::deserialized_responses::SyncOrStrippedState::Sync(
                     matrix_sdk::ruma::events::SyncStateEvent::Original(ev),
                 ) => Some(ev.content.pinned),
@@ -1768,7 +1768,6 @@ impl MatrixEngine {
                 ) => ev.content.pinned,
                 _ => None,
             })
-            .flatten()
             .unwrap_or_default();
         Ok(pinned)
     }
@@ -2770,14 +2769,14 @@ impl MatrixEngine {
         let passphrase = Self::get_or_create_store_passphrase().await?;
 
         let mut key_mismatch = false;
-        if search_index_path.exists() {
-            if let Ok(entries) = std::fs::read_dir(&search_index_path) {
+        if search_index_path.exists()
+            && let Ok(entries) = std::fs::read_dir(&search_index_path) {
                 for entry in entries.flatten() {
                     if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
                         let key_path = entry.path().join("seshat-index.key");
-                        if key_path.exists() {
-                            if let Ok(bytes) = std::fs::read(&key_path) {
-                                if matrix_sdk_store_encryption::StoreCipher::import(
+                        if key_path.exists()
+                            && let Ok(bytes) = std::fs::read(&key_path)
+                                && matrix_sdk_store_encryption::StoreCipher::import(
                                     &passphrase,
                                     &bytes,
                                 )
@@ -2790,12 +2789,9 @@ impl MatrixEngine {
                                     key_mismatch = true;
                                     break;
                                 }
-                            }
-                        }
                     }
                 }
             }
-        }
 
         if key_mismatch {
             let _ = std::fs::remove_dir_all(&search_index_path);
