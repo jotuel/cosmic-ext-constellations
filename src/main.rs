@@ -1,23 +1,22 @@
 #![recursion_limit = "256"]
 
-pub mod item;
-pub mod preview;
 pub mod utils;
-
-mod handlers;
-pub mod i18n;
-mod ipc;
 mod matrix;
-pub mod rich_text;
 pub mod settings;
-pub mod unified_push;
 mod view;
 
-pub use item::ConstellationsItem;
-pub use preview::{PreviewEvent, parse_markdown, parse_plain_text};
+pub use utils::item::ConstellationsItem;
+pub use utils::preview::{PreviewEvent, parse_markdown, parse_plain_text};
 pub use utils::{
     ApplyVectorDiffExt, contains_ignore_ascii_case, fuzzy_match_ignore_case, redact_url,
 };
+
+pub use utils::i18n;
+pub(crate) use utils::ipc;
+pub use utils::item;
+pub use utils::preview;
+pub use utils::rich_text;
+pub use utils::unified_push;
 
 use anyhow::Result;
 use cosmic::iced::widget::image;
