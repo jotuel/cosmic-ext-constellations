@@ -2031,14 +2031,16 @@ mod tests {
         let _ = state.update(Message::LoadRoom(room_id.clone()), &None);
 
         // Without matrix engine, it shouldn't try to load
-        assert_eq!(state.is_loading, false);
+        assert!(!state.is_loading);
         assert_eq!(state.room_id, None);
     }
 
     #[test]
     fn test_dismiss_error() {
-        let mut state = State::default();
-        state.error = Some("An error occurred".to_string());
+        let mut state = State {
+            error: Some("An error occurred".to_string()),
+            ..Default::default()
+        };
 
         let _ = state.update(Message::DismissError, &None);
         assert_eq!(state.error, None);
@@ -2071,8 +2073,10 @@ mod tests {
     #[test]
     fn test_join_rule_changed() {
         use matrix_sdk::ruma::events::room::join_rules::JoinRule;
-        let mut state = State::default();
-        state.room_id = Some(Arc::from("!room:example.com"));
+        let mut state = State {
+            room_id: Some(Arc::from("!room:example.com")),
+            ..Default::default()
+        };
         // This won't actually call the engine since we pass None, but we can check if it returns a Task
         let _task = state.update(Message::JoinRuleChanged(JoinRule::Public), &None);
         // The task should be none since matrix engine is None
@@ -2092,8 +2096,10 @@ mod tests {
     #[test]
     fn test_history_visibility_changed() {
         use matrix_sdk::ruma::events::room::history_visibility::HistoryVisibility;
-        let mut state = State::default();
-        state.room_id = Some(Arc::from("!room:example.com"));
+        let mut state = State {
+            room_id: Some(Arc::from("!room:example.com")),
+            ..Default::default()
+        };
         // This won't actually call the engine since we pass None
         let _task = state.update(
             Message::HistoryVisibilityChanged(HistoryVisibility::Shared),
@@ -2114,8 +2120,10 @@ mod tests {
     #[test]
     fn test_join_rule_changed_knock() {
         use matrix_sdk::ruma::events::room::join_rules::JoinRule;
-        let mut state = State::default();
-        state.room_id = Some(Arc::from("!room:example.com"));
+        let mut state = State {
+            room_id: Some(Arc::from("!room:example.com")),
+            ..Default::default()
+        };
         let _ = state.update(Message::JoinRuleChanged(JoinRule::Knock), &None);
         assert_eq!(state.join_rule, Some(JoinRule::Knock));
     }
