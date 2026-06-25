@@ -591,7 +591,7 @@ async fn test_paginate_backwards_success() {
     impl wiremock::Match for InitialSyncMatcher {
         fn matches(&self, request: &wiremock::Request) -> bool {
             if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&request.body) {
-                json.get("pos").map_or(true, |v| v.is_null())
+                json.get("pos").is_none_or(|v| v.is_null())
             } else {
                 true
             }
@@ -602,7 +602,7 @@ async fn test_paginate_backwards_success() {
     impl wiremock::Match for SubsequentSyncMatcher {
         fn matches(&self, request: &wiremock::Request) -> bool {
             if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&request.body) {
-                json.get("pos").map_or(false, |v| !v.is_null())
+                json.get("pos").is_some_and(|v| !v.is_null())
             } else {
                 false
             }
@@ -996,7 +996,7 @@ async fn test_fetch_media() {
         inner.client = client;
     }
 
-    let url: OwnedMxcUri = "mxc://mockserver/mockmediaid".try_into().unwrap();
+    let url: OwnedMxcUri = "mxc://mockserver/mockmediaid".into();
     let source = MediaSource::Plain(url);
     let fetched_body = engine.fetch_media(source).await.unwrap();
 
@@ -1559,7 +1559,7 @@ async fn test_leave_room_error() {
     let room_id = engine.create_room("Test Room").await.unwrap();
 
     let result = engine.leave_room(room_id.as_str()).await;
-    if let Ok(_) = result {
+    if result.is_ok() {
         println!("Test leave_room succeeded unexpectedly!");
         if let Some(requests) = mock_server.received_requests().await {
             println!(
@@ -1641,7 +1641,7 @@ async fn test_fetch_room_data_success() {
 
     assert_eq!(room_data.id.as_ref(), "!new_room:example.com");
     assert_eq!(room_data.room_type, None);
-    assert_eq!(room_data.is_space, false);
+    assert!(!room_data.is_space);
 }
 
 #[test]

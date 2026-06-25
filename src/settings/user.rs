@@ -2488,16 +2488,20 @@ mod tests {
 
     #[test]
     fn test_dismiss_error() {
-        let mut state = State::default();
-        state.error = Some("Error".to_string());
+        let mut state = State {
+            error: Some("Error".to_string()),
+            ..Default::default()
+        };
         let _ = state.update(Message::DismissError, &None);
         assert_eq!(state.error, None);
     }
 
     #[test]
     fn test_devices_loaded() {
-        let mut state = State::default();
-        state.is_loading_devices = true;
+        let mut state = State {
+            is_loading_devices: true,
+            ..Default::default()
+        };
 
         let devices = vec![DeviceInfo {
             device_id: Arc::from("DEV1"),

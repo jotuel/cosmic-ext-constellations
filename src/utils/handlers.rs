@@ -2913,12 +2913,12 @@ mod tests {
     fn test_toggle_members_panel() {
         let mut app = create_dummy_constellations();
 
-        assert_eq!(app.show_members_panel, false);
+        assert!(!app.show_members_panel);
         assert!(app.room_members.is_empty());
 
         let _ = app.update(Message::ToggleMembersPanel);
-        assert_eq!(app.show_members_panel, true);
-        assert_eq!(app.is_loading_members, true);
+        assert!(app.show_members_panel);
+        assert!(app.is_loading_members);
 
         // Send simulated fetched members
         let mock_member = matrix::RoomMemberInfo {
@@ -2927,12 +2927,12 @@ mod tests {
             avatar_url: None,
         };
         let _ = app.update(Message::MembersFetched(Ok(vec![mock_member.clone()])));
-        assert_eq!(app.is_loading_members, false);
+        assert!(!app.is_loading_members);
         assert_eq!(app.room_members.len(), 1);
         assert_eq!(app.room_members[0].user_id, "@user:matrix.org");
 
         let _ = app.update(Message::ToggleMembersPanel);
-        assert_eq!(app.show_members_panel, false);
+        assert!(!app.show_members_panel);
         assert!(app.room_members.is_empty());
     }
 
@@ -2940,12 +2940,12 @@ mod tests {
     fn test_toggle_pinned_panel() {
         let mut app = create_dummy_constellations();
 
-        assert_eq!(app.show_pinned_panel, false);
+        assert!(!app.show_pinned_panel);
         assert!(app.pinned_events.is_empty());
 
         let _ = app.update(Message::TogglePinnedPanel);
-        assert_eq!(app.show_pinned_panel, true);
-        assert_eq!(app.is_loading_pinned, true);
+        assert!(app.show_pinned_panel);
+        assert!(app.is_loading_pinned);
 
         // Send simulated fetched pinned events
         let mock_id = matrix_sdk::ruma::event_id!("$123:example.com").to_owned();
@@ -2958,13 +2958,13 @@ mod tests {
             body: "Pinned message content".to_string(),
         };
         let _ = app.update(Message::PinnedEventsFetched(Ok(vec![mock_info])));
-        assert_eq!(app.is_loading_pinned, false);
+        assert!(!app.is_loading_pinned);
         assert_eq!(app.pinned_events.len(), 1);
         assert!(app.pinned_events.contains(&mock_id));
         assert_eq!(app.pinned_events_details.len(), 1);
 
         let _ = app.update(Message::TogglePinnedPanel);
-        assert_eq!(app.show_pinned_panel, false);
+        assert!(!app.show_pinned_panel);
     }
 
     #[test]
@@ -2982,7 +2982,7 @@ mod tests {
             app.error,
             Some("Failed to initialize Matrix engine: Error: Initial sync failed".to_string())
         );
-        assert_eq!(app.is_initializing, false);
+        assert!(!app.is_initializing);
     }
 
     #[test]
@@ -2993,8 +2993,8 @@ mod tests {
 
         let _task = app.handle_login_finished(Ok("test_user_id".to_string()));
 
-        assert_eq!(app.is_logging_in, false);
-        assert_eq!(app.is_oidc_logging_in, false);
+        assert!(!app.is_logging_in);
+        assert!(!app.is_oidc_logging_in);
         assert_eq!(app.user_id, Some("test_user_id".to_string()));
     }
 
@@ -3006,8 +3006,8 @@ mod tests {
 
         let _task = app.handle_login_finished(Err(matrix::SyncError::MissingSlidingSyncSupport));
 
-        assert_eq!(app.is_logging_in, false);
-        assert_eq!(app.is_oidc_logging_in, false);
+        assert!(!app.is_logging_in);
+        assert!(!app.is_oidc_logging_in);
         assert_eq!(
             app.sync_status,
             matrix::SyncStatus::MissingSlidingSyncSupport
@@ -3023,8 +3023,8 @@ mod tests {
         let _task =
             app.handle_login_finished(Err(matrix::SyncError::Generic("network error".to_string())));
 
-        assert_eq!(app.is_logging_in, false);
-        assert_eq!(app.is_oidc_logging_in, false);
+        assert!(!app.is_logging_in);
+        assert!(!app.is_oidc_logging_in);
         assert_eq!(app.error, Some("Login failed: network error".to_string()));
     }
 
@@ -3153,13 +3153,13 @@ mod tests {
         assert!(app.room_list.is_empty());
         assert_eq!(app.selected_room, None);
         assert!(app.timeline_items.is_empty());
-        assert_eq!(app.is_logging_in, false);
-        assert_eq!(app.is_oidc_logging_in, false);
+        assert!(!app.is_logging_in);
+        assert!(!app.is_oidc_logging_in);
         assert!(app.login_password.is_empty());
         assert_eq!(app.error, None);
         assert_eq!(app.selected_space, None);
-        assert_eq!(app.is_sync_indicator_active, false);
-        assert_eq!(app.is_loading_more, false);
+        assert!(!app.is_sync_indicator_active);
+        assert!(!app.is_loading_more);
         assert!(app.joined_room_ids.is_empty());
     }
 
@@ -3210,13 +3210,13 @@ mod tests {
         let mut app = create_dummy_constellations();
 
         // 1. Initial State
-        assert_eq!(app.is_qr_logging_in, false);
+        assert!(!app.is_qr_logging_in);
         assert_eq!(app.qr_login_step, QrLoginStep::NotStarted);
         assert!(app.qr_rendezvous_url.is_none());
 
         // 2. Start QR Login
         let _task = app.handle_start_qr_login();
-        assert_eq!(app.is_qr_logging_in, true);
+        assert!(app.is_qr_logging_in);
         assert_eq!(app.qr_login_step, QrLoginStep::Initiating);
         assert!(app.qr_rendezvous_url.is_some());
 
@@ -3239,7 +3239,7 @@ mod tests {
         // Calling handle_qr_login_step_changed(Success) will trigger handle_login_finished,
         // which cleans up QR state and sets the user session.
         let _task = app.handle_qr_login_step_changed(QrLoginStep::Success);
-        assert_eq!(app.is_qr_logging_in, false);
+        assert!(!app.is_qr_logging_in);
         assert_eq!(app.qr_login_step, QrLoginStep::NotStarted);
         assert!(app.qr_rendezvous_url.is_none());
         assert_eq!(app.user_id, Some("@simulated_user:matrix.org".to_string()));
@@ -3247,11 +3247,11 @@ mod tests {
         // 7. Cancel QR Login
         let mut app = create_dummy_constellations();
         let _task = app.handle_start_qr_login();
-        assert_eq!(app.is_qr_logging_in, true);
+        assert!(app.is_qr_logging_in);
         assert!(app.qr_rendezvous_url.is_some());
 
         let _task = app.handle_cancel_qr_login();
-        assert_eq!(app.is_qr_logging_in, false);
+        assert!(!app.is_qr_logging_in);
         assert_eq!(app.qr_login_step, QrLoginStep::NotStarted);
         assert!(app.qr_rendezvous_url.is_none());
     }
@@ -3282,12 +3282,12 @@ mod tests {
         let owned_room_id = matrix_sdk::ruma::RoomId::parse(room_id.as_ref()).unwrap();
         let _ = app.update(Message::RoomJoined(Ok(owned_room_id)));
         assert!(app.visited_room_ids.contains(&room_id));
-        assert_eq!(app.is_first_time_joining, true);
+        assert!(app.is_first_time_joining);
 
         // Simulate timeline reset when subscription starts
         let _ = app.update(Message::Matrix(matrix::MatrixEvent::TimelineReset));
-        assert_eq!(app.needs_initial_scroll, true);
-        assert_eq!(app.is_timeline_at_bottom, true);
+        assert!(app.needs_initial_scroll);
+        assert!(app.is_timeline_at_bottom);
 
         // Populate timeline
         for i in 0..10 {
@@ -3302,10 +3302,10 @@ mod tests {
 
         // Simulate TimelineInitFinished
         let _ = app.update(Message::Matrix(matrix::MatrixEvent::TimelineInitFinished));
-        assert_eq!(app.is_timeline_initialized, true);
+        assert!(app.is_timeline_initialized);
 
         let _task = app.update(Message::LoadMoreFinished(Ok(())));
-        assert_eq!(app.needs_initial_scroll, false);
+        assert!(!app.needs_initial_scroll);
 
         // 2. Normal room selection
         app.timeline_items.clear();
@@ -3313,8 +3313,8 @@ mod tests {
         app.needs_initial_scroll = false;
 
         let _task = app.update(Message::RoomSelected(room_id.clone()));
-        assert_eq!(app.is_first_time_joining, false);
-        assert_eq!(app.needs_initial_scroll, true);
+        assert!(!app.is_first_time_joining);
+        assert!(app.needs_initial_scroll);
 
         // Populate timeline again
         for i in 0..10 {
@@ -3329,10 +3329,10 @@ mod tests {
 
         // Simulate TimelineInitFinished
         let _ = app.update(Message::Matrix(matrix::MatrixEvent::TimelineInitFinished));
-        assert_eq!(app.is_timeline_initialized, true);
+        assert!(app.is_timeline_initialized);
 
         let _task2 = app.update(Message::LoadMoreFinished(Ok(())));
-        assert_eq!(app.needs_initial_scroll, false);
+        assert!(!app.needs_initial_scroll);
 
         // 3. Directly test check_and_perform_initial_scroll helper
         app.timeline_items.clear();
@@ -3353,29 +3353,29 @@ mod tests {
                 false,
             ));
         assert!(app.check_and_perform_initial_scroll().is_some());
-        assert_eq!(app.needs_initial_scroll, false);
+        assert!(!app.needs_initial_scroll);
 
         // 4. Test timeline reset scroll behavior (initial reset)
         app.is_timeline_initialized = false;
         let _ = app.update(Message::Matrix(matrix::MatrixEvent::TimelineReset));
-        assert_eq!(app.needs_initial_scroll, true);
-        assert_eq!(app.is_timeline_at_bottom, true);
-        assert_eq!(app.is_timeline_initialized, false);
+        assert!(app.needs_initial_scroll);
+        assert!(app.is_timeline_at_bottom);
+        assert!(!app.is_timeline_initialized);
 
         // 5. Test background timeline reset scroll behavior (when already initialized)
         app.is_timeline_initialized = true;
         app.is_timeline_at_bottom = false;
         app.last_timeline_offset = 150.0;
         let _ = app.update(Message::Matrix(matrix::MatrixEvent::TimelineReset));
-        assert_eq!(app.needs_initial_scroll, false);
-        assert_eq!(app.needs_scroll_restoration, true);
-        assert_eq!(app.is_timeline_at_bottom, false); // preserved!
-        assert_eq!(app.is_timeline_initialized, false);
+        assert!(!app.needs_initial_scroll);
+        assert!(app.needs_scroll_restoration);
+        assert!(!app.is_timeline_at_bottom); // preserved!
+        assert!(!app.is_timeline_initialized);
 
         // Simulate TimelineInitFinished for background reset
         let _ = app.update(Message::Matrix(matrix::MatrixEvent::TimelineInitFinished));
-        assert_eq!(app.is_timeline_initialized, true);
-        assert_eq!(app.needs_scroll_restoration, false);
+        assert!(app.is_timeline_initialized);
+        assert!(!app.needs_scroll_restoration);
     }
     #[test]
     fn test_recompute_thread_counts_skips_none_inner_no_panic() {

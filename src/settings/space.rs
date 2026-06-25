@@ -998,8 +998,10 @@ mod tests {
 
     #[test]
     fn test_dismiss_error() {
-        let mut state = State::default();
-        state.error = Some("An error occurred".to_string());
+        let mut state = State {
+            error: Some("An error occurred".to_string()),
+            ..Default::default()
+        };
         let _ = state.update(Message::DismissError, &None);
         assert_eq!(state.error, None);
     }
