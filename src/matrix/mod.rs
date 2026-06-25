@@ -328,6 +328,21 @@ impl std::fmt::Debug for MatrixEngineInner {
     }
 }
 
+/// Maximum age (ms) of an event for which we still raise a desktop notification.
+/// Events older than this (e.g. replayed during initial sync) are suppressed to
+/// avoid notification spam. 5 minutes.
+const NOTIFICATION_MAX_AGE_MS: u128 = 300_000;
+
+/// Whether an event with the given server timestamp (ms since the Unix epoch) is
+/// recent enough to notify about, given the current time in ms since the epoch.
+///
+/// `now_ms` is derived from `SystemTime::now().duration_since(UNIX_EPOCH)`, which
+/// yields `0` when the wall clock reads before the epoch (broken RTC, early boot);
+/// in that case the event is treated as stale instead of panicking.
+fn is_recent_enough_to_notify(now_ms: u128, event_ts_ms: u64) -> bool {
+    now_ms.abs_diff(u128::from(event_ts_ms)) <= NOTIFICATION_MAX_AGE_MS
+}
+
 impl MatrixEngine {
     pub async fn new(data_dir: PathBuf) -> Result<Self> {
         let client = Self::setup_client(data_dir.clone(), "https://matrix.org").await?;
@@ -504,16 +519,15 @@ impl MatrixEngine {
                             return;
                         }
 
-                        // Avoid spamming during initial sync by checking if event is older than 5 minutes
+                        // Avoid spamming during initial sync by checking if event is older
+                        // than 5 minutes. `now` falls back to 0 (treated as stale) when the
+                        // system clock reads before the Unix epoch instead of panicking.
                         let now = std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap()
+                            .unwrap_or_default()
                             .as_millis();
 
-                        let event_time = ev.origin_server_ts.0.into();
-                        let diff = now.abs_diff(event_time);
-
-                        if diff > 300_000 {
+                        if !is_recent_enough_to_notify(now, ev.origin_server_ts.0.into()) {
                             return;
                         }
 

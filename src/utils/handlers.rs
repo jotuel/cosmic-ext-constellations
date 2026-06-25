@@ -52,7 +52,10 @@ impl Constellations {
     pub fn recompute_thread_counts(&mut self) {
         self.thread_counts.clear();
         for item in &self.timeline_items {
-            if let Some(_event) = item.item.as_ref().expect("No item").as_event()
+            // Skip items without an inner event (e.g. virtual/pending items)
+            // rather than panicking — the field is `Option` by construction.
+            if let Some(inner) = item.item.as_ref()
+                && inner.as_event().is_some()
                 && let Some(root_id) = item.thread_root_id.clone()
             {
                 *self.thread_counts.entry(root_id).or_insert(0) += 1;
@@ -3373,5 +3376,32 @@ mod tests {
         let _ = app.update(Message::Matrix(matrix::MatrixEvent::TimelineInitFinished));
         assert_eq!(app.is_timeline_initialized, true);
         assert_eq!(app.needs_scroll_restoration, false);
+    }
+    #[test]
+    fn test_recompute_thread_counts_skips_none_inner_no_panic() {
+        // Regression: items whose `item` field is `None` (mock/virtual items) used to
+        // hit `.expect("No item")` and panic recompute_thread_counts. They must now be
+        // skipped gracefully.
+        let mut app = create_dummy_constellations();
+
+        let root_a = matrix_sdk::ruma::EventId::parse("$root_a:example.com").unwrap();
+        let root_b = matrix_sdk::ruma::EventId::parse("$root_b:example.com").unwrap();
+
+        // `new_mock` constructs items with `item: None` by design.
+        let mut threaded_a = ConstellationsItem::new_mock("alice", "reply", "12:00", false);
+        threaded_a.thread_root_id = Some(root_a.clone());
+        let mut threaded_b = ConstellationsItem::new_mock("bob", "reply", "12:01", false);
+        threaded_b.thread_root_id = Some(root_b.clone());
+        let plain = ConstellationsItem::new_mock("carol", "message", "12:02", true);
+
+        app.timeline_items.push_back(threaded_a);
+        app.timeline_items.push_back(threaded_b);
+        app.timeline_items.push_back(plain);
+
+        // Must not panic; None-inner items are skipped even when they carry a thread root.
+        app.recompute_thread_counts();
+
+        // No event-bearing items were counted.
+        assert!(app.thread_counts.is_empty());
     }
 }

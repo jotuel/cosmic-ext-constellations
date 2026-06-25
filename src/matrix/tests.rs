@@ -1643,3 +1643,25 @@ async fn test_fetch_room_data_success() {
     assert_eq!(room_data.room_type, None);
     assert_eq!(room_data.is_space, false);
 }
+
+#[test]
+fn test_is_recent_enough_to_notify() {
+    const NOW: u128 = 1_000_000;
+
+    // Exactly at the 5-minute boundary is still "recent" (inclusive).
+    assert!(is_recent_enough_to_notify(
+        NOW,
+        (NOW - NOTIFICATION_MAX_AGE_MS) as u64
+    ));
+    // One ms older than the boundary is stale.
+    assert!(!is_recent_enough_to_notify(
+        NOW,
+        (NOW - NOTIFICATION_MAX_AGE_MS - 1) as u64
+    ));
+    // A future-dated event (server clock ahead of ours) is still recent.
+    assert!(is_recent_enough_to_notify(NOW, (NOW + 60_000) as u64));
+
+    // Regression: a wall clock before the Unix epoch yields now_ms == 0.
+    // This must not panic and must be treated as stale.
+    assert!(!is_recent_enough_to_notify(0, 1_700_000_000_000));
+}
