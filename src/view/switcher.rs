@@ -4,7 +4,7 @@ use crate::{
         ALL_ROOMS, AVATAR_RADIUS, CANCEL, CREATE, CREATE_ROOM, CREATE_SPACE, ENTER_ROOM_NAME,
         ENTER_SPACE_NAME, JOIN, JOINED_ROOMS, OTHER_ROOMS, ROOM_AVATAR_HEIGHT, ROOM_AVATAR_WIDTH,
         ROOM_HAS_NO_AVATAR, ROOM_NAME, ROOM_SWITCHER_WIDTH, SPACE_AVATAR_HEIGHT,
-        SPACE_AVATAR_WIDTH, SPACE_NAME, SPACE_SETTINGS, UNKNOWN_ROOM, UNKNOWN_SPACE,
+        SPACE_AVATAR_WIDTH, SPACE_NAME, UNKNOWN_ROOM, UNKNOWN_SPACE,
     },
 };
 use cosmic::{
@@ -261,14 +261,11 @@ impl<'switcher> Constellations {
                 .spacing(10)
                 .width(cosmic::iced::Length::Fill)
                 .push(avatar)
-                .push(text::title3(space_name).width(cosmic::iced::Length::Fill))
-                .push(
-                    button::icon(Named::new("emblem-system"))
-                        .extra_small()
-                        .tooltip(SPACE_SETTINGS.as_str())
-                        .on_press(Message::OpenSettings(crate::SettingsPanel::Space)),
-                );
-            room_list = room_list.push(container(space_header).padding(5).align_top(50));
+                .push(view_settings_name_button(
+                    &space_name,
+                    crate::SettingsPanel::Space,
+                ));
+            room_list = room_list.push(container(space_header).padding([5, 5, 15, 5]));
             room_list = room_list.push(divider::horizontal::default());
 
             if !self.other_rooms.is_empty() {
@@ -444,4 +441,16 @@ fn view_menu_create() -> menu::MenuBar<Message> {
         .item_height(menu::ItemHeight::Dynamic(40))
         .item_width(menu::ItemWidth::Uniform(160))
         .spacing(4.0)
+}
+
+/// A clickable title that opens settings on press.
+pub(crate) fn view_settings_name_button(
+    name: &str,
+    panel: crate::SettingsPanel,
+) -> Element<'static, Message> {
+    button::custom(text::title3(name.to_string()))
+        .class(cosmic::theme::Button::MenuRoot)
+        .padding(0)
+        .on_press(Message::OpenSettings(panel))
+        .into()
 }

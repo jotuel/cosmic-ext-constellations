@@ -19,6 +19,7 @@ use crate::{
         ADD_REACTION, CLOSE_THREAD, DOWNLOAD_FILE, DOWNLOAD_IMAGE, DOWNLOADED, IGNORE, OPEN_THREAD,
         REPLIES, REPLY, TOOLTIP_ATTACH, TOOLTIP_DELETE, TOOLTIP_EDIT, TOOLTIP_EMOJIS, TOOLTIP_FIND,
         TOOLTIP_LOCATION, TOOLTIP_REPLY, TOOLTIP_THREAD, UNIGNORE_USER,
+        switcher::view_settings_name_button,
     },
 };
 
@@ -1018,10 +1019,14 @@ impl<'chat> Constellations {
             let call_participants = self.call_participants.get(room_id);
             let participant_count = call_participants.map_or(0, |p| p.len());
 
-            let mut room_header = Row::new()
-                .spacing(10)
-                .align_y(Alignment::Center)
-                .push(text::title3(room_name));
+            let mut room_header =
+                Row::new()
+                    .spacing(10)
+                    .align_y(Alignment::Center)
+                    .push(view_settings_name_button(
+                        room_name,
+                        crate::SettingsPanel::Room,
+                    ));
 
             if participant_count > 0 {
                 room_header = room_header.push(
@@ -1092,12 +1097,6 @@ impl<'chat> Constellations {
                             self.current_settings_panel == Some(crate::SettingsPanel::Members),
                         )
                         .on_press(Message::ToggleMembersPanel),
-                )
-                .push(
-                    button::icon(Named::new("emblem-system"))
-                        .tooltip(crate::fl!("room-settings"))
-                        .selected(self.current_settings_panel == Some(crate::SettingsPanel::Room))
-                        .on_press(Message::OpenSettings(crate::SettingsPanel::Room)),
                 );
 
             if self.active_thread_root.is_some() {
