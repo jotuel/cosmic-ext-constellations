@@ -261,13 +261,11 @@ impl<'switcher> Constellations {
                 .spacing(10)
                 .width(cosmic::iced::Length::Fill)
                 .push(avatar)
-                .push(text::title3(space_name).width(cosmic::iced::Length::Fill))
-                .push(
-                    button::icon(Named::new("emblem-system"))
-                        .extra_small()
-                        .tooltip(SPACE_SETTINGS.as_str())
-                        .on_press(Message::OpenSettings(crate::SettingsPanel::Space)),
-                );
+                .push(view_settings_name_menu(
+                    &space_name,
+                    SPACE_SETTINGS.as_str(),
+                    MenuAct::SpaceSettings,
+                ));
             room_list = room_list.push(container(space_header).padding(5).align_top(50));
             room_list = room_list.push(divider::horizontal::default());
 
@@ -437,6 +435,36 @@ fn view_menu_create() -> menu::MenuBar<Message> {
                     MenuAct::CreateSpace,
                 ),
             ],
+        ),
+    );
+
+    menu::bar(vec![menu_tree])
+        .item_height(menu::ItemHeight::Dynamic(40))
+        .item_width(menu::ItemWidth::Uniform(160))
+        .spacing(4.0)
+}
+
+/// A clickable title that opens a dropdown menu with a settings entry.
+pub(crate) fn view_settings_name_menu(
+    name: &str,
+    label: &str,
+    action: MenuAct,
+) -> menu::MenuBar<Message> {
+    let key_binds = std::collections::HashMap::new();
+    let name_btn =
+        button::custom(text::title3(name.to_string())).class(cosmic::theme::Button::MenuRoot);
+
+    let menu_tree = menu::Tree::with_children(
+        RcElementWrapper::new(Element::from(name_btn)),
+        menu::items(
+            &key_binds,
+            vec![menu::Item::Button(
+                label.to_string(),
+                Some(cosmic::widget::icon::Handle::from(Named::new(
+                    "emblem-system",
+                ))),
+                action,
+            )],
         ),
     );
 

@@ -241,6 +241,8 @@ pub enum MenuAct {
     Logout,
     CreateRoom,
     CreateSpace,
+    RoomSettings,
+    SpaceSettings,
 }
 
 impl MenuAction for MenuAct {
@@ -252,6 +254,8 @@ impl MenuAction for MenuAct {
             MenuAct::Logout => Message::Logout,
             MenuAct::CreateRoom => Message::ToggleCreateRoom,
             MenuAct::CreateSpace => Message::ToggleCreateSpace,
+            MenuAct::RoomSettings => Message::OpenSettings(SettingsPanel::Room),
+            MenuAct::SpaceSettings => Message::OpenSettings(SettingsPanel::Space),
         }
     }
 }

@@ -33,33 +33,7 @@ impl Application for Constellations {
             return start;
         }
 
-        if self.is_search_active {
-            let search_btn =
-                button::icon(Named::new("edit-find-symbolic")).on_press(Message::ToggleSearch);
-            let search_tooltip = tooltip(
-                search_btn,
-                text::body(crate::fl!("close-search")),
-                Position::Bottom,
-            );
-            let row = Row::new()
-                .align_y(Alignment::Center)
-                .push(search_tooltip)
-                .push(
-                    text_input(crate::fl!("search-placeholder"), &self.search_query)
-                        .on_input(Message::SearchQueryChanged)
-                        .width(200.0),
-                );
-            start.push(row.into());
-        } else {
-            let search_btn =
-                button::icon(Named::new("edit-find-symbolic")).on_press(Message::ToggleSearch);
-            let search_tooltip = tooltip(
-                search_btn,
-                text::body(crate::fl!("search")),
-                Position::Bottom,
-            );
-            start.push(search_tooltip.into());
-        }
+        self.search_bar(&mut start);
 
         start
     }
@@ -121,17 +95,7 @@ impl Application for Constellations {
         let data_dir = dirs::data_dir().map(|d| d.join("fi.joonastuomi.Constellations"));
 
         let mut tasks = Vec::new();
-        tasks.push(Task::perform(
-            async move {
-                let dir = data_dir.ok_or_else(|| {
-                    matrix::SyncError::from(anyhow::anyhow!("No standard data directory found"))
-                })?;
-                matrix::MatrixEngine::new(dir)
-                    .await
-                    .map_err(matrix::SyncError::from)
-            },
-            |res| Action::from(Message::EngineReady(res)),
-        ));
+        tasks.push(task_create_matrix_engine(data_dir));
 
         if let Some(uri) = flags
             && let Ok(url) = Url::parse(&uri)
@@ -141,86 +105,7 @@ impl Application for Constellations {
 
         let config = settings::config::Config::load();
 
-        let mut app = Constellations {
-            core: core.clone(),
-            matrix: None,
-            sync_status: matrix::SyncStatus::Disconnected,
-            room_list: Vec::new(),
-            filtered_room_list: Vec::new(),
-            other_rooms: Vec::new(),
-            filtered_other_rooms: Vec::new(),
-            selected_room: None,
-            timeline_items: Vector::new(),
-            composer_content: cosmic::widget::text_editor::Content::new(),
-            composer_preview_events: Vec::new(),
-            composer_is_preview: false,
-            composer_attachments: Vec::new(),
-            user_id: None,
-            media_cache: HashMap::new(),
-            creating_room: false,
-            creating_space: false,
-            new_room_name: String::new(),
-            error: None,
-            login_homeserver: "https://matrix.org".to_string(),
-            login_username: String::new(),
-            login_password: String::new(),
-            auth_flow: AuthFlow::Idle,
-            qr_rendezvous_url: None,
-            is_registering_mode: false,
-            is_registering: false,
-            is_initializing: true,
-            is_sync_indicator_active: false,
-            is_loading_more: false,
-            last_timeline_offset: 0.0,
-            last_threaded_timeline_offset: 0.0,
-            search_query: String::new(),
-            is_search_active: false,
-            active_reaction_picker: None,
-            active_thread_root: None,
-            threaded_timeline_items: Vector::new(),
-            joined_room_ids: std::collections::HashSet::new(),
-            visited_room_ids: std::collections::HashSet::new(),
-            is_first_time_joining: false,
-            needs_initial_scroll: false,
-            needs_scroll_restoration: false,
-            needs_threaded_scroll_restoration: false,
-            is_timeline_at_bottom: true,
-            is_threaded_timeline_at_bottom: true,
-            is_timeline_initialized: false,
-            is_threaded_timeline_initialized: false,
-            last_content_height: 0.0,
-            last_threaded_content_height: 0.0,
-            last_viewport_width: 0.0,
-            last_viewport_height: 0.0,
-            last_threaded_viewport_width: 0.0,
-            last_threaded_viewport_height: 0.0,
-            needs_layout_scroll_restoration: false,
-            needs_threaded_layout_scroll_restoration: false,
-            needs_scroll_adjustment: false,
-            needs_threaded_scroll_adjustment: false,
-            replying_to: None,
-            editing_item: None,
-            selected_space: None,
-            current_settings_panel: None,
-            user_settings: settings::user::State::from_config(&config),
-            room_settings: Default::default(),
-            space_settings: Default::default(),
-            app_settings: settings::app::State::from_config(&config),
-            call_participants: HashMap::new(),
-            fullscreen_image: None,
-            emoji_search_query: String::new(),
-            selected_emoji_group: None,
-            is_composer_emoji_picker_active: false,
-            room_name_cache: std::collections::HashMap::new(),
-            thread_counts: std::collections::HashMap::new(),
-            show_pinned_panel: false,
-            is_loading_pinned: false,
-            pinned_events: std::collections::HashSet::new(),
-            pinned_events_details: Vec::new(),
-            show_members_panel: false,
-            room_members: Vec::new(),
-            is_loading_members: false,
-        };
+        let mut app = app(core, config);
 
         let title_task = app.update_title();
         tasks.push(title_task);
@@ -291,4 +176,133 @@ impl Application for Constellations {
 
         Subscription::batch(subs)
     }
+}
+
+impl Constellations {
+    fn search_bar<'header>(&'header self, start: &mut Vec<Element<'header, Message>>) {
+        if self.is_search_active {
+            let search_btn =
+                button::icon(Named::new("edit-find-symbolic")).on_press(Message::ToggleSearch);
+            let search_tooltip = tooltip(
+                search_btn,
+                text::body(crate::fl!("close-search")),
+                Position::Bottom,
+            );
+            let row = Row::new()
+                .align_y(Alignment::Center)
+                .push(search_tooltip)
+                .push(
+                    text_input(crate::fl!("search-placeholder"), &self.search_query)
+                        .on_input(Message::SearchQueryChanged)
+                        .width(200.0),
+                );
+            start.push(row.into());
+        } else {
+            let search_btn =
+                button::icon(Named::new("edit-find-symbolic")).on_press(Message::ToggleSearch);
+            let search_tooltip = tooltip(
+                search_btn,
+                text::body(crate::fl!("search")),
+                Position::Bottom,
+            );
+            start.push(search_tooltip.into());
+        }
+    }
+}
+
+fn app(core: Core, config: settings::config::Config) -> Constellations {
+    Constellations {
+        core: core.clone(),
+        matrix: None,
+        sync_status: matrix::SyncStatus::Disconnected,
+        room_list: Vec::new(),
+        filtered_room_list: Vec::new(),
+        other_rooms: Vec::new(),
+        filtered_other_rooms: Vec::new(),
+        selected_room: None,
+        timeline_items: Vector::new(),
+        composer_content: cosmic::widget::text_editor::Content::new(),
+        composer_preview_events: Vec::new(),
+        composer_is_preview: false,
+        composer_attachments: Vec::new(),
+        user_id: None,
+        media_cache: HashMap::new(),
+        creating_room: false,
+        creating_space: false,
+        new_room_name: String::new(),
+        error: None,
+        login_homeserver: "https://matrix.org".to_string(),
+        login_username: String::new(),
+        login_password: String::new(),
+        auth_flow: AuthFlow::Idle,
+        qr_rendezvous_url: None,
+        is_registering_mode: false,
+        is_registering: false,
+        is_initializing: true,
+        is_sync_indicator_active: false,
+        is_loading_more: false,
+        last_timeline_offset: 0.0,
+        last_threaded_timeline_offset: 0.0,
+        search_query: String::new(),
+        is_search_active: false,
+        active_reaction_picker: None,
+        active_thread_root: None,
+        threaded_timeline_items: Vector::new(),
+        joined_room_ids: std::collections::HashSet::new(),
+        visited_room_ids: std::collections::HashSet::new(),
+        is_first_time_joining: false,
+        needs_initial_scroll: false,
+        needs_scroll_restoration: false,
+        needs_threaded_scroll_restoration: false,
+        is_timeline_at_bottom: true,
+        is_threaded_timeline_at_bottom: true,
+        is_timeline_initialized: false,
+        is_threaded_timeline_initialized: false,
+        last_content_height: 0.0,
+        last_threaded_content_height: 0.0,
+        last_viewport_width: 0.0,
+        last_viewport_height: 0.0,
+        last_threaded_viewport_width: 0.0,
+        last_threaded_viewport_height: 0.0,
+        needs_layout_scroll_restoration: false,
+        needs_threaded_layout_scroll_restoration: false,
+        needs_scroll_adjustment: false,
+        needs_threaded_scroll_adjustment: false,
+        replying_to: None,
+        editing_item: None,
+        selected_space: None,
+        current_settings_panel: None,
+        user_settings: settings::user::State::from_config(&config),
+        room_settings: Default::default(),
+        space_settings: Default::default(),
+        app_settings: settings::app::State::from_config(&config),
+        call_participants: HashMap::new(),
+        fullscreen_image: None,
+        emoji_search_query: String::new(),
+        selected_emoji_group: None,
+        is_composer_emoji_picker_active: false,
+        room_name_cache: std::collections::HashMap::new(),
+        thread_counts: std::collections::HashMap::new(),
+        show_pinned_panel: false,
+        is_loading_pinned: false,
+        pinned_events: std::collections::HashSet::new(),
+        pinned_events_details: Vec::new(),
+        show_members_panel: false,
+        room_members: Vec::new(),
+        is_loading_members: false,
+    }
+}
+
+fn task_create_matrix_engine(data_dir: Option<std::path::PathBuf>) -> Task<Action<Message>> {
+    Task::perform(
+        async move {
+            let dir = data_dir.ok_or_else(|| {
+                matrix::SyncError::from(anyhow::anyhow!("No standard data directory found"))
+            })?;
+            matrix::MatrixEngine::new(dir)
+                .await
+                .map_err(matrix::SyncError::from)
+        },
+        |res| Action::from(Message::EngineReady(res)),
+    )
 }
