@@ -22,6 +22,8 @@ use crate::{
     },
 };
 
+const MESSAGE_BUBBLE_MAX_WIDTH: f32 = 800.0;
+
 impl<'chat> Constellations {
     pub fn view_timeline(&self) -> Element<'_, Message> {
         let mut timeline = Column::new().spacing(10).width(cosmic::iced::Length::Fill);
@@ -766,7 +768,7 @@ impl<'chat> Constellations {
                 } else {
                     10
                 })
-                .max_width(600);
+                .max_width(MESSAGE_BUBBLE_MAX_WIDTH);
 
             let bubble_wrap =
                 container(bubble)
@@ -823,7 +825,7 @@ impl<'chat> Constellations {
                 } else {
                     10
                 })
-                .max_width(600);
+                .max_width(MESSAGE_BUBBLE_MAX_WIDTH);
 
             let bubble_wrap =
                 container(bubble)
