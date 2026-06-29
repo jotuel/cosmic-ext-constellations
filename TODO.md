@@ -5,11 +5,25 @@
 - [x] Searching for public Spaces/Rooms 
 - [x] Improve displaying results
 
+<<<<<<< New base: feat: video rooms and menus (#258)
 #### Space Switcher
 - [x] Implement Suggested Rooms category
 - [x] Spaces section for subspaces
 - [x] Make Space's name button open a menu with Settings just as one option
 - [x] Add Invite into Space option to Space menu 
+||||||| Common ancestor
+**Rooms**
+[ ] Make Rooms name button a menu that has Room Settings as one option
+[x] Make messages wider
+[ ] Invito into Room option for Room menu
+[ ] Implement Video Rooms
+=======
+**Rooms**
+[x] Make Rooms name button a menu that has Room Settings as one option
+[x] Make messages wider
+[x] Invito into Room option for Room menu
+[ ] Implement Video Rooms
+>>>>>>> Current commit: feat: add room name dropdown menu with Room Settings and Invite
 
 #### Rooms
 - [x] Make Rooms name button a menu that has Room Settings as one option

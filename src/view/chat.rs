@@ -1124,6 +1124,7 @@ impl<'chat> Constellations {
                 content = content.push(self.view_threaded_timeline());
             } else {
                 content = content.push(room_header);
+<<<<<<< New base: feat: video rooms and menus (#258)
                 if self.inviting_to_room {
                     let mut invite_input = text_input("@user:example.com", &self.invite_to_room_id)
                         .on_input(Message::InviteToRoomIdChanged);
@@ -1165,6 +1166,38 @@ impl<'chat> Constellations {
                     .unwrap_or(false);
 
                 let mut chat_area = Column::new()
+||||||| Common ancestor
+                let chat_area = Column::new()
+=======
+                if self.inviting_to_room {
+                    let mut invite_input = text_input("@user:example.com", &self.invite_to_room_id)
+                        .on_input(Message::InviteToRoomIdChanged);
+                    let is_empty = self.invite_to_room_id.trim().is_empty();
+                    let mut invite_btn = button::text(crate::fl!("invite"));
+                    if !is_empty {
+                        invite_input = invite_input.on_submit(|_| Message::InviteToRoom);
+                        invite_btn = invite_btn.on_press(Message::InviteToRoom);
+                    }
+                    let invite_btn_widget: Element<'_, Message> = if is_empty {
+                        tooltip(
+                            invite_btn,
+                            text::body(crate::fl!("enter-user-id-to-invite")),
+                            Position::Top,
+                        )
+                        .into()
+                    } else {
+                        invite_btn.into()
+                    };
+                    let invite_ui = Column::new().spacing(5).push(invite_input).push(
+                        Row::new().spacing(5).push(invite_btn_widget).push(
+                            button::text(crate::fl!("cancel"))
+                                .on_press(Message::ToggleInviteToRoom),
+                        ),
+                    );
+                    content = content.push(container(invite_ui).padding(5));
+                }
+                let chat_area = Column::new()
+>>>>>>> Current commit: feat: add room name dropdown menu with Room Settings and Invite
                     .spacing(10)
                     .width(cosmic::iced::Length::Fill)
                     .height(cosmic::iced::Length::Fill)
