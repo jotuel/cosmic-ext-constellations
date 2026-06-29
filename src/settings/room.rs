@@ -1761,9 +1761,7 @@ impl State {
             invite_row = invite_row.push(invite_widget);
         }
 
-        section
-            .add(settings::item_row(vec![promote_row.wrap().into()]))
-            .into()
+        section.add(invite_row).into()
     }
 
     fn view_membership_actions(&self) -> Option<Element<'_, Message>> {
