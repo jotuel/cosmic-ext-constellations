@@ -82,6 +82,9 @@ pub struct Constellations {
     pub(crate) last_threaded_timeline_offset: f32,
     pub(crate) search_query: String,
     pub(crate) is_search_active: bool,
+    pub(crate) public_search_results: Vec<matrix::PublicRoom>,
+    pub(crate) is_searching_public: bool,
+    pub(crate) new_room_is_video: bool,
     pub(crate) active_reaction_picker: Option<matrix::TimelineEventItemId>,
     pub(crate) active_thread_root: Option<matrix_sdk::ruma::OwnedEventId>,
     pub(crate) threaded_timeline_items: Vector<ConstellationsItem>,
@@ -227,6 +230,9 @@ pub enum Message {
     PinnedEventsFetched(Result<Vec<matrix::PinnedEventInfo>, String>),
     ToggleSearch,
     SearchQueryChanged(String),
+    PublicSearchResults(Result<Vec<matrix::PublicRoom>, String>),
+    NewRoomIsVideoChanged(bool),
+    JumpToMessage(matrix_sdk::ruma::OwnedEventId),
     JoinCall,
     LeaveCall,
     CallJoined(Result<(), String>),
@@ -244,6 +250,8 @@ pub enum SettingsPanel {
     Space,
     Members,
     Pinned,
+    ManageRoomMembers,
+    ManageSpaceRooms,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
@@ -257,6 +265,8 @@ pub enum MenuAct {
     SpaceInvite,
     RoomSettings,
     RoomInvite,
+    ManageRoomMembers,
+    ManageSpaceRooms,
 }
 
 impl MenuAction for MenuAct {
@@ -272,6 +282,8 @@ impl MenuAction for MenuAct {
             MenuAct::SpaceInvite => Message::ToggleInviteToSpace,
             MenuAct::RoomSettings => Message::OpenSettings(SettingsPanel::Room),
             MenuAct::RoomInvite => Message::ToggleInviteToRoom,
+            MenuAct::ManageRoomMembers => Message::OpenSettings(SettingsPanel::ManageRoomMembers),
+            MenuAct::ManageSpaceRooms => Message::OpenSettings(SettingsPanel::ManageSpaceRooms),
         }
     }
 }
