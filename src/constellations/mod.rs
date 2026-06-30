@@ -266,6 +266,7 @@ pub enum MenuAct {
 <<<<<<< New base: feat: video rooms and menus (#258)
     RoomSettings,
     RoomInvite,
+<<<<<<< New base: feat: add room name dropdown menu with Room Settings and Invite
     ManageRoomMembers,
     ManageSpaceRooms,
 ||||||| Common ancestor
@@ -273,6 +274,11 @@ pub enum MenuAct {
     RoomSettings,
     RoomInvite,
 >>>>>>> Current commit: feat: add room name dropdown menu with Room Settings and Invite
+||||||| Common ancestor
+=======
+    ManageRoomMembers,
+    ManageSpaceRooms,
+>>>>>>> Current commit: feat: scroll to a message with a certain id (if loaded)
 }
 
 impl MenuAction for MenuAct {
@@ -295,7 +301,13 @@ impl MenuAction for MenuAct {
 =======
             MenuAct::RoomSettings => Message::OpenSettings(SettingsPanel::Room),
             MenuAct::RoomInvite => Message::ToggleInviteToRoom,
+<<<<<<< New base: feat: add room name dropdown menu with Room Settings and Invite
 >>>>>>> Current commit: feat: add room name dropdown menu with Room Settings and Invite
+||||||| Common ancestor
+=======
+            MenuAct::ManageRoomMembers => Message::OpenSettings(SettingsPanel::ManageRoomMembers),
+            MenuAct::ManageSpaceRooms => Message::OpenSettings(SettingsPanel::ManageSpaceRooms),
+>>>>>>> Current commit: feat: scroll to a message with a certain id (if loaded)
         }
     }
 }

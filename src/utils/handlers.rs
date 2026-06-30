@@ -2612,6 +2612,63 @@ impl Constellations {
                     }
                 }
                 self.update_filtered_rooms();
+<<<<<<< New base: feat: add room name dropdown menu with Room Settings and Invite
+
+                if self.current_settings_panel.is_none() && !self.search_query.trim().is_empty() {
+                    if let Some(matrix) = &self.matrix {
+                        let query_str = self.search_query.trim().to_string();
+                        let matrix = matrix.clone();
+                        self.is_searching_public = true;
+
+                        Task::perform(
+                            async move { matrix.search_public_rooms(query_str, Some(20)).await },
+                            |res| {
+                                Action::from(Message::PublicSearchResults(
+                                    res.map_err(|e| e.to_string()),
+                                ))
+                            },
+                        )
+                    } else {
+                        Task::none()
+                    }
+                } else {
+                    self.public_search_results.clear();
+                    self.is_searching_public = false;
+                    Task::none()
+                }
+            }
+            Message::PublicSearchResults(res) => {
+                self.is_searching_public = false;
+                match res {
+                    Ok(results) => {
+                        self.public_search_results = results;
+
+                        let mut missing_avatar_urls = Vec::new();
+                        for room in &self.public_search_results {
+                            if let Some(avatar_url) = &room.avatar_url {
+                                if !self.media_cache.contains_key(avatar_url) {
+                                    missing_avatar_urls.push(avatar_url.clone());
+                                }
+                            }
+                        }
+
+                        let mut tasks = Vec::new();
+                        for avatar_url in missing_avatar_urls {
+                            let source = MediaSource::Plain(matrix_sdk::ruma::OwnedMxcUri::from(
+                                avatar_url.as_str(),
+                            ));
+                            tasks.push(self.handle_fetch_media(source));
+                        }
+                        if !tasks.is_empty() {
+                            return Task::batch(tasks);
+                        }
+                    }
+                    Err(e) => {
+                        self.error = Some(format!("Failed to search public rooms: {}", e));
+                    }
+                }
+||||||| Common ancestor
+=======
 
                 if self.current_settings_panel.is_none() && !self.search_query.trim().is_empty() {
                     if let Some(matrix) = &self.matrix {
@@ -2670,6 +2727,12 @@ impl Constellations {
             }
             Message::NewRoomIsVideoChanged(is_video) => {
                 self.new_room_is_video = is_video;
+>>>>>>> Current commit: feat: scroll to a message with a certain id (if loaded)
+                Task::none()
+            }
+<<<<<<< New base: feat: add room name dropdown menu with Room Settings and Invite
+            Message::NewRoomIsVideoChanged(is_video) => {
+                self.new_room_is_video = is_video;
                 Task::none()
             }
             Message::JumpToMessage(event_id) => {
@@ -2706,6 +2769,43 @@ impl Constellations {
                     Task::none()
                 }
             }
+||||||| Common ancestor
+=======
+            Message::JumpToMessage(event_id) => {
+                let index = self.timeline_items.iter().position(|item| {
+                    item.item_id.as_ref().is_some_and(|id| {
+                        if let matrix::TimelineEventItemId::EventId(eid) = id {
+                            eid == &event_id
+                        } else {
+                            false
+                        }
+                    })
+                });
+
+                if let Some(i) = index
+                    && !self.timeline_items.is_empty()
+                    && self.last_content_height > 0.0
+                {
+                    let relative_idx = i as f32 / self.timeline_items.len() as f32;
+                    let target_y = (relative_idx * self.last_content_height)
+                        - (self.last_viewport_height / 2.0);
+                    let target_y =
+                        target_y.clamp(0.0, self.last_content_height - self.last_viewport_height);
+
+                    self.last_timeline_offset = target_y;
+
+                    scrollable::scroll_to(
+                        TIMELINE_ID.clone(),
+                        scrollable::AbsoluteOffset {
+                            x: Some(0.0),
+                            y: Some(target_y),
+                        },
+                    )
+                } else {
+                    Task::none()
+                }
+            }
+>>>>>>> Current commit: feat: scroll to a message with a certain id (if loaded)
             Message::JoinCall => self.handle_join_call(),
             Message::LeaveCall => self.handle_leave_call(),
             Message::CallJoined(res) => {
