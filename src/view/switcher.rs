@@ -341,13 +341,76 @@ impl<'switcher> Constellations {
             room_list = room_list.push(btn.width(cosmic::iced::Fill));
         }
 
-        if !self.filtered_other_rooms.is_empty() {
+        let filtered_suggested_rooms: Vec<usize> = self
+            .filtered_other_rooms
+            .iter()
+            .copied()
+            .filter(|&idx| self.other_rooms[idx].suggested)
+            .collect();
+
+        let filtered_non_suggested_rooms: Vec<usize> = self
+            .filtered_other_rooms
+            .iter()
+            .copied()
+            .filter(|&idx| !self.other_rooms[idx].suggested)
+            .collect();
+
+        if !filtered_suggested_rooms.is_empty() {
+            room_list = room_list.push(divider::horizontal::default());
+            room_list = room_list.push(
+                container(text::title3(crate::fl!("suggested")).size(14)).padding([10, 5, 5, 5]),
+            );
+
+            for idx in filtered_suggested_rooms {
+                let room = &self.other_rooms[idx];
+                let mut room_content = Column::new().spacing(2);
+                let mut header = self.view_avatar_room(room);
+
+                if let Some(unread_str) = &room.unread_count_str {
+                    header = header.push(text::body(unread_str.as_str()).size(12));
+                }
+
+                room_content = room_content.push(header);
+
+                if let Some(last_msg) = &room.last_message {
+                    let first_line = clean_last_message(last_msg);
+                    room_content = room_content.push(
+                        text::body(first_line)
+                            .size(12)
+                            .width(cosmic::iced::Length::Fill),
+                    );
+                }
+
+                let btn = button::custom(
+                    container(room_content)
+                        .padding(5)
+                        .width(cosmic::iced::Length::Fill),
+                )
+                .selected(false)
+                .class(cosmic::theme::Button::ListItem(
+                    self.core.system_theme().cosmic().corner_radii.radius_m,
+                ))
+                .width(cosmic::iced::Length::Fill);
+
+                let join_btn =
+                    button::text(JOIN.as_str()).on_press(Message::JoinRoom(room.id.clone()));
+
+                room_list = room_list.push(
+                    Row::new()
+                        .align_y(Alignment::Center)
+                        .push(btn)
+                        .push(container(join_btn).padding([0, 5])),
+                );
+            }
+        }
+
+        if !filtered_non_suggested_rooms.is_empty() {
             room_list = room_list.push(divider::horizontal::default());
             room_list = room_list.push(
                 container(text::title3(OTHER_ROOMS.as_str()).size(14)).padding([10, 5, 5, 5]),
             );
 
-            for &idx in &self.filtered_other_rooms {
+            for idx in filtered_non_suggested_rooms {
                 let room = &self.other_rooms[idx];
                 let mut room_content = Column::new().spacing(2);
                 let mut header = self.view_avatar_room(room);
@@ -428,11 +491,21 @@ impl<'switcher> Constellations {
             create_btn.into()
         };
 
-        Column::new()
-            .spacing(10)
-            .push(name_input)
-            .push(create_btn_widget)
-            .into()
+        let mut content = Column::new().spacing(10).push(name_input);
+
+        if is_room {
+            let video_toggler = Row::new()
+                .align_y(Alignment::Center)
+                .spacing(10)
+                .push(text::body(crate::fl!("video-room")))
+                .push(
+                    cosmic::widget::toggler(self.new_room_is_video)
+                        .on_toggle(Message::NewRoomIsVideoChanged),
+                );
+            content = content.push(video_toggler);
+        }
+
+        content.push(create_btn_widget).into()
     }
 
     fn view_avatar_room(
@@ -526,6 +599,13 @@ fn view_space_name_menu(name: &str) -> menu::MenuBar<Message> {
                     crate::MenuAct::SpaceSettings,
                 ),
                 menu::Item::Button(
+                    crate::fl!("manage-spaces-users"),
+                    Some(cosmic::widget::icon::Handle::from(Named::new(
+                        "network-workgroup-symbolic",
+                    ))),
+                    crate::MenuAct::ManageSpaceRooms,
+                ),
+                menu::Item::Button(
                     crate::fl!("invite"),
                     Some(cosmic::widget::icon::Handle::from(Named::new(
                         "contact-new-symbolic",
@@ -537,18 +617,42 @@ fn view_space_name_menu(name: &str) -> menu::MenuBar<Message> {
     );
     menu::bar(vec![menu_tree])
         .item_height(menu::ItemHeight::Dynamic(40))
-        .item_width(menu::ItemWidth::Uniform(160))
+        .item_width(menu::ItemWidth::Uniform(180))
         .spacing(4.0)
 }
-
-/// A clickable title that opens settings on press.
-pub(crate) fn view_settings_name_button(
-    name: &str,
-    panel: crate::SettingsPanel,
-) -> Element<'static, Message> {
-    button::custom(text::title3(name.to_string()))
-        .class(cosmic::theme::Button::MenuRoot)
-        .padding(0)
-        .on_press(Message::OpenSettings(panel))
-        .into()
+pub(crate) fn view_room_name_menu(name: &str) -> menu::MenuBar<Message> {
+    let key_binds = std::collections::HashMap::new();
+    let menu_tree = menu::Tree::with_children(
+        RcElementWrapper::new(Element::from(menu::root(name.to_string()))),
+        menu::items(
+            &key_binds,
+            vec![
+                menu::Item::Button(
+                    crate::fl!("room-settings"),
+                    Some(cosmic::widget::icon::Handle::from(Named::new(
+                        "emblem-system",
+                    ))),
+                    crate::MenuAct::RoomSettings,
+                ),
+                menu::Item::Button(
+                    crate::fl!("manage-members"),
+                    Some(cosmic::widget::icon::Handle::from(Named::new(
+                        "avatar-default-symbolic",
+                    ))),
+                    crate::MenuAct::ManageRoomMembers,
+                ),
+                menu::Item::Button(
+                    crate::fl!("invite"),
+                    Some(cosmic::widget::icon::Handle::from(Named::new(
+                        "contact-new-symbolic",
+                    ))),
+                    crate::MenuAct::RoomInvite,
+                ),
+            ],
+        ),
+    );
+    menu::bar(vec![menu_tree])
+        .item_height(menu::ItemHeight::Dynamic(40))
+        .item_width(menu::ItemWidth::Uniform(180))
+        .spacing(4.0)
 }
