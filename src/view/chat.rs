@@ -1124,7 +1124,6 @@ impl<'chat> Constellations {
                 content = content.push(self.view_threaded_timeline());
             } else {
                 content = content.push(room_header);
-<<<<<<< New base: feat: video rooms and menus (#258)
                 if self.inviting_to_room {
                     let mut invite_input = text_input("@user:example.com", &self.invite_to_room_id)
                         .on_input(Message::InviteToRoomIdChanged);
@@ -1152,7 +1151,7 @@ impl<'chat> Constellations {
                     );
                     content = content.push(container(invite_ui).padding(5));
                 }
-<<<<<<< New base: feat: add room name dropdown menu with Room Settings and Invite
+
                 let selected_room_data = self
                     .selected_room
                     .as_ref()
@@ -1167,56 +1166,6 @@ impl<'chat> Constellations {
                     .unwrap_or(false);
 
                 let mut chat_area = Column::new()
-||||||| Common ancestor
-                let chat_area = Column::new()
-=======
-                if self.inviting_to_room {
-                    let mut invite_input = text_input("@user:example.com", &self.invite_to_room_id)
-                        .on_input(Message::InviteToRoomIdChanged);
-                    let is_empty = self.invite_to_room_id.trim().is_empty();
-                    let mut invite_btn = button::text(crate::fl!("invite"));
-                    if !is_empty {
-                        invite_input = invite_input.on_submit(|_| Message::InviteToRoom);
-                        invite_btn = invite_btn.on_press(Message::InviteToRoom);
-                    }
-                    let invite_btn_widget: Element<'_, Message> = if is_empty {
-                        tooltip(
-                            invite_btn,
-                            text::body(crate::fl!("enter-user-id-to-invite")),
-                            Position::Top,
-                        )
-                        .into()
-                    } else {
-                        invite_btn.into()
-                    };
-                    let invite_ui = Column::new().spacing(5).push(invite_input).push(
-                        Row::new().spacing(5).push(invite_btn_widget).push(
-                            button::text(crate::fl!("cancel"))
-                                .on_press(Message::ToggleInviteToRoom),
-                        ),
-                    );
-                    content = content.push(container(invite_ui).padding(5));
-                }
-                let chat_area = Column::new()
->>>>>>> Current commit: feat: add room name dropdown menu with Room Settings and Invite
-||||||| Common ancestor
-                let chat_area = Column::new()
-=======
-                let selected_room_data = self
-                    .selected_room
-                    .as_ref()
-                    .and_then(|id| self.room_list.iter().find(|r| r.id.as_ref() == id.as_ref()));
-
-                let is_video_room = selected_room_data
-                    .map(|r| {
-                        r.room_type
-                            .as_ref()
-                            .is_some_and(|t| t.to_string() == "org.matrix.msc3401.call.room")
-                    })
-                    .unwrap_or(false);
-
-                let mut chat_area = Column::new()
->>>>>>> Current commit: feat: scroll to a message with a certain id (if loaded)
                     .spacing(10)
                     .width(cosmic::iced::Length::Fill)
                     .height(cosmic::iced::Length::Fill)
@@ -1600,7 +1549,6 @@ impl<'chat> Constellations {
             results_col = results_col.push(public_list);
         }
 
-<<<<<<< New base: feat: add room name dropdown menu with Room Settings and Invite
         scrollable(results_col)
             .id(crate::TIMELINE_ID.clone())
             .height(cosmic::iced::Length::Fill)
@@ -1618,88 +1566,6 @@ impl<'chat> Constellations {
                 .is_some_and(|p| p.iter().any(|participant| participant.as_str() == uid))
         });
 
-        let mut content = Column::new()
-            .spacing(20)
-            .align_x(Alignment::Center)
-            .width(cosmic::iced::Length::Fill);
-
-        // Icon
-        content = content.push(cosmic::widget::icon::from_name("camera-video-symbolic").size(96));
-
-        // Room Name
-        let room_name = room_data.name.as_deref().unwrap_or("Unnamed Video Room");
-        content = content.push(text::title1(room_name).size(24));
-
-        // Call status
-        if is_in_call {
-            content = content.push(text::body(crate::fl!("call-status-connected")).size(16));
-            let leave_btn =
-                button::destructive(crate::fl!("call-leave")).on_press(Message::LeaveCall);
-            content = content.push(leave_btn);
-        } else {
-            content = content.push(text::body(crate::fl!("call-status-not-connected")).size(16));
-            let join_btn = button::suggested(crate::fl!("call-join")).on_press(Message::JoinCall);
-            content = content.push(join_btn);
-        }
-||||||| Common ancestor
-        results_col = results_col.push(scrollable(results_list).height(cosmic::iced::Length::Fill));
-=======
-        scrollable(results_col)
-            .id(crate::TIMELINE_ID.clone())
-            .height(cosmic::iced::Length::Fill)
-            .into()
-    }
-
-    pub fn view_video_room<'a>(
-        &'a self,
-        room_data: &'a crate::matrix::RoomData,
-    ) -> Element<'a, Message> {
-        let room_id = room_data.id.as_ref();
-        let is_in_call = self.user_id.as_ref().is_some_and(|uid| {
-            self.call_participants
-                .get(room_id)
-                .is_some_and(|p| p.iter().any(|participant| participant.as_str() == uid))
-        });
->>>>>>> Current commit: feat: scroll to a message with a certain id (if loaded)
-
-<<<<<<< New base: feat: add room name dropdown menu with Room Settings and Invite
-        // Participants list
-        let call_participants = self.call_participants.get(room_id);
-        let participant_count = call_participants.map_or(0, |p| p.len());
-
-        let mut participants_col = Column::new().spacing(10).align_x(Alignment::Center);
-        participants_col = participants_col
-            .push(text::title3(format!("Participants ({})", participant_count)).size(16));
-
-        if let Some(participants) = call_participants
-            && !participants.is_empty()
-        {
-            for participant in participants {
-                participants_col = participants_col.push(text::body(participant.as_str()).size(14));
-            }
-        } else {
-            participants_col = participants_col.push(text::body("No one is in the call").size(14));
-        }
-
-        content = content.push(
-            container(participants_col)
-                .style(|theme: &cosmic::Theme| {
-                    use cosmic::iced::widget::container::Catalog;
-                    theme.style(&cosmic::theme::Container::Card)
-                })
-                .padding(15)
-                .width(300.0),
-        );
-
-        container(content)
-            .width(cosmic::iced::Length::Fill)
-            .height(cosmic::iced::Length::Fill)
-            .align_x(Alignment::Center)
-            .align_y(Alignment::Center)
-            .into()
-||||||| Common ancestor
-        results_col.into()
-=======
         let mut content = Column::new()
             .spacing(20)
             .align_x(Alignment::Center)
@@ -1758,7 +1624,6 @@ impl<'chat> Constellations {
             .align_x(Alignment::Center)
             .align_y(Alignment::Center)
             .into()
->>>>>>> Current commit: feat: scroll to a message with a certain id (if loaded)
     }
 
     pub fn view_members_panel(&self) -> Element<'_, Message> {

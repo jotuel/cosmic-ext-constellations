@@ -263,22 +263,10 @@ pub enum MenuAct {
     CreateSpace,
     SpaceSettings,
     SpaceInvite,
-<<<<<<< New base: feat: video rooms and menus (#258)
     RoomSettings,
     RoomInvite,
-<<<<<<< New base: feat: add room name dropdown menu with Room Settings and Invite
     ManageRoomMembers,
     ManageSpaceRooms,
-||||||| Common ancestor
-=======
-    RoomSettings,
-    RoomInvite,
->>>>>>> Current commit: feat: add room name dropdown menu with Room Settings and Invite
-||||||| Common ancestor
-=======
-    ManageRoomMembers,
-    ManageSpaceRooms,
->>>>>>> Current commit: feat: scroll to a message with a certain id (if loaded)
 }
 
 impl MenuAction for MenuAct {
@@ -292,22 +280,10 @@ impl MenuAction for MenuAct {
             MenuAct::CreateSpace => Message::ToggleCreateSpace,
             MenuAct::SpaceSettings => Message::OpenSettings(SettingsPanel::Space),
             MenuAct::SpaceInvite => Message::ToggleInviteToSpace,
-<<<<<<< New base: feat: video rooms and menus (#258)
             MenuAct::RoomSettings => Message::OpenSettings(SettingsPanel::Room),
             MenuAct::RoomInvite => Message::ToggleInviteToRoom,
             MenuAct::ManageRoomMembers => Message::OpenSettings(SettingsPanel::ManageRoomMembers),
             MenuAct::ManageSpaceRooms => Message::OpenSettings(SettingsPanel::ManageSpaceRooms),
-||||||| Common ancestor
-=======
-            MenuAct::RoomSettings => Message::OpenSettings(SettingsPanel::Room),
-            MenuAct::RoomInvite => Message::ToggleInviteToRoom,
-<<<<<<< New base: feat: add room name dropdown menu with Room Settings and Invite
->>>>>>> Current commit: feat: add room name dropdown menu with Room Settings and Invite
-||||||| Common ancestor
-=======
-            MenuAct::ManageRoomMembers => Message::OpenSettings(SettingsPanel::ManageRoomMembers),
-            MenuAct::ManageSpaceRooms => Message::OpenSettings(SettingsPanel::ManageSpaceRooms),
->>>>>>> Current commit: feat: scroll to a message with a certain id (if loaded)
         }
     }
 }
